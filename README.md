@@ -1,6 +1,6 @@
-# TwoOfUs — Private & Secure Couple Space 💑🔒
+# TwoOfUs — Private & Secure Space 🔒
 
-**TwoOfUs** is an end-to-end encrypted (E2EE) private couple app built with **Flutter** and **FastAPI**. It provides a dedicated, intimate digital space for two partners featuring real-time encrypted messaging, ephemeral view-once media, interactive shared calendar diary & scrapbook photo album, cryptographic safety number QR code verification, and romantic custom themes.
+**TwoOfUs** is an end-to-end encrypted (E2EE) private app built with **Flutter** and **FastAPI**. It provides a dedicated, intimate digital space for two partners featuring real-time encrypted messaging, ephemeral view-once media, interactive shared calendar diary & scrapbook photo album, cryptographic safety number QR code verification, and romantic custom themes.
 
 ---
 
