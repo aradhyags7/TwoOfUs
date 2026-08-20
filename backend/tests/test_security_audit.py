@@ -63,8 +63,7 @@ class SecurityPenetrationTests(unittest.TestCase):
         )
         db.add(user)
         db.commit()
-        db.refresh(user)
-        uid = int(user.id)
+        uid: int = getattr(user, "id")
         token = create_access_token({"sub": str(uid), "email": email})
         db.close()
         return uid, token
@@ -75,7 +74,7 @@ class SecurityPenetrationTests(unittest.TestCase):
         db.add(pair)
         db.commit()
         db.refresh(pair)
-        pid = int(pair.id)
+        pid: int = getattr(pair, "id")
         db.close()
         return pid
 
