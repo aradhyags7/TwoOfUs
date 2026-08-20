@@ -1,0 +1,1326 @@
+from datetime import datetime, timezone
+import os
+import shutil
+import string
+from random import choices
+
+from typing import List, Optional
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func, text
+from sqlalchemy.orm import Session
+
+from .core.database import Base, SessionLocal, engine
+from .core.security import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
+from .models import ConnectionPin, Message, Pair, User, Media, DiaryMemory
+from .schemas.auth import ConnectByPin, UserCreate, UserLogin, PublicKeyUploadRequest
+from .schemas.message import EditMessageRequest, MessageCreate
+from .schemas.media import MediaResponse, MediaUploadResponse
+from .schemas.password import ChangePasswordRequest
+from .schemas.profile import ProfileUpdate
+from .services.storage import (
+    validate_file,
+    save_upload_file,
+    delete_physical_file,
+    ensure_media_dirs,
+)
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS nonce TEXT;"))
+        conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;"))
+        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_view_once BOOLEAN DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_expired BOOLEAN DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMP;"))
+        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS encrypted_media_key TEXT;"))
+        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS encryption_nonce TEXT;"))
+        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS ciphertext_hash TEXT;"))
+        conn.commit()
+except Exception as e:
+    print("Migration exception:", e)
+
+app = FastAPI(
+    title="TwoOfUs API",
+    version="1.0.0"
+)
+
+# Enable CORS for cross-origin app requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+os.makedirs("uploads/avatars", exist_ok=True)
+os.makedirs("uploads/memories", exist_ok=True)
+ensure_media_dirs()
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory="uploads"),
+    name="uploads"
+)
+
+security = HTTPBearer()
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = decode_access_token(token)
+
+    if payload is None:
+        print(f"[AUTH REJECTED]: Invalid or expired token: '{token}'")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
+
+    return payload
+
+
+def get_user_from_token_str(token: str, db: Session) -> User:
+    payload = decode_access_token(token)
+    if not payload or not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = int(payload["sub"])
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+def verify_pair_access(db: Session, user1_id: int, user2_id: int) -> Optional[Pair]:
+    if user1_id == user2_id:
+        return None
+    pair = db.query(Pair).filter(
+        ((Pair.user1_id == user1_id) & (Pair.user2_id == user2_id)) |
+        ((Pair.user1_id == user2_id) & (Pair.user2_id == user1_id))
+    ).first()
+    return pair
+
+
+def verify_media_access(db: Session, media: Media, current_user_id: int):
+    if media.sender_id == current_user_id or media.receiver_id == current_user_id:
+        return
+    if media.pair_id:
+        pair = db.query(Pair).filter(Pair.id == media.pair_id).first()
+        if pair and (pair.user1_id == current_user_id or pair.user2_id == current_user_id):
+            return
+    raise HTTPException(
+        status_code=403,
+        detail="Not authorized to access this media file"
+    )
+
+
+# ==========================
+# Database Dependency
+# ==========================
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ==========================
+# PIN Generator
+# ==========================
+def generate_pin():
+    chars = string.ascii_uppercase + string.digits
+    return "".join(choices(chars, k=8))
+
+
+# ==========================
+# Root
+# ==========================
+@app.get("/")
+def root():
+    return {
+        "message": "TwoOfUs Backend Running ❤️"
+    }
+
+
+# ==========================
+# Register User
+# ==========================
+@app.post("/register")
+def register_user(
+    user: UserCreate,
+    db: Session = Depends(get_db)
+):
+    email_clean = user.email.strip().lower()
+    username_clean = user.username.strip()
+
+    existing_email = (
+        db.query(User)
+        .filter(func.lower(User.email) == email_clean)
+        .first()
+    )
+
+    if existing_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already exists"
+        )
+
+    existing_username = (
+        db.query(User)
+        .filter(func.lower(User.username) == username_clean.lower())
+        .first()
+    )
+
+    if existing_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists"
+        )
+
+    new_user = User(
+        email=email_clean,
+        username=username_clean,
+        password_hash=hash_password(user.password)
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {
+        "message": "User created successfully",
+        "user_id": new_user.id
+    }
+
+
+# ==========================
+# Login User
+# ==========================
+@app.post("/login")
+def login(
+    user: UserLogin,
+    db: Session = Depends(get_db)
+):
+    login_input = user.email.strip()
+
+    filter_condition = (
+        (func.lower(User.email) == login_input.lower()) |
+        (func.lower(User.username) == login_input.lower())
+    )
+    if login_input.isdigit():
+        filter_condition = filter_condition | (User.id == int(login_input))
+
+    existing_user = (
+        db.query(User)
+        .filter(filter_condition)
+        .first()
+    )
+
+    if not existing_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    if not verify_password(
+        user.password,
+        str(existing_user.password_hash)
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    access_token = create_access_token(
+        data={
+            "sub": str(existing_user.id),
+            "email": existing_user.email
+        }
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": existing_user.id,
+        "email": existing_user.email,
+        "username": existing_user.username
+    }
+
+
+# ==========================
+# Generate Connection PIN
+# ==========================
+@app.get("/generate-pin/{user_id}")
+def generate_connection_pin(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only generate PINs for yourself")
+
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    pin = generate_pin()
+
+    new_pin = ConnectionPin(
+        user_id=user_id,
+        pin_code=pin
+    )
+
+    db.add(new_pin)
+    db.commit()
+    db.refresh(new_pin)
+
+    return {
+        "user_id": user_id,
+        "pin": pin
+    }
+
+
+# ==========================
+# Connect By PIN
+# ==========================
+@app.post("/connect-by-pin")
+def connect_by_pin(
+    data: ConnectByPin,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != data.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You cannot pair on behalf of another user")
+
+    joining_user = (
+        db.query(User)
+        .filter(User.id == data.user_id)
+        .first()
+    )
+
+    if not joining_user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    pin_record = (
+        db.query(ConnectionPin)
+        .filter(ConnectionPin.pin_code == data.pin_code)
+        .first()
+    )
+
+    if not pin_record:
+        raise HTTPException(
+            status_code=404,
+            detail="Invalid PIN"
+        )
+
+    if pin_record.user_id == data.user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot connect to yourself"
+        )
+
+    existing_pair = (
+        db.query(Pair)
+        .filter(
+            ((Pair.user1_id == pin_record.user_id) & (Pair.user2_id == data.user_id)) |
+            ((Pair.user1_id == data.user_id) & (Pair.user2_id == pin_record.user_id))
+        )
+        .first()
+    )
+
+    if existing_pair:
+        raise HTTPException(
+            status_code=400,
+            detail="Users already connected"
+        )
+
+    new_pair = Pair(
+        user1_id=pin_record.user_id,
+        user2_id=data.user_id,
+        connection_pin=data.pin_code
+    )
+
+    db.add(new_pair)
+    db.commit()
+    db.refresh(new_pair)
+
+    return {
+        "message": "Connected successfully ❤️",
+        "pair_id": new_pair.id,
+        "user1_id": new_pair.user1_id,
+        "user2_id": new_pair.user2_id
+    }
+
+
+@app.get("/users")
+def get_users(
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    users = db.query(User).all()
+
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username
+        }
+        for user in users
+    ]
+
+
+@app.get("/pairs")
+def get_pairs(
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    pairs = db.query(Pair).all()
+
+    return [
+        {
+            "id": pair.id,
+            "user1_id": pair.user1_id,
+            "user2_id": pair.user2_id
+        }
+        for pair in pairs
+    ]
+
+
+@app.get("/pair-status/{user_id}")
+def pair_status(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only check your own pair status")
+
+    pair = (
+        db.query(Pair)
+        .filter(
+            (Pair.user1_id == user_id) |
+            (Pair.user2_id == user_id)
+        )
+        .first()
+    )
+
+    if not pair:
+        return {
+            "connected": False
+        }
+
+    partner_id = (
+        pair.user2_id
+        if pair.user1_id == user_id
+        else pair.user1_id
+    )
+
+    partner = (
+        db.query(User)
+        .filter(User.id == partner_id)
+        .first()
+    )
+
+    if not partner:
+        return {
+            "connected": False
+        }
+
+    return {
+        "connected": True,
+        "partner_id": partner.id,
+        "partner_name": partner.username,
+        "partner_email": partner.email
+    }
+
+
+# ==========================
+# Health Check
+# ==========================
+@app.get("/health")
+def health():
+    return {
+        "status": "ok"
+    }
+
+
+@app.get("/me")
+def get_me(
+    current_user = Depends(get_current_user)
+):
+    return {
+        "user": current_user
+    }
+
+
+# ==========================
+# Media Upload & Management
+# ==========================
+@app.post("/media/upload", response_model=List[MediaUploadResponse])
+async def upload_media(
+    receiver_id: int = Form(...),
+    is_encrypted: Optional[str] = Form(None),
+    is_view_once: Optional[str] = Form(None),
+    encrypted_media_key: Optional[str] = Form(None),
+    encryption_nonce: Optional[str] = Form(None),
+    ciphertext_hash: Optional[str] = Form(None),
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    sender_id = int(current_user_payload.get("sub"))
+    receiver = db.query(User).filter(User.id == receiver_id).first()
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Receiver user not found")
+
+    pair = verify_pair_access(db, sender_id, receiver_id)
+    pair_id = pair.id if pair else None
+
+    is_enc_bool = is_encrypted.lower() in ("true", "1") if is_encrypted is not None else False
+    is_vo_bool = is_view_once.lower() in ("true", "1") if is_view_once is not None else False
+
+    responses = []
+    for file in files:
+        file.file.seek(0, os.SEEK_END)
+        file_size = file.file.tell()
+        file.file.seek(0)
+
+        media_type, ext = validate_file(file, file_size)
+        stored_filename, storage_path, thumbnail_path, width, height = save_upload_file(
+            file, media_type, ext, is_encrypted=is_enc_bool
+        )
+
+        sanitized_filename = f"enc_{stored_filename}" if is_enc_bool else (file.filename or f"attachment{ext}")
+
+        media_record = Media(
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            pair_id=pair_id,
+            original_filename=sanitized_filename,
+            stored_filename=stored_filename,
+            media_type=media_type,
+            mime_type=file.content_type or "application/octet-stream",
+            file_size=file_size,
+            storage_path=storage_path,
+            thumbnail_path=thumbnail_path,
+            width=width,
+            height=height,
+            is_encrypted=is_enc_bool,
+            is_view_once=is_vo_bool,
+            is_expired=False,
+            encrypted_media_key=encrypted_media_key,
+            encryption_nonce=encryption_nonce,
+            ciphertext_hash=ciphertext_hash
+        )
+        db.add(media_record)
+        db.commit()
+        db.refresh(media_record)
+
+        responses.append(MediaUploadResponse(
+            media_id=int(str(media_record.id)),
+            original_filename=str(media_record.original_filename),
+            stored_filename=str(media_record.stored_filename),
+            media_type=str(media_record.media_type),
+            mime_type=str(media_record.mime_type),
+            file_size=int(str(media_record.file_size)),
+            storage_path=str(media_record.storage_path),
+            thumbnail_path=str(media_record.thumbnail_path) if media_record.thumbnail_path else None,
+            is_view_once=is_vo_bool
+        ))
+
+    return responses
+
+
+# ==========================
+# E2EE Public Key Management
+# ==========================
+@app.post("/keys/public")
+def upload_public_key(
+    data: PublicKeyUploadRequest,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.public_key = data.public_key
+    db.commit()
+    return {"message": "Public key updated successfully", "user_id": user_id}
+
+
+@app.get("/keys/{user_id}")
+def get_user_public_key(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        pair = verify_pair_access(db, auth_user_id, user_id)
+        if not pair:
+            raise HTTPException(status_code=403, detail="Forbidden: Not authorized to fetch this public key")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "user_id": user.id,
+        "public_key": user.public_key
+    }
+
+
+@app.post("/send-message")
+def send_message(
+    data: MessageCreate,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != data.sender_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Sender ID does not match authenticated user")
+
+    pair = verify_pair_access(db, data.sender_id, data.receiver_id)
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only message your connected partner")
+
+    message = Message(
+        sender_id=data.sender_id,
+        receiver_id=data.receiver_id,
+        content=data.content,
+        nonce=data.nonce,
+        is_encrypted=data.is_encrypted if data.is_encrypted is not None else False
+    )
+
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+
+    attached_media = []
+    if data.media_ids:
+        pair_id = pair.id if pair else None
+
+        for m_id in data.media_ids:
+            media_item = db.query(Media).filter(Media.id == m_id, Media.sender_id == data.sender_id).first()
+            if media_item:
+                media_item.message_id = message.id
+                if pair_id:
+                    media_item.pair_id = pair_id
+                attached_media.append(media_item)
+        db.commit()
+
+    return {
+        "message_id": message.id,
+        "status": "sent",
+        "media": [
+            {
+                "id": m.id,
+                "original_filename": m.original_filename,
+                "stored_filename": m.stored_filename,
+                "media_type": m.media_type,
+                "mime_type": m.mime_type,
+                "file_size": m.file_size,
+                "storage_path": m.storage_path,
+                "thumbnail_path": m.thumbnail_path,
+                "created_at": str(m.created_at)
+            } for m in attached_media
+        ]
+    }
+
+
+@app.get("/messages/{user1}/{user2}")
+def get_messages(
+    user1: int,
+    user2: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id not in (user1, user2):
+        raise HTTPException(status_code=403, detail="Forbidden: Not authorized to access this conversation")
+
+    pair = verify_pair_access(db, user1, user2)
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: Conversation access restricted to paired partners")
+
+    messages = (
+        db.query(Message)
+        .filter(
+            (
+                (Message.sender_id == user1) &
+                (Message.receiver_id == user2)
+            )
+            |
+            (
+                (Message.sender_id == user2) &
+                (Message.receiver_id == user1)
+            )
+        )
+        .order_by(Message.created_at.asc())
+        .all()
+    )
+
+    result = []
+    for m in messages:
+        attached_media = (
+            db.query(Media)
+            .filter(Media.message_id == m.id)
+            .all()
+        )
+        result.append({
+            "id": m.id,
+            "sender_id": m.sender_id,
+            "receiver_id": m.receiver_id,
+            "content": m.content,
+            "nonce": m.nonce,
+            "is_encrypted": m.is_encrypted if m.is_encrypted is not None else False,
+            "is_edited": m.is_edited if m.is_edited is not None else False,
+            "created_at": str(m.created_at),
+            "media": [
+                {
+                    "id": med.id,
+                    "sender_id": med.sender_id,
+                    "receiver_id": med.receiver_id,
+                    "original_filename": med.original_filename,
+                    "stored_filename": med.stored_filename,
+                    "media_type": med.media_type,
+                    "mime_type": med.mime_type,
+                    "file_size": med.file_size,
+                    "storage_path": med.storage_path,
+                    "thumbnail_path": med.thumbnail_path,
+                    "is_encrypted": med.is_encrypted if med.is_encrypted is not None else False,
+                    "is_view_once": med.is_view_once if med.is_view_once is not None else False,
+                    "is_expired": med.is_expired if med.is_expired is not None else False,
+                    "viewed_at": str(med.viewed_at) if med.viewed_at else None,
+                    "encrypted_media_key": med.encrypted_media_key,
+                    "encryption_nonce": med.encryption_nonce,
+                    "created_at": str(med.created_at)
+                } for med in attached_media
+            ]
+        })
+
+    return result
+
+
+@app.delete("/messages/{message_id}")
+def delete_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    message = (
+        db.query(Message)
+        .filter(Message.id == message_id)
+        .first()
+    )
+
+    if not message:
+        raise HTTPException(
+            status_code=404,
+            detail="Message not found"
+        )
+
+    if message.sender_id != auth_user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: Only the message sender can delete this message"
+        )
+
+    # Clean up physical storage files for all associated media
+    attached_media = db.query(Media).filter(Media.message_id == message_id).all()
+    for m in attached_media:
+        delete_physical_file(str(m.storage_path), str(m.thumbnail_path) if m.thumbnail_path else None)
+        db.delete(m)
+
+    db.delete(message)
+    db.commit()
+
+    return {
+        "message": "Deleted"
+    }
+
+
+# ==========================
+# Secure Media Access Endpoints
+# ==========================
+@app.get("/media/{media_id}")
+def get_media_info(
+    media_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    media = db.query(Media).filter(Media.id == media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    verify_media_access(db, media, user_id)
+
+    # Server-side View Once expiration enforcement
+    if media.is_view_once and (media.is_expired or not os.path.exists(str(media.storage_path))):
+        raise HTTPException(
+            status_code=410,
+            detail="This View Once media has expired and has been securely purged."
+        )
+
+    return media
+
+
+@app.get("/media/{media_id}/file")
+def download_media_file(
+    media_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    media = db.query(Media).filter(Media.id == media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    verify_media_access(db, media, user_id)
+
+    storage_p = str(media.storage_path)
+
+    # Server-side View Once atomic single-use consumption with race-condition prevention
+    if media.is_view_once:
+        # Atomic DB lock & conditional update
+        rows_updated = db.query(Media).filter(
+            Media.id == media_id,
+            Media.is_expired == False
+        ).update({
+            "is_expired": True,
+            "viewed_at": datetime.now(timezone.utc)
+        })
+        db.commit()
+
+        if rows_updated == 0 or not os.path.exists(storage_p):
+            raise HTTPException(
+                status_code=410,
+                detail="This View Once media has expired and has been securely purged."
+            )
+
+        try:
+            with open(storage_p, "rb") as f:
+                content_bytes = f.read()
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to read media payload")
+
+        # Shred physical files from disk immediately
+        delete_physical_file(storage_p, str(media.thumbnail_path) if media.thumbnail_path else None)
+
+        from fastapi.responses import Response
+        return Response(
+            content=content_bytes,
+            media_type=str(media.mime_type),
+            headers={
+                "Content-Disposition": f'attachment; filename="{media.original_filename}"',
+                "X-View-Once": "true",
+                "X-View-Once-Consumed": "true",
+            }
+        )
+
+    if not os.path.exists(storage_p):
+        raise HTTPException(status_code=404, detail="Physical media file not found")
+
+    return FileResponse(
+        path=storage_p,
+        media_type=str(media.mime_type),
+        filename=str(media.original_filename)
+    )
+
+
+@app.get("/media/{media_id}/thumbnail")
+def download_media_thumbnail(
+    media_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    media = db.query(Media).filter(Media.id == media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    verify_media_access(db, media, user_id)
+
+    if media.is_view_once and (media.is_expired or not os.path.exists(str(media.storage_path))):
+        raise HTTPException(
+            status_code=410,
+            detail="This View Once media has expired and has been securely purged."
+        )
+
+    thumb_p = str(media.thumbnail_path) if media.thumbnail_path else None
+    target_path = thumb_p if (thumb_p and os.path.exists(thumb_p)) else str(media.storage_path)
+
+    if not os.path.exists(target_path):
+        raise HTTPException(status_code=404, detail="Thumbnail file not found")
+
+    return FileResponse(
+        path=target_path,
+        media_type="image/jpeg" if media.thumbnail_path else str(media.mime_type)
+    )
+
+
+@app.get("/media/pair/{partner_id}")
+def get_pair_media(
+    partner_id: int,
+    media_type: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    pair = verify_pair_access(db, user_id, partner_id)
+
+    query = db.query(Media).filter(
+        ((Media.sender_id == user_id) & (Media.receiver_id == partner_id)) |
+        ((Media.sender_id == partner_id) & (Media.receiver_id == user_id))
+    )
+
+    if media_type:
+        query = query.filter(Media.media_type == media_type)
+
+    media_list = query.order_by(Media.created_at.desc()).offset(offset).limit(limit).all()
+
+    return [
+        {
+            "id": m.id,
+            "message_id": m.message_id,
+            "sender_id": m.sender_id,
+            "receiver_id": m.receiver_id,
+            "original_filename": m.original_filename,
+            "stored_filename": m.stored_filename,
+            "media_type": m.media_type,
+            "mime_type": m.mime_type,
+            "file_size": m.file_size,
+            "is_encrypted": m.is_encrypted if m.is_encrypted is not None else False,
+            "is_view_once": m.is_view_once if m.is_view_once is not None else False,
+            "is_expired": m.is_expired if m.is_expired is not None else False,
+            "viewed_at": str(m.viewed_at) if m.viewed_at else None,
+            "encrypted_media_key": m.encrypted_media_key,
+            "encryption_nonce": m.encryption_nonce,
+            "created_at": str(m.created_at)
+        } for m in media_list
+    ]
+
+
+@app.post("/admin/cleanup-orphans")
+def manual_cleanup_orphans(
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    from .services.cleanup import cleanup_orphaned_media_files
+    result = cleanup_orphaned_media_files(db)
+    return result
+
+
+@app.delete("/media/{media_id}")
+def delete_single_media(
+    media_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    media = db.query(Media).filter(Media.id == media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    if media.sender_id != user_id:
+        raise HTTPException(status_code=403, detail="Only sender can delete this media file")
+
+    delete_physical_file(str(media.storage_path), str(media.thumbnail_path) if media.thumbnail_path else None)
+    db.delete(media)
+    db.commit()
+
+    return {"message": "Media deleted successfully"}
+
+
+@app.put("/messages/{message_id}")
+def edit_message(
+    message_id: int,
+    data: EditMessageRequest,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    msg = (
+        db.query(Message)
+        .filter(Message.id == message_id)
+        .first()
+    )
+
+    if not msg:
+        raise HTTPException(
+            status_code=404,
+            detail="Message not found",
+        )
+
+    if msg.sender_id != auth_user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: Only the message sender can edit this message",
+        )
+
+    # 15-minute window check (900 seconds)
+    if msg.created_at:
+        now = datetime.now(timezone.utc)
+        created_at = msg.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elapsed = (now - created_at).total_seconds()
+        if elapsed > 900:
+            raise HTTPException(
+                status_code=400,
+                detail="Messages can only be edited within 15 minutes of sending",
+            )
+
+    msg.content = data.content
+    if data.nonce is not None:
+        msg.nonce = data.nonce
+    if data.is_encrypted is not None:
+        msg.is_encrypted = data.is_encrypted
+    msg.is_edited = True
+
+    db.commit()
+    db.refresh(msg)
+
+    return {
+        "success": True,
+        "message": "Updated",
+        "is_edited": True,
+    }
+
+
+@app.get("/profile/{user_id}")
+def get_profile(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        pair = verify_pair_access(db, auth_user_id, user_id)
+        if not pair:
+            raise HTTPException(status_code=403, detail="Forbidden: Not authorized to view this profile")
+
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "bio": user.bio,
+        "birthday": user.birthday,
+        "avatar_url": user.avatar_url
+    }
+
+
+@app.put("/profile/{user_id}")
+def update_profile(
+    user_id: int,
+    data: ProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only update your own profile")
+
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    existing_username = (
+        db.query(User)
+        .filter(
+            func.lower(User.username) == data.username.strip().lower(),
+            User.id != user_id
+        )
+        .first()
+    )
+
+    if existing_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already taken"
+        )
+
+    user.username = data.username.strip()
+    user.bio = data.bio
+    user.birthday = data.birthday
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "message": "Profile updated",
+        "username": user.username,
+        "bio": user.bio,
+        "birthday": user.birthday
+    }
+
+
+@app.post("/profile/avatar/{user_id}")
+def upload_avatar(
+    user_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only update your own avatar")
+
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    # Validate file extension and size to prevent path traversal or malicious uploads
+    filename = file.filename or "avatar.jpg"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise HTTPException(status_code=415, detail="Only JPG, PNG, and WebP avatar images are supported")
+
+    file.file.seek(0, os.SEEK_END)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Avatar image exceeds maximum size of 5 MB")
+
+    os.makedirs("uploads/avatars", exist_ok=True)
+    file_path = f"uploads/avatars/{user_id}{ext}"
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    user.avatar_url = file_path
+    db.commit()
+
+    return {
+        "avatar_url": file_path
+    }
+
+
+@app.put("/change-password/{user_id}")
+def change_password(
+    user_id: int,
+    data: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only change your own password")
+
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    if not verify_password(
+        data.current_password,
+        str(user.password_hash),
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Current password is incorrect",
+        )
+
+    user.password_hash = hash_password(
+        data.new_password
+    )
+
+    db.commit()
+
+    return {
+        "message": "Password changed successfully"
+    }
+
+
+# =============================================================================
+# DIARY & MEMORY PHOTO GALLERY ENDPOINTS
+# =============================================================================
+
+@app.get("/memories/pair/{partner_id}")
+def get_pair_memories(
+    partner_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    pair = verify_pair_access(db, user_id, partner_id)
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: You are not paired with this user")
+
+    memories = (
+        db.query(DiaryMemory)
+        .filter(
+            ((DiaryMemory.sender_id == user_id) & (DiaryMemory.receiver_id == partner_id)) |
+            ((DiaryMemory.sender_id == partner_id) & (DiaryMemory.receiver_id == user_id))
+        )
+        .order_by(DiaryMemory.entry_date.desc(), DiaryMemory.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": m.id,
+            "sender_id": m.sender_id,
+            "receiver_id": m.receiver_id,
+            "entry_date": m.entry_date,
+            "content": m.content,
+            "mood_emoji": m.mood_emoji,
+            "image_url": m.image_url,
+            "created_at": m.created_at.isoformat() if m.created_at else None
+        }
+        for m in memories
+    ]
+
+
+@app.post("/memories/create")
+def create_memory_entry(
+    partner_id: int = Form(...),
+    entry_date: str = Form(...),
+    content: str = Form(""),
+    mood_emoji: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    pair = verify_pair_access(db, user_id, partner_id)
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: You are not paired with this user")
+
+    image_url = None
+    if photo and photo.filename:
+        filename = photo.filename
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+            raise HTTPException(status_code=415, detail="Only JPG, PNG, and WebP images are supported for diary memories")
+
+        os.makedirs("uploads/memories", exist_ok=True)
+        unique_name = f"{user_id}_{int(datetime.now(timezone.utc).timestamp())}_{''.join(choices(string.ascii_lowercase + string.digits, k=6))}{ext}"
+        saved_path = os.path.join("uploads", "memories", unique_name)
+        with open(saved_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        image_url = f"uploads/memories/{unique_name}"
+
+    entry = DiaryMemory(
+        sender_id=user_id,
+        receiver_id=partner_id,
+        entry_date=entry_date.strip(),
+        content=content.strip(),
+        mood_emoji=mood_emoji.strip() if mood_emoji else None,
+        image_url=image_url
+    )
+
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    return {
+        "id": entry.id,
+        "sender_id": entry.sender_id,
+        "receiver_id": entry.receiver_id,
+        "entry_date": entry.entry_date,
+        "content": entry.content,
+        "mood_emoji": entry.mood_emoji,
+        "image_url": entry.image_url,
+        "created_at": entry.created_at.isoformat() if entry.created_at else None
+    }
+
+
+@app.delete("/memories/{memory_id}")
+def delete_memory_entry(
+    memory_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    entry = db.query(DiaryMemory).filter(DiaryMemory.id == memory_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Memory entry not found")
+
+    if entry.sender_id != user_id and entry.receiver_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You cannot delete this entry")
+
+    if entry.image_url:
+        img_path = str(entry.image_url)
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+            except Exception:
+                pass
+
+    db.delete(entry)
+    db.commit()
+
+    return {"message": "Memory deleted successfully", "id": memory_id}

@@ -1,0 +1,78 @@
+# ── Environment & Secrets ───────────────────────────────────────────────────
+.env
+*.env
+!.env.example
+backend/.env
+
+# ── Databases & Storage ──────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+test_*.db
+test_*.sqlite
+uploads/
+backend/uploads/
+backend/media/
+media/
+
+# ── Python / Virtual Environments ────────────────────────────────────────────
+venv/
+**/venv/
+env/
+**/env/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# ── Flutter / Dart ───────────────────────────────────────────────────────────
+.dart_tool/
+**/.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+**/build/
+
+# ── Android ──────────────────────────────────────────────────────────────────
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/key.properties
+*.keystore
+*.jks
+
+# ── iOS / macOS ──────────────────────────────────────────────────────────────
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/App.framework
+**/macos/Pods/
+**/macos/.symlinks/
+**/macos/Flutter/ephemeral/
+**/ios/Flutter/Generated.xcconfig
+
+# ── Windows / Linux Desktop ──────────────────────────────────────────────────
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+
+# ── IDEs & Operating System ──────────────────────────────────────────────────
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+.vscode/
+**/.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*~
