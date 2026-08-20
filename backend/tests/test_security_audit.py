@@ -6,22 +6,22 @@ import uuid
 import threading
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+root_dir = os.path.dirname(backend_dir)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-try:
-    from app.main import app, get_db
-    from app.core.database import Base
-    from app.core.security import hash_password, create_access_token
-    from app.models import User, Pair, Message, Media, ConnectionPin
-except ImportError:
-    from backend.app.main import app, get_db
-    from backend.app.core.database import Base
-    from backend.app.core.security import hash_password, create_access_token
-    from backend.app.models import User, Pair, Message, Media, ConnectionPin
+from backend.app.main import app, get_db
+from backend.app.core.database import Base
+from backend.app.core.security import hash_password, create_access_token
+from backend.app.models import User, Pair, Message, Media, ConnectionPin
 
 # Use an isolated test database
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_security_audit.db"
@@ -53,7 +53,7 @@ class SecurityPenetrationTests(unittest.TestCase):
             except Exception:
                 pass
 
-    def create_test_user(self, email: str, username: str, password: str = "Password123!"):
+    def create_test_user(self, email: str, username: str, password: str = "Password123!") -> tuple[int, str]:
         db = TestingSessionLocal()
         user = User(
             email=email,
@@ -64,18 +64,18 @@ class SecurityPenetrationTests(unittest.TestCase):
         db.add(user)
         db.commit()
         db.refresh(user)
-        token = create_access_token({"sub": str(user.id), "email": user.email})
-        uid = user.id
+        uid = int(user.id)
+        token = create_access_token({"sub": str(uid), "email": email})
         db.close()
         return uid, token
 
-    def create_test_pair(self, u1: int, u2: int):
+    def create_test_pair(self, u1: int, u2: int) -> int:
         db = TestingSessionLocal()
         pair = Pair(user1_id=u1, user2_id=u2, connection_pin=f"PIN_{uuid.uuid4().hex[:8]}")
         db.add(pair)
         db.commit()
         db.refresh(pair)
-        pid = pair.id
+        pid = int(pair.id)
         db.close()
         return pid
 
@@ -154,7 +154,7 @@ class SecurityPenetrationTests(unittest.TestCase):
         upload_res = client.post(
             "/media/upload",
             data={
-                "receiver_id": u2,
+                "receiver_id": str(u2),
                 "is_encrypted": "true",
                 "is_view_once": "true",
                 "encrypted_media_key": '{"k":"key","n":"nonce"}',
@@ -169,7 +169,8 @@ class SecurityPenetrationTests(unittest.TestCase):
         # Verify physical file exists on disk prior to consumption
         db = TestingSessionLocal()
         media_rec = db.query(Media).filter(Media.id == media_id).first()
-        storage_path = str(media_rec.storage_path)
+        self.assertIsNotNone(media_rec)
+        storage_path = str(media_rec.storage_path) if media_rec and media_rec.storage_path else ""
         self.assertTrue(os.path.exists(storage_path))
         db.close()
 
@@ -215,7 +216,7 @@ class SecurityPenetrationTests(unittest.TestCase):
         upload_res = client.post(
             "/media/upload",
             data={
-                "receiver_id": u2,
+                "receiver_id": str(u2),
                 "is_encrypted": "true",
                 "is_view_once": "false",
             },
@@ -233,9 +234,11 @@ class SecurityPenetrationTests(unittest.TestCase):
         # Check raw disk bytes
         db = TestingSessionLocal()
         media_rec = db.query(Media).filter(Media.id == media_info["media_id"]).first()
-        with open(media_rec.storage_path, "rb") as f:
-            stored_bytes = f.read()
-        self.assertEqual(stored_bytes, raw_ciphertext)
+        self.assertIsNotNone(media_rec)
+        if media_rec and media_rec.storage_path:
+            with open(str(media_rec.storage_path), "rb") as f:
+                stored_bytes = f.read()
+            self.assertEqual(stored_bytes, raw_ciphertext)
         db.close()
         print("  [PASS] Zero-knowledge storage: filename sanitized, no server thumbnail generated, only ciphertext stored on disk")
 
@@ -248,7 +251,7 @@ class SecurityPenetrationTests(unittest.TestCase):
 
         malicious_res = client.post(
             "/media/upload",
-            data={"receiver_id": u2},
+            data={"receiver_id": str(u2)},
             files=[("files", ("virus.exe", io.BytesIO(b"MZ..."), "application/x-msdownload"))],
             headers=headers_sender
         )
