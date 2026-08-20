@@ -61,31 +61,30 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (!mounted) return;
 
-     if (result != null) {
+      if (result != null && result.containsKey("access_token")) {
+        final prefs = await SharedPreferences.getInstance();
 
-  final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          "token",
+          result["access_token"],
+        );
 
-  await prefs.setString(
-    "token",
-    result["access_token"],
-  );
+        await prefs.setInt(
+          "user_id",
+          result["user_id"],
+        );
 
-  await prefs.setInt(
-    "user_id",
-    result["user_id"],
-  );
+        await prefs.setString(
+          "email",
+          result["email"],
+        );
 
-  await prefs.setString(
-    "email",
-    result["email"],
-  );
+        await prefs.setString(
+          "username",
+          result["username"],
+        );
 
-  await prefs.setString(
-    "username",
-    result["username"],
-  );
-
-  if (!mounted) return;
+        if (!mounted) return;
 
         final pairStatus = await ApiService.getPairStatus(
           result["user_id"],
@@ -118,9 +117,12 @@ class _LoginScreenState extends State<LoginScreen>
           );
         }
       } else {
+        final errMsg = (result != null && result.containsKey("error"))
+            ? result["error"].toString()
+            : "Hmm, those credentials don't match";
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text("Hmm, those credentials don't match"),
+            content: Text(errMsg),
             backgroundColor: const Color(0xFF2A1040),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(

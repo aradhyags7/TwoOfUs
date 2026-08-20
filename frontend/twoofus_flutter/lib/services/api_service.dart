@@ -48,11 +48,16 @@ class ApiService {
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
+      } else {
+        try {
+          final err = jsonDecode(response.body);
+          return {"error": err["detail"] ?? "Login failed (${response.statusCode})"};
+        } catch (_) {
+          return {"error": "Server error (${response.statusCode})"};
+        }
       }
-
-      return null;
     } catch (e) {
-      return null;
+      return {"error": "Cannot connect to server. Please check backend connection."};
     }
   }
 
@@ -79,11 +84,16 @@ class ApiService {
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
+      } else {
+        try {
+          final err = jsonDecode(response.body);
+          return {"error": err["detail"] ?? "Registration failed (${response.statusCode})"};
+        } catch (_) {
+          return {"error": "Server error (${response.statusCode})"};
+        }
       }
-
-      return null;
     } catch (e) {
-      return null;
+      return {"error": "Cannot connect to server. Please check backend connection."};
     }
   }
 

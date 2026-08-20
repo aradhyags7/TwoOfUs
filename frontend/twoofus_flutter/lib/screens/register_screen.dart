@@ -92,9 +92,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (!mounted) return;
 
-      if (result != null) {
+      if (result != null && result.containsKey("user_id")) {
         _showSnack("Your space is ready ❤️");
         Navigator.pop(context);
+      } else if (result != null && result.containsKey("error")) {
+        _showSnack(result["error"].toString(), isError: true);
       } else {
         _showSnack("Something went wrong — try again", isError: true);
       }
