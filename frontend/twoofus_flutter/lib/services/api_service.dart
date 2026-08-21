@@ -2,14 +2,68 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/session.dart';
 
 class ApiService {
+  static const String _serverPrefKey = "custom_server_base_url";
+  static String? _customBaseUrl;
+
+  /// Loads configured custom server address on app startup
+  static Future<void> initServerConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _customBaseUrl = prefs.getString(_serverPrefKey);
+    } catch (_) {}
+  }
+
+  /// Sets and persists custom backend base URL
+  static Future<void> setCustomBaseUrl(String? url) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (url == null || url.trim().isEmpty) {
+        _customBaseUrl = null;
+        await prefs.remove(_serverPrefKey);
+      } else {
+        String cleanUrl = url.trim();
+        if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+          cleanUrl = "http://$cleanUrl";
+        }
+        if (cleanUrl.endsWith("/")) {
+          cleanUrl = cleanUrl.substring(0, cleanUrl.length - 1);
+        }
+        _customBaseUrl = cleanUrl;
+        await prefs.setString(_serverPrefKey, cleanUrl);
+      }
+    } catch (_) {}
+  }
+
+  /// Live test connection to backend
+  static Future<bool> testConnection([String? testUrl]) async {
+    try {
+      String target = testUrl ?? baseUrl;
+      if (!target.startsWith("http://") && !target.startsWith("https://")) {
+        target = "http://$target";
+      }
+      if (target.endsWith("/")) {
+        target = target.substring(0, target.length - 1);
+      }
+      final res = await http.get(Uri.parse(target)).timeout(const Duration(seconds: 4));
+      return res.statusCode >= 200 && res.statusCode < 500;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static String get baseUrl {
+    if (_customBaseUrl != null && _customBaseUrl!.isNotEmpty) {
+      return _customBaseUrl!;
+    }
     if (kIsWeb) {
       return "http://localhost:8000";
     } else if (Platform.isAndroid) {
-      return "http://10.0.2.2:8000";
+      // Default to host machine LAN IP so physical APK connects seamlessly; fallback to 10.0.2.2 on emulator if custom set
+      return "http://10.57.63.218:8000";
     } else {
       return "http://127.0.0.1:8000";
     }

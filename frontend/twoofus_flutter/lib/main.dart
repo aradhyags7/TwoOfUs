@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/splash_screen.dart';
+import 'services/api_service.dart';
 import 'services/security_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
@@ -10,6 +11,7 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThemeController.init();
+  await ApiService.initServerConfig();
   runApp(const TwoOfUsApp());
 }
 
