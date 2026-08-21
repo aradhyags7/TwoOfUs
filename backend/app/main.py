@@ -754,10 +754,10 @@ def delete_message(
             detail="Message not found"
         )
 
-    if message.sender_id != auth_user_id:
+    if message.sender_id != auth_user_id and message.receiver_id != auth_user_id:
         raise HTTPException(
             status_code=403,
-            detail="Forbidden: Only the message sender can delete this message"
+            detail="Forbidden: You can only delete messages in your own conversation"
         )
 
     # Clean up physical storage files for all associated media
@@ -771,6 +771,40 @@ def delete_message(
 
     return {
         "message": "Deleted"
+    }
+
+
+@app.delete("/messages/conversation/{partner_id}")
+def clear_conversation_messages(
+    partner_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    pair = verify_pair_access(db, auth_user_id, partner_id)
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only clear messages with your paired partner")
+
+    messages = (
+        db.query(Message)
+        .filter(
+            ((Message.sender_id == auth_user_id) & (Message.receiver_id == partner_id)) |
+            ((Message.sender_id == partner_id) & (Message.receiver_id == auth_user_id))
+        )
+        .all()
+    )
+
+    for msg in messages:
+        attached_media = db.query(Media).filter(Media.message_id == msg.id).all()
+        for m in attached_media:
+            delete_physical_file(str(m.storage_path), str(m.thumbnail_path) if m.thumbnail_path else None)
+            db.delete(m)
+        db.delete(msg)
+
+    db.commit()
+    return {
+        "message": "Conversation cleared successfully",
+        "deleted_count": len(messages)
     }
 
 

@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../models/media.dart';
 import '../services/api_service.dart';
 import '../services/e2ee_service.dart';
+import '../services/security_service.dart';
 import '../utils/session.dart';
 
 class VideoPlayerDialog extends StatefulWidget {
@@ -35,6 +36,9 @@ class _VideoPlayerDialogState extends State<VideoPlayerDialog> {
   @override
   void initState() {
     super.initState();
+    if (widget.media?.isViewOnce == true) {
+      SecurityService.enableSecureScreen();
+    }
     _initVideoPlayer();
   }
 
@@ -100,9 +104,16 @@ class _VideoPlayerDialogState extends State<VideoPlayerDialog> {
 
   @override
   void dispose() {
+    if (widget.media?.isViewOnce == true) {
+      SecurityService.disableSecureScreen();
+    }
     _controller?.dispose();
     if (_localVideoFile != null && _localVideoFile!.existsSync()) {
       try {
+        final len = _localVideoFile!.lengthSync();
+        if (len > 0) {
+          _localVideoFile!.writeAsBytesSync(Uint8List(len)); // overwrite with zeros
+        }
         _localVideoFile!.deleteSync();
       } catch (_) {}
     }

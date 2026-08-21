@@ -258,6 +258,78 @@ class SecurityPenetrationTests(unittest.TestCase):
         self.assertIn("strictly prohibited", malicious_res.json()["detail"])
         print("  [PASS] Executable file upload blocked with HTTP 415")
 
+    def test_06_message_deletion_cleans_db_and_disk(self):
+        u1, t1 = self.create_test_user("del_u1@twoofus.app", "del_u1")
+        u2, t2 = self.create_test_user("del_u2@twoofus.app", "del_u2")
+        self.create_test_pair(u1, u2)
+
+        headers_u1 = {"Authorization": f"Bearer {t1}"}
+        headers_u2 = {"Authorization": f"Bearer {t2}"}
+
+        # Upload a photo attached to message
+        raw_ciphertext = b"TEST_PAYLOAD_FOR_MESSAGE_DELETION"
+        upload_res = client.post(
+            "/media/upload",
+            data={"receiver_id": str(u2), "is_encrypted": "true"},
+            files=[("files", ("test.jpg", io.BytesIO(raw_ciphertext), "image/jpeg"))],
+            headers=headers_u1
+        )
+        self.assertEqual(upload_res.status_code, 200)
+        media_id = upload_res.json()[0]["media_id"]
+
+        # Send message with media
+        send_res = client.post(
+            "/send-message",
+            json={"sender_id": u1, "receiver_id": u2, "content": "hi with attachment", "media_ids": [media_id]},
+            headers=headers_u1
+        )
+        self.assertEqual(send_res.status_code, 200)
+        msg_id = send_res.json()["message_id"]
+
+        # Verify exists in db and disk
+        db = TestingSessionLocal()
+        msg_rec = db.query(Message).filter(Message.id == msg_id).first()
+        media_rec = db.query(Media).filter(Media.id == media_id).first()
+        self.assertIsNotNone(msg_rec)
+        self.assertIsNotNone(media_rec)
+        storage_path = str(getattr(media_rec, "storage_path", ""))
+        self.assertTrue(os.path.exists(storage_path))
+        db.close()
+
+        # Receiver deletes message -> should succeed and delete from DB & disk
+        del_res = client.delete(f"/messages/{msg_id}", headers=headers_u2)
+        self.assertEqual(del_res.status_code, 200)
+
+        # Verify completely gone from DB and disk
+        db = TestingSessionLocal()
+        self.assertIsNone(db.query(Message).filter(Message.id == msg_id).first())
+        self.assertIsNone(db.query(Media).filter(Media.id == media_id).first())
+        self.assertFalse(os.path.exists(storage_path))
+        db.close()
+        print("  [PASS] Message deletion completely wipes message, media record, and physical disk file")
+
+    def test_07_clear_conversation_wipes_all(self):
+        u1, t1 = self.create_test_user("clear_u1@twoofus.app", "clear_u1")
+        u2, t2 = self.create_test_user("clear_u2@twoofus.app", "clear_u2")
+        self.create_test_pair(u1, u2)
+
+        headers_u1 = {"Authorization": f"Bearer {t1}"}
+
+        # Send 3 messages
+        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "msg 1"}, headers=headers_u1)
+        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "msg 2"}, headers=headers_u1)
+        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "msg 3"}, headers=headers_u1)
+
+        # Clear conversation
+        clear_res = client.delete(f"/messages/conversation/{u2}", headers=headers_u1)
+        self.assertEqual(clear_res.status_code, 200)
+        self.assertEqual(clear_res.json()["deleted_count"], 3)
+
+        # Verify 0 messages left
+        msg_res = client.get(f"/messages/{u1}/{u2}", headers=headers_u1)
+        self.assertEqual(len(msg_res.json()), 0)
+        print("  [PASS] Clear conversation completely purges all conversation history from DB")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

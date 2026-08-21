@@ -445,6 +445,17 @@ class _AuthenticatedImageState extends State<AuthenticatedImage> {
     }
   }
 
+  @override
+  void dispose() {
+    if (widget.media?.isViewOnce == true && _bytes != null) {
+      try {
+        _bytes!.fillRange(0, _bytes!.length, 0);
+      } catch (_) {}
+      _bytes = null;
+    }
+    super.dispose();
+  }
+
   Future<void> _loadImage() async {
     final effectiveToken = widget.token.isNotEmpty ? widget.token : (await Session.getToken() ?? '');
     var data = await ApiService.fetchAuthenticatedBytes(widget.url, effectiveToken);

@@ -1526,27 +1526,37 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               setState(() { _editingMsg = msg; _replyingTo = null; _msgCtrl.text = msg.content; });
               _msgCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _msgCtrl.text.length));
             }),
-          _sheetAction(ctx, Icons.delete_outline_rounded, 'Delete for me', () {
-            setState(() => _deletedIds.add(msg.id));
-          }, color: Colors.redAccent),
-          if (isMe)
-           _sheetAction(
-              ctx,
-              Icons.delete_forever_rounded,
-              'Delete for everyone',
-              () async {
-                final success =
-                    await ApiService.deleteMessage(
-                  msg.id,
-                );
-                if (success) {
-                  await _loadMessages();
-                  _toast(
-                    "Message deleted",
-                  );
-                }
-              },color: Colors.redAccent
-            ), 
+          _sheetAction(
+            ctx,
+            Icons.delete_outline_rounded,
+            'Delete for me',
+            () async {
+              setState(() {
+                _deletedIds.add(msg.id);
+                _messages.removeWhere((m) => m.id == msg.id);
+              });
+              await ApiService.deleteMessage(msg.id, token: _userToken);
+              _toast("Message deleted");
+            },
+            color: Colors.redAccent,
+          ),
+          _sheetAction(
+            ctx,
+            Icons.delete_forever_rounded,
+            'Delete for everyone',
+            () async {
+              setState(() {
+                _deletedIds.add(msg.id);
+                _messages.removeWhere((m) => m.id == msg.id);
+              });
+              final success = await ApiService.deleteMessage(msg.id, token: _userToken);
+              if (success) {
+                await _loadMessages();
+                _toast("Message deleted from database");
+              }
+            },
+            color: Colors.redAccent,
+          ),
         ],
       ),
     );

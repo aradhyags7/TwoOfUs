@@ -1192,7 +1192,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text("Clear Chat History?", style: TextStyle(color: _text)),
         content: Text(
-          "Are you sure you want to clear messages with ${widget.partnerName}?",
+          "Are you sure you want to permanently delete all messages and media with ${widget.partnerName} from the database?",
           style: TextStyle(color: _sub),
         ),
         actions: [
@@ -1201,9 +1201,25 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
             child: Text("Cancel", style: TextStyle(color: _sub)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              _toast("Chat history cleared 🧹");
+              final token = await Session.getToken();
+              final success = await ApiService.clearConversation(widget.partnerId, token: token);
+              if (success) {
+                _toast("Chat history cleared from database 🧹");
+                if (mounted) {
+                  setState(() {
+                    _galleryMedia.clear();
+                    _photos.clear();
+                    _videos.clear();
+                    _docs.clear();
+                    _sharedLinks.clear();
+                    _docMessages.clear();
+                  });
+                }
+              } else {
+                _toast("Failed to clear chat history", isError: true);
+              }
             },
             child: const Text("Clear", style: TextStyle(color: Colors.redAccent)),
           ),

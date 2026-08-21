@@ -432,6 +432,22 @@ class ApiService {
     }
   }
 
+  static Future<bool> clearConversation(
+    int partnerId, {
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token, json: false);
+      final response = await http.delete(
+        Uri.parse('$baseUrl/messages/conversation/$partnerId'),
+        headers: headers,
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
   static Future<bool> editMessage(
     int messageId,
     String newContent, {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/media.dart';
 import '../services/api_service.dart';
+import '../services/security_service.dart';
 import 'chat_media_bubble.dart';
 
 class FullScreenImageViewer extends StatefulWidget {
@@ -25,7 +26,18 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
   final TransformationController _transformationController = TransformationController();
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.media?.isViewOnce == true) {
+      SecurityService.enableSecureScreen();
+    }
+  }
+
+  @override
   void dispose() {
+    if (widget.media?.isViewOnce == true) {
+      SecurityService.disableSecureScreen();
+    }
     _transformationController.dispose();
     super.dispose();
   }

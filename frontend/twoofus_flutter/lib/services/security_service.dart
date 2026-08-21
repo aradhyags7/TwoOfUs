@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import '../main.dart';
@@ -305,6 +306,26 @@ class SecurityService {
           key: _autoLockKey,
         ) ??
         "immediately";
+  }
+
+  // =========================
+  // OS-LEVEL SCREEN PROTECTION (FLAG_SECURE)
+  // Blocks screenshots, screen recording, and task switcher preview
+  // =========================
+  static const MethodChannel _securityChannel = MethodChannel("com.twoofus/security");
+
+  /// Blocks screenshots and screen recordings at the OS level
+  static Future<void> enableSecureScreen() async {
+    try {
+      await _securityChannel.invokeMethod("enableSecureScreen");
+    } catch (_) {}
+  }
+
+  /// Restores normal screen capture permissions
+  static Future<void> disableSecureScreen() async {
+    try {
+      await _securityChannel.invokeMethod("disableSecureScreen");
+    } catch (_) {}
   }
 
   // =========================
