@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import shutil
 import string
@@ -24,7 +24,7 @@ from .models import ConnectionPin, Message, Pair, User, Media, DiaryMemory
 from .schemas.auth import ConnectByPin, UserCreate, UserLogin, PublicKeyUploadRequest
 from .schemas.message import EditMessageRequest, MessageCreate
 from .schemas.media import MediaResponse, MediaUploadResponse
-from .schemas.password import ChangePasswordRequest
+from .schemas.password import ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest
 from .schemas.profile import ProfileUpdate
 from .services.storage import (
     validate_file,
@@ -42,6 +42,8 @@ try:
         conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp TEXT;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TIMESTAMP;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_view_once BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_expired BOOLEAN DEFAULT FALSE;"))
@@ -261,6 +263,103 @@ def login(
         "user_id": existing_user.id,
         "email": existing_user.email,
         "username": existing_user.username
+    }
+
+
+# ==========================
+# Forgot Password Request
+# ==========================
+@app.post("/forgot-password")
+def forgot_password(
+    data: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    query_str = data.email_or_username.strip().lower()
+    user = (
+        db.query(User)
+        .filter(
+            (func.lower(User.email) == query_str) |
+            (func.lower(User.username) == query_str)
+        )
+        .first()
+    )
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found with this email or username"
+        )
+
+    # Generate 6-digit cryptographic reset code
+    code = ''.join(choices(string.digits, k=6))
+    user.reset_otp = code
+    user.reset_otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    db.commit()
+
+    return {
+        "message": "Reset code generated successfully",
+        "email": user.email,
+        "username": user.username,
+        "reset_code": code,
+        "expires_in_minutes": 15
+    }
+
+
+# ==========================
+# Reset Password with Code
+# ==========================
+@app.post("/reset-password")
+def reset_password(
+    data: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    query_str = data.email_or_username.strip().lower()
+    code_input = data.reset_code.strip()
+    new_pwd = data.new_password.strip()
+
+    if len(new_pwd) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be at least 6 characters long"
+        )
+
+    user = (
+        db.query(User)
+        .filter(
+            (func.lower(User.email) == query_str) |
+            (func.lower(User.username) == query_str)
+        )
+        .first()
+    )
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found with this email or username"
+        )
+
+    if not user.reset_otp or user.reset_otp != code_input:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid reset code. Please check and try again."
+        )
+
+    if user.reset_otp_expires_at:
+        expires_at = user.reset_otp_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(
+                status_code=400,
+                detail="Reset code has expired. Please request a new code."
+            )
+
+    # Update password and clear OTP
+    user.password_hash = hash_password(new_pwd)
+    user.reset_otp = None
+    user.reset_otp_expires_at = None
+    db.commit()
+
+    return {
+        "message": "Password reset successfully! You can now log in with your new password."
     }
 
 

@@ -1,5 +1,6 @@
+from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Integer
+from sqlalchemy import String, Integer, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
@@ -16,3 +17,5 @@ class User(Base):
     avatar_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     birthday: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     public_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    reset_otp: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    reset_otp_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

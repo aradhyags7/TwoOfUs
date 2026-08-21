@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 import 'home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_screen.dart';
@@ -306,7 +307,16 @@ class _LoginScreenState extends State<LoginScreen>
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {},
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ForgotPasswordScreen(
+                                initialEmailOrUsername: emailController.text.trim(),
+                              ),
+                            ),
+                          );
+                        },
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 4, vertical: 8),
@@ -314,8 +324,9 @@ class _LoginScreenState extends State<LoginScreen>
                         child: Text(
                           "Forgot password?",
                           style: TextStyle(
-                            color: _rose.withOpacity(0.7),
+                            color: _rose.withValues(alpha: 0.8),
                             fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),

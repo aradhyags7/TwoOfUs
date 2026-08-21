@@ -330,6 +330,49 @@ class SecurityPenetrationTests(unittest.TestCase):
         self.assertEqual(len(msg_res.json()), 0)
         print("  [PASS] Clear conversation completely purges all conversation history from DB")
 
+    def test_08_forgot_and_reset_password_lifecycle(self):
+        u1, t1 = self.create_test_user("forgot_u1@twoofus.app", "forgot_u1", "OldSecretPassword123!")
+
+        # 1. Non-existent account returns 404
+        bad_req = client.post("/forgot-password", json={"email_or_username": "non_existent@twoofus.app"})
+        self.assertEqual(bad_req.status_code, 404)
+
+        # 2. Request OTP with email
+        req_res = client.post("/forgot-password", json={"email_or_username": "forgot_u1@twoofus.app"})
+        self.assertEqual(req_res.status_code, 200)
+        reset_code = req_res.json()["reset_code"]
+        self.assertEqual(len(reset_code), 6)
+
+        # 3. Wrong reset code returns 400
+        bad_code_res = client.post(
+            "/reset-password",
+            json={"email_or_username": "forgot_u1", "reset_code": "000000", "new_password": "NewSecretPassword123!"}
+        )
+        self.assertEqual(bad_code_res.status_code, 400)
+
+        # 4. Short password returns 400
+        short_res = client.post(
+            "/reset-password",
+            json={"email_or_username": "forgot_u1", "reset_code": reset_code, "new_password": "123"}
+        )
+        self.assertEqual(short_res.status_code, 400)
+
+        # 5. Correct reset code and valid new password
+        success_res = client.post(
+            "/reset-password",
+            json={"email_or_username": "forgot_u1", "reset_code": reset_code, "new_password": "NewSecretPassword123!"}
+        )
+        self.assertEqual(success_res.status_code, 200)
+
+        # 6. Verify old password fails and new password succeeds on /login
+        old_login = client.post("/login", json={"email": "forgot_u1@twoofus.app", "password": "OldSecretPassword123!"})
+        self.assertEqual(old_login.status_code, 401)
+
+        new_login = client.post("/login", json={"email": "forgot_u1@twoofus.app", "password": "NewSecretPassword123!"})
+        self.assertEqual(new_login.status_code, 200)
+        self.assertIn("access_token", new_login.json())
+        print("  [PASS] Forgot & Reset Password lifecycle: OTP generation, validation, password replacement, and post-reset login verified")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

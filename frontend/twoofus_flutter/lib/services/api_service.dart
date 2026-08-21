@@ -98,6 +98,71 @@ class ApiService {
   }
 
   // =========================
+  // FORGOT & RESET PASSWORD
+  // =========================
+  static Future<Map<String, dynamic>?> requestPasswordReset(
+    String emailOrUsername,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/forgot-password'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email_or_username': emailOrUsername,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        try {
+          final err = jsonDecode(response.body);
+          return {"error": err["detail"] ?? "Request failed (${response.statusCode})"};
+        } catch (_) {
+          return {"error": "Server error (${response.statusCode})"};
+        }
+      }
+    } catch (e) {
+      return {"error": "Cannot connect to server. Please check backend connection."};
+    }
+  }
+
+  static Future<Map<String, dynamic>?> resetPassword({
+    required String emailOrUsername,
+    required String resetCode,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/reset-password'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email_or_username': emailOrUsername,
+          'reset_code': resetCode,
+          'new_password': newPassword,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        try {
+          final err = jsonDecode(response.body);
+          return {"error": err["detail"] ?? "Reset failed (${response.statusCode})"};
+        } catch (_) {
+          return {"error": "Server error (${response.statusCode})"};
+        }
+      }
+    } catch (e) {
+      return {"error": "Cannot connect to server. Please check backend connection."};
+    }
+  }
+
+  // =========================
   // GENERATE PIN
   // =========================
   static Future<Map<String, dynamic>?> generatePin(
