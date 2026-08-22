@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1007,7 +1008,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 partnerId: widget.partnerId,
                 partnerName: widget.partnerName,
                 callType: 'video',
-              );
+              ).then((_) => _loadMessages());
             },
           ),
           // 2. Voice call
@@ -1023,7 +1024,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 partnerId: widget.partnerId,
                 partnerName: widget.partnerName,
                 callType: 'voice',
-              );
+              ).then((_) => _loadMessages());
             },
           ),
           // 3. Search Button
@@ -1212,6 +1213,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _msgBubble(Message msg, bool isMe) {
+    if (msg.content.startsWith("CALL_LOG:")) {
+      return _buildCallLogBubble(msg, isMe);
+    }
     final reaction = _reactions[msg.id];
     return GestureDetector(
       onLongPress: () => _showMsgOptions(msg),
@@ -1329,6 +1333,170 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+
+  Widget _buildCallLogBubble(Message msg, bool isMe) {
+    Map<String, dynamic> data = {};
+    try {
+      final raw = msg.content.substring("CALL_LOG:".length);
+      data = jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {}
+
+    final callType = (data['call_type'] as String?) ?? 'voice';
+    final status = (data['status'] as String?) ?? 'ended';
+    final durationSecs = (data['duration_seconds'] as int?) ?? 0;
+    final isVideo = callType == 'video';
+
+    // Determine direction and status details
+    final bool isMissed = (status == 'missed' || status == 'rejected');
+    final bool isAnswered = status == 'ongoing' || status == 'ended';
+
+    String title;
+    String subtitle;
+    IconData iconData;
+    Color iconColor;
+    IconData directionIcon;
+
+    if (isMe) {
+      // Outgoing
+      if (isAnswered && durationSecs > 0) {
+        title = isVideo ? "Outgoing video call" : "Outgoing voice call";
+        subtitle = "${_fmtCallDuration(durationSecs)} • ${_fmtTime(msg.createdAt)}";
+        iconColor = Colors.cyanAccent;
+        directionIcon = Icons.call_made_rounded;
+      } else {
+        title = isVideo ? "Cancelled video call" : "Cancelled voice call";
+        subtitle = "Cancelled • ${_fmtTime(msg.createdAt)}";
+        iconColor = Colors.white60;
+        directionIcon = Icons.call_made_rounded;
+      }
+    } else {
+      // Incoming
+      if (isAnswered && durationSecs > 0) {
+        title = isVideo ? "Incoming video call" : "Incoming voice call";
+        subtitle = "${_fmtCallDuration(durationSecs)} • ${_fmtTime(msg.createdAt)}";
+        iconColor = Colors.greenAccent;
+        directionIcon = Icons.call_received_rounded;
+      } else {
+        title = isVideo ? "Missed video call" : "Missed voice call";
+        subtitle = "Missed • ${_fmtTime(msg.createdAt)}";
+        iconColor = Colors.redAccent;
+        directionIcon = Icons.call_missed_rounded;
+      }
+    }
+
+    iconData = isVideo ? Icons.videocam_rounded : Icons.call_rounded;
+
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: _surf.withOpacity(0.85),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isMissed && !isMe ? Colors.redAccent.withOpacity(0.3) : Colors.white.withOpacity(0.08),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon Badge with direction indicator
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(iconData, color: iconColor, size: 20),
+                  Positioned(
+                    bottom: 4,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: _surf,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(directionIcon, color: iconColor, size: 10),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+
+            // Call Details (Type, Duration, Time)
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isMissed && !isMe ? Colors.redAccent : _text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: _sub,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // Quick Call Back action button
+            IconButton(
+              icon: Icon(
+                isVideo ? Icons.videocam_rounded : Icons.call_rounded,
+                color: _rose,
+                size: 22,
+              ),
+              tooltip: "Call Back",
+              onPressed: () {
+                CallService.startCall(
+                  context: context,
+                  partnerId: widget.partnerId,
+                  partnerName: widget.partnerName,
+                  callType: isVideo ? 'video' : 'voice',
+                ).then((_) => _loadMessages());
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmtCallDuration(int seconds) {
+    if (seconds <= 0) return "0s";
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    if (m > 0) {
+      return "${m}m ${s}s";
+    }
+    return "${s}s";
   }
 
   // ── Context Bar (reply / edit indicator) ──────────────────────────────────

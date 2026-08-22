@@ -69,22 +69,34 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  bool _isExiting = false;
+
+  void _safeExit() {
+    if (_isExiting) return;
+    _isExiting = true;
+    _statusCheckTimer?.cancel();
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   void _startStatusChecker() {
     _statusCheckTimer?.cancel();
     _statusCheckTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (_isExiting || !mounted) return;
       final updated = await ApiService.getActiveCall(widget.session.callerId);
-      if (!mounted) return;
+      if (_isExiting || !mounted) return;
 
       if (updated == null) {
         // Call was ended remotely
         HapticFeedback.mediumImpact();
-        Navigator.pop(context);
+        _safeExit();
         return;
       }
 
       final newSession = CallSessionModel.fromJson(updated);
       if (newSession.id != _currentSession.id) {
-        Navigator.pop(context);
+        _safeExit();
         return;
       }
 
@@ -96,9 +108,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         if (newSession.status == 'ongoing') {
           CallService.startDurationTimer();
         } else if (newSession.status == 'ended' || newSession.status == 'rejected' || newSession.status == 'missed') {
-          _statusCheckTimer?.cancel();
           HapticFeedback.mediumImpact();
-          Navigator.pop(context);
+          _safeExit();
         }
       }
     });
@@ -121,17 +132,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _rejectCall() async {
+    if (_isExiting) return;
     HapticFeedback.mediumImpact();
     await ApiService.respondToCall(_currentSession.id, 'reject');
-    if (!mounted) return;
-    Navigator.pop(context);
+    _safeExit();
   }
 
   Future<void> _endCall() async {
+    if (_isExiting) return;
     HapticFeedback.heavyImpact();
     await CallService.endCall(_currentSession.id);
-    if (!mounted) return;
-    Navigator.pop(context);
+    _safeExit();
   }
 
   String _formatDuration(int totalSeconds) {
@@ -146,10 +157,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     final isOngoing = _currentSession.status == 'ongoing';
 
     return PopScope(
-      canPop: false,
+      canPop: true,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          _endCall();
+        if (didPop) {
+          _statusCheckTimer?.cancel();
+          CallService.endCall(_currentSession.id);
         }
       },
       child: Scaffold(

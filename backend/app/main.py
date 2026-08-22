@@ -1585,6 +1585,32 @@ async def initiate_call(
     return session
 
 
+def _create_call_log_message(db: Session, session: CallSession):
+    import json
+    try:
+        call_payload = {
+            "call_id": session.id,
+            "caller_id": session.caller_id,
+            "receiver_id": session.receiver_id,
+            "call_type": session.call_type,
+            "status": session.status,
+            "duration_seconds": session.duration_seconds,
+            "ended_at": session.ended_at.isoformat() if session.ended_at else datetime.now(timezone.utc).isoformat()
+        }
+        content_str = f"CALL_LOG:{json.dumps(call_payload)}"
+        msg = Message(
+            sender_id=session.caller_id,
+            receiver_id=session.receiver_id,
+            content=content_str,
+            is_encrypted=False,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(msg)
+        db.commit()
+    except Exception as e:
+        print("Error logging call message:", e)
+
+
 @app.post("/call/respond", response_model=CallSessionResponse)
 async def respond_to_call(
     data: CallRespondRequest,
@@ -1620,6 +1646,9 @@ async def respond_to_call(
         session.ended_at = now
         db.commit()
         db.refresh(session)
+
+        # Create call log message in chat history
+        _create_call_log_message(db, session)
 
         # Notify caller that call was rejected
         await call_manager.send_to_user(
@@ -1666,6 +1695,9 @@ async def end_call(
 
         db.commit()
         db.refresh(session)
+
+        # Create call log message in chat history
+        _create_call_log_message(db, session)
 
     # Notify other participant
     other_party_id = session.receiver_id if user_id == session.caller_id else session.caller_id
