@@ -144,8 +144,18 @@ class CallSignalingTests(unittest.TestCase):
         active_res = client.get(f"/call/active/{u1}", headers=h1)
         self.assertEqual(active_res.status_code, 200)
         self.assertIsNone(active_res.json())
-        print("  [PASS] Video call rejection lifecycle verified")
+
+        # 4. Check conversation messages contains CALL_LOG
+        msg_res = client.get(f"/messages/{u1}/{u2}", headers=h1)
+        self.assertEqual(msg_res.status_code, 200)
+        msgs = msg_res.json()
+        call_logs = [m for m in msgs if m["content"].startswith("CALL_LOG:")]
+        self.assertTrue(len(call_logs) >= 1)
+        self.assertIn('"status": "rejected"', call_logs[0]["content"])
+        self.assertIn('"call_type": "video"', call_logs[0]["content"])
+        print("  [PASS] Video call rejection lifecycle & chat log verified")
 
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

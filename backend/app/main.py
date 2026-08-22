@@ -782,6 +782,29 @@ def get_messages(
     if not pair:
         raise HTTPException(status_code=403, detail="Forbidden: Conversation access restricted to paired partners")
 
+    # Auto-sync any call sessions that ended but don't have a chat log yet
+    past_calls = (
+        db.query(CallSession)
+        .filter(
+            ((CallSession.caller_id == user1) & (CallSession.receiver_id == user2)) |
+            ((CallSession.caller_id == user2) & (CallSession.receiver_id == user1))
+        )
+        .filter(CallSession.status.in_(["ended", "rejected", "missed"]))
+        .all()
+    )
+    for pc in past_calls:
+        existing_log = (
+            db.query(Message)
+            .filter(
+                ((Message.sender_id == pc.caller_id) & (Message.receiver_id == pc.receiver_id)) |
+                ((Message.sender_id == pc.receiver_id) & (Message.receiver_id == pc.caller_id))
+            )
+            .filter(Message.content.like(f'CALL_LOG:%"call_id": {pc.id}%'))
+            .first()
+        )
+        if not existing_log:
+            _create_call_log_message(db, pc)
+
     messages = (
         db.query(Message)
         .filter(
