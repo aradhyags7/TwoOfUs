@@ -1588,19 +1588,26 @@ async def initiate_call(
 def _create_call_log_message(db: Session, session: CallSession):
     import json
     try:
+        caller_id = int(getattr(session, "caller_id"))
+        receiver_id = int(getattr(session, "receiver_id"))
+        call_id = int(getattr(session, "id"))
+        call_type = str(getattr(session, "call_type"))
+        status = str(getattr(session, "status"))
+        duration_seconds = int(getattr(session, "duration_seconds", 0))
+
         call_payload = {
-            "call_id": session.id,
-            "caller_id": session.caller_id,
-            "receiver_id": session.receiver_id,
-            "call_type": session.call_type,
-            "status": session.status,
-            "duration_seconds": session.duration_seconds,
+            "call_id": call_id,
+            "caller_id": caller_id,
+            "receiver_id": receiver_id,
+            "call_type": call_type,
+            "status": status,
+            "duration_seconds": duration_seconds,
             "ended_at": session.ended_at.isoformat() if session.ended_at else datetime.now(timezone.utc).isoformat()
         }
         content_str = f"CALL_LOG:{json.dumps(call_payload)}"
         msg = Message(
-            sender_id=session.caller_id,
-            receiver_id=session.receiver_id,
+            sender_id=caller_id,
+            receiver_id=receiver_id,
             content=content_str,
             is_encrypted=False,
             created_at=datetime.now(timezone.utc)
@@ -1622,19 +1629,21 @@ async def respond_to_call(
     if not session:
         raise HTTPException(status_code=404, detail="Call session not found")
 
-    if session.receiver_id != user_id and session.caller_id != user_id:
+    caller_id = int(getattr(session, "caller_id"))
+    receiver_id = int(getattr(session, "receiver_id"))
+    if receiver_id != user_id and caller_id != user_id:
         raise HTTPException(status_code=403, detail="Forbidden: Not a participant in this call")
 
     now = datetime.now(timezone.utc)
     if data.action == "accept":
-        session.status = "ongoing"
+        setattr(session, "status", "ongoing")
         session.started_at = now
         db.commit()
         db.refresh(session)
 
         # Notify caller that call was accepted
         await call_manager.send_to_user(
-            session.caller_id,
+            caller_id,
             {
                 "type": "call_accepted",
                 "call_id": session.id,
@@ -1642,7 +1651,7 @@ async def respond_to_call(
             }
         )
     elif data.action == "reject":
-        session.status = "rejected"
+        setattr(session, "status", "rejected")
         session.ended_at = now
         db.commit()
         db.refresh(session)
@@ -1652,7 +1661,7 @@ async def respond_to_call(
 
         # Notify caller that call was rejected
         await call_manager.send_to_user(
-            session.caller_id,
+            caller_id,
             {
                 "type": "call_rejected",
                 "call_id": session.id,
@@ -1675,15 +1684,18 @@ async def end_call(
     if not session:
         raise HTTPException(status_code=404, detail="Call session not found")
 
-    if session.caller_id != user_id and session.receiver_id != user_id:
+    caller_id = int(getattr(session, "caller_id"))
+    receiver_id = int(getattr(session, "receiver_id"))
+    if caller_id != user_id and receiver_id != user_id:
         raise HTTPException(status_code=403, detail="Forbidden: Not a participant in this call")
 
     now = datetime.now(timezone.utc)
-    if session.status != "ended":
-        if session.status == "ringing":
-            session.status = "missed" if user_id == session.caller_id else "rejected"
+    current_status = str(getattr(session, "status", ""))
+    if current_status != "ended":
+        if current_status == "ringing":
+            setattr(session, "status", "missed" if user_id == caller_id else "rejected")
         else:
-            session.status = "ended"
+            setattr(session, "status", "ended")
 
         session.ended_at = now
         if session.started_at:
@@ -1700,14 +1712,14 @@ async def end_call(
         _create_call_log_message(db, session)
 
     # Notify other participant
-    other_party_id = session.receiver_id if user_id == session.caller_id else session.caller_id
+    other_party_id = receiver_id if user_id == caller_id else caller_id
     await call_manager.send_to_user(
         other_party_id,
         {
             "type": "call_ended",
             "call_id": session.id,
             "duration_seconds": session.duration_seconds,
-            "status": session.status,
+            "status": str(getattr(session, "status", "ended")),
         }
     )
 
