@@ -14,16 +14,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-try:
-    from backend.app.main import app, get_db
-    from backend.app.core.database import Base
-    from backend.app.core.security import hash_password, create_access_token
-    from backend.app.models import User, Pair, CallSession, Message
-except ImportError:
-    from app.main import app, get_db
-    from app.core.database import Base
-    from app.core.security import hash_password, create_access_token
-    from app.models import User, Pair, CallSession, Message
+from backend.app.main import app, get_db
+from backend.app.core.database import Base
+from backend.app.core.security import hash_password, create_access_token
+from backend.app.models import User, Pair, CallSession, Message
 
 TEST_DATABASE_URL = "sqlite:///./test_call_signaling.db"
 engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
@@ -64,9 +58,9 @@ class CallSignalingTests(unittest.TestCase):
         db.add(user)
         db.commit()
         db.refresh(user)
-        user_id = user.id
+        user_id = int(getattr(user, "id"))
         db.close()
-        token = create_access_token(data={"sub": str(user_id), "email": email})
+        token = str(create_access_token(data={"sub": str(user_id), "email": email}))
         return user_id, token
 
     def create_test_pair(self, user1_id: int, user2_id: int):
