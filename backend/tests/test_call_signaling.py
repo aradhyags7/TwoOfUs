@@ -3,16 +3,27 @@ import sys
 import unittest
 from datetime import datetime, timezone
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+root_dir = os.path.dirname(backend_dir)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.main import app, get_db
-from app.core.database import Base
-from app.core.security import hash_password, create_access_token
-from app.models import User, Pair, CallSession
+try:
+    from backend.app.main import app, get_db
+    from backend.app.core.database import Base
+    from backend.app.core.security import hash_password, create_access_token
+    from backend.app.models import User, Pair, CallSession, Message
+except ImportError:
+    from app.main import app, get_db
+    from app.core.database import Base
+    from app.core.security import hash_password, create_access_token
+    from app.models import User, Pair, CallSession, Message
 
 TEST_DATABASE_URL = "sqlite:///./test_call_signaling.db"
 engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
