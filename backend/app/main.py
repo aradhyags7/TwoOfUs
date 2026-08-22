@@ -4,8 +4,8 @@ import shutil
 import string
 from random import choices
 
-from typing import List, Optional
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from typing import List, Optional, Dict, Any
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -20,8 +20,15 @@ from .core.security import (
     hash_password,
     verify_password,
 )
-from .models import ConnectionPin, Message, Pair, User, Media, DiaryMemory
+from .models import ConnectionPin, Message, Pair, User, Media, DiaryMemory, CallSession
 from .schemas.auth import ConnectByPin, UserCreate, UserLogin, PublicKeyUploadRequest
+from .schemas.call import (
+    CallInitiateRequest,
+    CallRespondRequest,
+    CallEndRequest,
+    CallSignalRequest,
+    CallSessionResponse,
+)
 from .schemas.message import EditMessageRequest, MessageCreate
 from .schemas.media import MediaResponse, MediaUploadResponse
 from .schemas.password import ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest
@@ -1457,3 +1464,289 @@ def delete_memory_entry(
     db.commit()
 
     return {"message": "Memory deleted successfully", "id": memory_id}
+
+
+# ============================================================================
+# VOICE & VIDEO CALL SIGNALING SUBSYSTEM
+# ============================================================================
+
+class CallConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[int, List[WebSocket]] = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        if user_id not in self.active_connections:
+            self.active_connections[user_id] = []
+        self.active_connections[user_id].append(websocket)
+
+    def disconnect(self, user_id: int, websocket: WebSocket):
+        if user_id in self.active_connections:
+            if websocket in self.active_connections[user_id]:
+                self.active_connections[user_id].remove(websocket)
+            if not self.active_connections[user_id]:
+                del self.active_connections[user_id]
+
+    async def send_to_user(self, user_id: int, message: dict):
+        if user_id in self.active_connections:
+            dead_sockets = []
+            for ws in self.active_connections[user_id]:
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    dead_sockets.append(ws)
+            for ws in dead_sockets:
+                self.disconnect(user_id, ws)
+
+call_manager = CallConnectionManager()
+
+
+@app.websocket("/ws/call/{user_id}")
+async def call_websocket_endpoint(websocket: WebSocket, user_id: int):
+    await call_manager.connect(user_id, websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+            target_user_id = data.get("target_user_id")
+
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong"})
+            elif target_user_id:
+                # Forward WebRTC signaling (offer/answer/ice/status) to target partner
+                await call_manager.send_to_user(int(target_user_id), data)
+    except WebSocketDisconnect:
+        call_manager.disconnect(user_id, websocket)
+    except Exception:
+        call_manager.disconnect(user_id, websocket)
+
+
+@app.post("/call/initiate", response_model=CallSessionResponse)
+async def initiate_call(
+    data: CallInitiateRequest,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    caller_id = int(current_user_payload.get("sub"))
+    receiver_id = data.receiver_id
+
+    # Verify pairing
+    pair = (
+        db.query(Pair)
+        .filter(
+            ((Pair.user1_id == caller_id) & (Pair.user2_id == receiver_id)) |
+            ((Pair.user1_id == receiver_id) & (Pair.user2_id == caller_id))
+        )
+        .first()
+    )
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only call your paired partner")
+
+    # Cancel any previous hanging ringing calls
+    prev_calls = (
+        db.query(CallSession)
+        .filter(
+            (CallSession.status == "ringing") &
+            (((CallSession.caller_id == caller_id) & (CallSession.receiver_id == receiver_id)) |
+             ((CallSession.caller_id == receiver_id) & (CallSession.receiver_id == caller_id)))
+        )
+        .all()
+    )
+    for c in prev_calls:
+        c.status = "missed"
+        c.ended_at = datetime.now(timezone.utc)
+
+    session = CallSession(
+        caller_id=caller_id,
+        receiver_id=receiver_id,
+        call_type=data.call_type,
+        status="ringing",
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    # Dispatch real-time WebSocket incoming call notification
+    caller_user = db.query(User).filter(User.id == caller_id).first()
+    caller_name = caller_user.username if caller_user else "Partner"
+
+    await call_manager.send_to_user(
+        receiver_id,
+        {
+            "type": "incoming_call",
+            "call_id": session.id,
+            "caller_id": caller_id,
+            "caller_name": caller_name,
+            "call_type": session.call_type,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+        }
+    )
+
+    return session
+
+
+@app.post("/call/respond", response_model=CallSessionResponse)
+async def respond_to_call(
+    data: CallRespondRequest,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    session = db.query(CallSession).filter(CallSession.id == data.call_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Call session not found")
+
+    if session.receiver_id != user_id and session.caller_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Not a participant in this call")
+
+    now = datetime.now(timezone.utc)
+    if data.action == "accept":
+        session.status = "ongoing"
+        session.started_at = now
+        db.commit()
+        db.refresh(session)
+
+        # Notify caller that call was accepted
+        await call_manager.send_to_user(
+            session.caller_id,
+            {
+                "type": "call_accepted",
+                "call_id": session.id,
+                "started_at": session.started_at.isoformat() if session.started_at else None,
+            }
+        )
+    elif data.action == "reject":
+        session.status = "rejected"
+        session.ended_at = now
+        db.commit()
+        db.refresh(session)
+
+        # Notify caller that call was rejected
+        await call_manager.send_to_user(
+            session.caller_id,
+            {
+                "type": "call_rejected",
+                "call_id": session.id,
+            }
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action. Must be 'accept' or 'reject'")
+
+    return session
+
+
+@app.post("/call/end", response_model=CallSessionResponse)
+async def end_call(
+    data: CallEndRequest,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    session = db.query(CallSession).filter(CallSession.id == data.call_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Call session not found")
+
+    if session.caller_id != user_id and session.receiver_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Not a participant in this call")
+
+    now = datetime.now(timezone.utc)
+    if session.status != "ended":
+        if session.status == "ringing":
+            session.status = "missed" if user_id == session.caller_id else "rejected"
+        else:
+            session.status = "ended"
+
+        session.ended_at = now
+        if session.started_at:
+            started = session.started_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            duration = int((now - started).total_seconds())
+            session.duration_seconds = max(0, duration)
+
+        db.commit()
+        db.refresh(session)
+
+    # Notify other participant
+    other_party_id = session.receiver_id if user_id == session.caller_id else session.caller_id
+    await call_manager.send_to_user(
+        other_party_id,
+        {
+            "type": "call_ended",
+            "call_id": session.id,
+            "duration_seconds": session.duration_seconds,
+            "status": session.status,
+        }
+    )
+
+    return session
+
+
+@app.post("/call/signal")
+async def send_call_signal(
+    data: CallSignalRequest,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    session = db.query(CallSession).filter(CallSession.id == data.call_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Call session not found")
+
+    if session.caller_id != user_id and session.receiver_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Not a participant in this call")
+
+    await call_manager.send_to_user(
+        data.target_user_id,
+        {
+            "type": data.signal_type,
+            "call_id": data.call_id,
+            "sender_id": user_id,
+            "payload": data.payload,
+        }
+    )
+
+    return {"status": "signal_dispatched"}
+
+
+@app.get("/call/active/{user_id}", response_model=Optional[CallSessionResponse])
+def get_active_call_for_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    active_session = (
+        db.query(CallSession)
+        .filter(
+            (CallSession.status.in_(["ringing", "ongoing"])) &
+            ((CallSession.caller_id == user_id) | (CallSession.receiver_id == user_id))
+        )
+        .order_by(CallSession.id.desc())
+        .first()
+    )
+
+    return active_session
+
+
+@app.get("/call/history/{partner_id}", response_model=List[CallSessionResponse])
+def get_call_history(
+    partner_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    history = (
+        db.query(CallSession)
+        .filter(
+            ((CallSession.caller_id == user_id) & (CallSession.receiver_id == partner_id)) |
+            ((CallSession.caller_id == partner_id) & (CallSession.receiver_id == user_id))
+        )
+        .order_by(CallSession.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return history

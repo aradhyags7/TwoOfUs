@@ -10,6 +10,7 @@ import '../widgets/chat_media_bubble.dart';
 import '../widgets/encryption_verification_modal.dart';
 import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/video_player_dialog.dart';
+import '../services/call_service.dart';
 import 'media_gallery_screen.dart';
 import 'theme_selection_screen.dart';
 
@@ -406,12 +407,26 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                         _actionBtn(
                           icon: Icons.call_rounded,
                           label: "Audio",
-                          onTap: () => _toast("Calling $username... 📞"),
+                          onTap: () {
+                            CallService.startCall(
+                              context: context,
+                              partnerId: widget.partnerId,
+                              partnerName: username,
+                              callType: 'voice',
+                            );
+                          },
                         ),
                         _actionBtn(
                           icon: Icons.videocam_rounded,
                           label: "Video",
-                          onTap: () => _toast("Starting video call... 📹"),
+                          onTap: () {
+                            CallService.startCall(
+                              context: context,
+                              partnerId: widget.partnerId,
+                              partnerName: username,
+                              callType: 'video',
+                            );
+                          },
                         ),
                         _actionBtn(
                           icon: Icons.photo_library_rounded,

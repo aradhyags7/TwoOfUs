@@ -24,6 +24,7 @@ import '../widgets/chat_media_bubble.dart';
 import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/media_composer_modal.dart';
 import '../widgets/encryption_verification_modal.dart';
+import '../services/call_service.dart';
 import 'media_gallery_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1000,7 +1001,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               blendMode: BlendMode.srcIn,
               child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 24),
             ),
-            onPressed: () => _toast('Starting video call… 📹'),
+            onPressed: () {
+              CallService.startCall(
+                context: context,
+                partnerId: widget.partnerId,
+                partnerName: widget.partnerName,
+                callType: 'video',
+              );
+            },
           ),
           // 2. Voice call
           IconButton(
@@ -1009,7 +1017,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               blendMode: BlendMode.srcIn,
               child: const Icon(Icons.call_rounded, color: Colors.white, size: 22),
             ),
-            onPressed: () => _toast('Calling ${widget.partnerName}… 📞'),
+            onPressed: () {
+              CallService.startCall(
+                context: context,
+                partnerId: widget.partnerId,
+                partnerName: widget.partnerName,
+                callType: 'voice',
+              );
+            },
           ),
           // 3. Search Button
           IconButton(

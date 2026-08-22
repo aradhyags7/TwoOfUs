@@ -772,4 +772,115 @@ class ApiService {
       return false;
     }
   }
+
+  // =========================
+  // VOICE & VIDEO CALLING
+  // =========================
+  static Future<Map<String, dynamic>?> initiateCall(
+    int receiverId, {
+    String callType = 'voice',
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.post(
+        Uri.parse('$baseUrl/call/initiate'),
+        headers: headers,
+        body: jsonEncode({
+          'receiver_id': receiverId,
+          'call_type': callType,
+        }),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> respondToCall(
+    int callId,
+    String action, {
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.post(
+        Uri.parse('$baseUrl/call/respond'),
+        headers: headers,
+        body: jsonEncode({
+          'call_id': callId,
+          'action': action,
+        }),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> endCall(
+    int callId, {
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.post(
+        Uri.parse('$baseUrl/call/end'),
+        headers: headers,
+        body: jsonEncode({
+          'call_id': callId,
+        }),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getActiveCall(
+    int userId, {
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.get(
+        Uri.parse('$baseUrl/call/active/$userId'),
+        headers: headers,
+      );
+      if (response.statusCode == 200 && response.body.isNotEmpty && response.body != 'null') {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<dynamic>> getCallHistory(
+    int partnerId, {
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.get(
+        Uri.parse('$baseUrl/call/history/$partnerId'),
+        headers: headers,
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
 }

@@ -4,3 +4,4 @@ from .connection_pin import ConnectionPin
 from .message import Message
 from .media import Media
 from .memory import DiaryMemory
+from .call import CallSession
