@@ -1,4 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/e2ee_service.dart';
+import '../services/call_service.dart';
 
 class Session {
   static Future<int?> getUserId() async {
@@ -22,6 +24,8 @@ class Session {
   }
 
   static Future<void> logout() async {
+    CallService.stopIncomingCallWatcher();
+    E2EEService.clearSessionCaches();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove("user_id");
     await prefs.remove("token");

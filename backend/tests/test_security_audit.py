@@ -373,6 +373,48 @@ class SecurityPenetrationTests(unittest.TestCase):
         self.assertIn("access_token", new_login.json())
         print("  [PASS] Forgot & Reset Password lifecycle: OTP generation, validation, password replacement, and post-reset login verified")
 
+    def test_09_user_enumeration_and_pair_privacy_restriction(self):
+        u1, t1 = self.create_test_user("enum_u1@test.com", "enum_u1")
+        u2, t2 = self.create_test_user("enum_u2@test.com", "enum_u2")
+        stranger, str_token = self.create_test_user("stranger@test.com", "stranger")
+
+        self.create_test_pair(u1, u2)
+
+        h1 = {"Authorization": f"Bearer {t1}"}
+        h_stranger = {"Authorization": f"Bearer {str_token}"}
+
+        # 1. GET /users as u1 should ONLY return u1 and u2, NOT stranger
+        users_res = client.get("/users", headers=h1)
+        self.assertEqual(users_res.status_code, 200)
+        user_ids = [u["id"] for u in users_res.json()]
+        self.assertIn(u1, user_ids)
+        self.assertIn(u2, user_ids)
+        self.assertNotIn(stranger, user_ids)
+
+        # 2. GET /pairs as stranger should return empty list
+        pairs_res = client.get("/pairs", headers=h_stranger)
+        self.assertEqual(pairs_res.status_code, 200)
+        self.assertEqual(len(pairs_res.json()), 0)
+        print("  [PASS] Privacy restriction: User enumeration and cross-pair inspection completely blocked")
+
+    def test_10_unpaired_media_upload_rejected(self):
+        u1, t1 = self.create_test_user("unpaired_u1@test.com", "unpaired_u1")
+        u2, t2 = self.create_test_user("unpaired_u2@test.com", "unpaired_u2")
+        # Do NOT pair them
+
+        h1 = {"Authorization": f"Bearer {t1}"}
+        fake_image = io.BytesIO(b"\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xFF\xDB\x00C\x00" + b"\x00" * 200 + b"\xFF\xD9")
+
+        res = client.post(
+            "/media/upload",
+            data={"receiver_id": u2},
+            files={"files": ("test.jpg", fake_image, "image/jpeg")},
+            headers=h1
+        )
+        self.assertEqual(res.status_code, 403)
+        print("  [PASS] Unpaired media upload rejected with HTTP 403 Forbidden")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

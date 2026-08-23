@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from .core.config import settings
 from .core.database import Base, SessionLocal, engine
 from .core.security import (
     create_access_token,
@@ -493,7 +494,17 @@ def get_users(
     db: Session = Depends(get_db),
     current_user_payload = Depends(get_current_user)
 ):
-    users = db.query(User).all()
+    auth_user_id = int(current_user_payload.get("sub"))
+    # Privacy restriction: Users can only see themselves and their connected partner
+    pair = db.query(Pair).filter(
+        (Pair.user1_id == auth_user_id) | (Pair.user2_id == auth_user_id)
+    ).first()
+    allowed_ids = {auth_user_id}
+    if pair:
+        allowed_ids.add(pair.user1_id)
+        allowed_ids.add(pair.user2_id)
+
+    users = db.query(User).filter(User.id.in_(allowed_ids)).all()
 
     return [
         {
@@ -510,7 +521,10 @@ def get_pairs(
     db: Session = Depends(get_db),
     current_user_payload = Depends(get_current_user)
 ):
-    pairs = db.query(Pair).all()
+    auth_user_id = int(current_user_payload.get("sub"))
+    pairs = db.query(Pair).filter(
+        (Pair.user1_id == auth_user_id) | (Pair.user2_id == auth_user_id)
+    ).all()
 
     return [
         {
@@ -611,7 +625,9 @@ async def upload_media(
         raise HTTPException(status_code=404, detail="Receiver user not found")
 
     pair = verify_pair_access(db, sender_id, receiver_id)
-    pair_id = pair.id if pair else None
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only upload and share media with your paired partner")
+    pair_id = pair.id
 
     is_enc_bool = is_encrypted.lower() in ("true", "1") if is_encrypted is not None else False
     is_vo_bool = is_view_once.lower() in ("true", "1") if is_view_once is not None else False
@@ -1428,6 +1444,12 @@ def create_memory_entry(
         ext = os.path.splitext(filename)[1].lower()
         if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
             raise HTTPException(status_code=415, detail="Only JPG, PNG, and WebP images are supported for diary memories")
+
+        photo.file.seek(0, os.SEEK_END)
+        photo_size = photo.file.tell()
+        photo.file.seek(0)
+        if photo_size > settings.MAX_IMAGE_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail=f"Image size exceeds maximum allowed limit of {settings.MAX_IMAGE_SIZE_BYTES // (1024*1024)}MB")
 
         os.makedirs("uploads/memories", exist_ok=True)
         unique_name = f"{user_id}_{int(datetime.now(timezone.utc).timestamp())}_{''.join(choices(string.ascii_lowercase + string.digits, k=6))}{ext}"

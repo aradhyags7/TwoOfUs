@@ -4,6 +4,7 @@ import '../models/call_session.dart';
 import '../utils/session.dart';
 import 'api_service.dart';
 import '../screens/call_screen.dart';
+import '../main.dart';
 
 class CallService {
   CallService._();
@@ -21,13 +22,16 @@ class CallService {
   static bool _isPolling = false;
 
   /// Start background polling for incoming calls if WebSocket is idle
-  static void startIncomingCallWatcher(BuildContext context) {
+  static void startIncomingCallWatcher([BuildContext? context]) {
     if (_isPolling) return;
     _isPolling = true;
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       final myId = await Session.getUserId();
-      if (myId == null) return;
+      if (myId == null) {
+        stopIncomingCallWatcher();
+        return;
+      }
 
       // Don't poll if already in active call
       if (activeCallNotifier.value != null) return;
@@ -38,10 +42,10 @@ class CallService {
         if (session.status == 'ringing' && session.receiverId == myId) {
           if (activeCallNotifier.value?.id != session.id) {
             activeCallNotifier.value = session;
-            // Trigger call screen in incoming mode
-            if (context.mounted) {
+            final navContext = navigatorKey.currentContext ?? context;
+            if (navContext != null && navContext.mounted) {
               Navigator.push(
-                context,
+                navContext,
                 MaterialPageRoute(
                   builder: (_) => CallScreen(
                     session: session,
@@ -60,6 +64,7 @@ class CallService {
 
   static void stopIncomingCallWatcher() {
     _pollingTimer?.cancel();
+    _pollingTimer = null;
     _isPolling = false;
   }
 

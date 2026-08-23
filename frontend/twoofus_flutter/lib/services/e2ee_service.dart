@@ -307,4 +307,11 @@ class E2EEService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('e2ee_verified_$partnerId', verified);
   }
+
+  // ── Session Cache Invalidation ──────────────────────────────────────────
+  static void clearSessionCaches() {
+    _partnerPubKeyCache.clear();
+    _myKeyPair = null;
+    _myPublicKeyHex = null;
+  }
 }

@@ -81,6 +81,8 @@ class ApiService {
     return headers;
   }
 
+  static const Duration defaultTimeout = Duration(seconds: 15);
+
   // =========================
   // LOGIN
   // =========================
@@ -98,7 +100,7 @@ class ApiService {
           'email': email,
           'password': password,
         }),
-      );
+      ).timeout(defaultTimeout);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -134,7 +136,7 @@ class ApiService {
           'username': username,
           'password': password,
         }),
-      );
+      ).timeout(defaultTimeout);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -166,7 +168,7 @@ class ApiService {
         body: jsonEncode({
           'email_or_username': emailOrUsername,
         }),
-      );
+      ).timeout(defaultTimeout);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -199,7 +201,7 @@ class ApiService {
           'reset_code': resetCode,
           'new_password': newPassword,
         }),
-      );
+      ).timeout(defaultTimeout);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
