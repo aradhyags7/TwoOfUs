@@ -407,7 +407,7 @@ class SecurityPenetrationTests(unittest.TestCase):
 
         res = client.post(
             "/media/upload",
-            data={"receiver_id": u2},
+            data={"receiver_id": str(u2)},
             files={"files": ("test.jpg", fake_image, "image/jpeg")},
             headers=h1
         )
