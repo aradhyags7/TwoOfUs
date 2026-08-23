@@ -501,8 +501,8 @@ def get_users(
     ).first()
     allowed_ids = {auth_user_id}
     if pair:
-        allowed_ids.add(pair.user1_id)
-        allowed_ids.add(pair.user2_id)
+        allowed_ids.add(int(getattr(pair, "user1_id")))
+        allowed_ids.add(int(getattr(pair, "user2_id")))
 
     users = db.query(User).filter(User.id.in_(allowed_ids)).all()
 
