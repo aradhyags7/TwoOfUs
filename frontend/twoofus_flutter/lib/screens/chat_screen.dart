@@ -1388,100 +1388,245 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     iconData = isVideo ? Icons.videocam_rounded : Icons.call_rounded;
 
     return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: _surf.withOpacity(0.85),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isMissed && !isMe ? Colors.redAccent.withOpacity(0.3) : Colors.white.withOpacity(0.08),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+      child: GestureDetector(
+        onLongPress: () => _showCallLogOptions(msg, isMe, title, subtitle, isVideo),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: _surf.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isMissed && !isMe ? Colors.redAccent.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.08),
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon Badge with direction indicator
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(iconData, color: iconColor, size: 20),
+                    Positioned(
+                      bottom: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: _surf,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(directionIcon, color: iconColor, size: 10),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Call Details (Type, Duration, Time)
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: isMissed && !isMe ? Colors.redAccent : _text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: _sub,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // Quick Call Back action button
+              IconButton(
+                icon: Icon(
+                  isVideo ? Icons.videocam_rounded : Icons.call_rounded,
+                  color: _rose,
+                  size: 22,
+                ),
+                tooltip: "Call Back",
+                onPressed: () {
+                  CallService.startCall(
+                    context: context,
+                    partnerId: widget.partnerId,
+                    partnerName: widget.partnerName,
+                    callType: isVideo ? 'video' : 'voice',
+                  ).then((_) => _loadMessages());
+                },
+              ),
+
+              // Call Options / Delete menu
+              IconButton(
+                icon: Icon(
+                  Icons.more_vert_rounded,
+                  color: _sub,
+                  size: 18,
+                ),
+                tooltip: "Call Options",
+                onPressed: () => _showCallLogOptions(msg, isMe, title, subtitle, isVideo),
+              ),
+            ],
+          ),
         ),
-        child: Row(
+      ),
+    );
+  }
+
+  void _showCallLogOptions(
+    Message msg,
+    bool isMe,
+    String title,
+    String subtitle,
+    bool isVideo,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _surf,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon Badge with direction indicator
+            // Handle bar
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: _sub.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // Call Summary Card
             Container(
-              width: 42,
-              height: 42,
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.15),
-                shape: BoxShape.circle,
+                color: _bg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _border),
               ),
-              child: Stack(
-                alignment: Alignment.center,
+              child: Row(
                 children: [
-                  Icon(iconData, color: iconColor, size: 20),
-                  Positioned(
-                    bottom: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: _surf,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(directionIcon, color: iconColor, size: 10),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: _rose.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isVideo ? Icons.videocam_rounded : Icons.call_rounded,
+                      color: _rose,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: _text,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: _sub,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(height: 14),
 
-            // Call Details (Type, Duration, Time)
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: isMissed && !isMe ? Colors.redAccent : _text,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: _sub,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // Actions
+            _sheetAction(ctx, isVideo ? Icons.videocam_rounded : Icons.call_rounded, 'Call Back', () {
+              CallService.startCall(
+                context: context,
+                partnerId: widget.partnerId,
+                partnerName: widget.partnerName,
+                callType: isVideo ? 'video' : 'voice',
+              ).then((_) => _loadMessages());
+            }, color: _rose),
 
-            const SizedBox(width: 12),
-
-            // Quick Call Back action button
-            IconButton(
-              icon: Icon(
-                isVideo ? Icons.videocam_rounded : Icons.call_rounded,
-                color: _rose,
-                size: 22,
-              ),
-              tooltip: "Call Back",
-              onPressed: () {
-                CallService.startCall(
-                  context: context,
-                  partnerId: widget.partnerId,
-                  partnerName: widget.partnerName,
-                  callType: isVideo ? 'video' : 'voice',
-                ).then((_) => _loadMessages());
+            _sheetAction(
+              ctx,
+              Icons.delete_outline_rounded,
+              'Delete for me',
+              () async {
+                setState(() {
+                  _deletedIds.add(msg.id);
+                  _messages.removeWhere((m) => m.id == msg.id);
+                });
+                await ApiService.deleteMessage(msg.id, token: _userToken);
+                _toast("Call log deleted");
               },
+              color: Colors.redAccent,
+            ),
+
+            _sheetAction(
+              ctx,
+              Icons.delete_forever_rounded,
+              'Delete for everyone',
+              () async {
+                setState(() {
+                  _deletedIds.add(msg.id);
+                  _messages.removeWhere((m) => m.id == msg.id);
+                });
+                final success = await ApiService.deleteMessage(msg.id, token: _userToken);
+                if (success) {
+                  await _loadMessages();
+                  _toast("Call log deleted from database");
+                }
+              },
+              color: Colors.redAccent,
             ),
           ],
         ),

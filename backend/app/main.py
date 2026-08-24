@@ -905,6 +905,17 @@ def delete_message(
             detail="Forbidden: You can only delete messages in your own conversation"
         )
 
+    # If this message is a CALL_LOG, also remove the underlying CallSession record so it is not re-created
+    if message.content and message.content.startswith("CALL_LOG:"):
+        try:
+            raw = message.content[len("CALL_LOG:"):]
+            data = json.loads(raw)
+            call_id = data.get("call_id")
+            if call_id:
+                db.query(CallSession).filter(CallSession.id == int(call_id)).delete()
+        except Exception:
+            pass
+
     # Clean up physical storage files for all associated media
     attached_media = db.query(Media).filter(Media.message_id == message_id).all()
     for m in attached_media:
@@ -946,10 +957,51 @@ def clear_conversation_messages(
             db.delete(m)
         db.delete(msg)
 
+    # Also clear call sessions between this pair
+    db.query(CallSession).filter(
+        ((CallSession.caller_id == auth_user_id) & (CallSession.receiver_id == partner_id)) |
+        ((CallSession.caller_id == partner_id) & (CallSession.receiver_id == auth_user_id))
+    ).delete()
+
     db.commit()
     return {
         "message": "Conversation cleared successfully",
         "deleted_count": len(messages)
+    }
+
+
+@app.delete("/call/history/{partner_id}")
+def clear_call_history(
+    partner_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    pair = verify_pair_access(db, auth_user_id, partner_id)
+    if not pair:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only clear call history with your paired partner")
+
+    call_logs = (
+        db.query(Message)
+        .filter(
+            ((Message.sender_id == auth_user_id) & (Message.receiver_id == partner_id)) |
+            ((Message.sender_id == partner_id) & (Message.receiver_id == auth_user_id))
+        )
+        .filter(Message.content.like("CALL_LOG:%"))
+        .all()
+    )
+    for msg in call_logs:
+        db.delete(msg)
+
+    db.query(CallSession).filter(
+        ((CallSession.caller_id == auth_user_id) & (CallSession.receiver_id == partner_id)) |
+        ((CallSession.caller_id == partner_id) & (CallSession.receiver_id == auth_user_id))
+    ).delete()
+
+    db.commit()
+    return {
+        "message": "Call history cleared successfully",
+        "deleted_count": len(call_logs)
     }
 
 
