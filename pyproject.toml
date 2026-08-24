@@ -1,10 +1,10 @@
 [tool.pyrefly]
 python-interpreter = "D:\\TwoOfUs\\backend\\venv\\Scripts\\python.exe"
-search-paths = ["backend"]
+search-paths = [".", "backend"]
 
 [tool.pyright]
 include = ["backend"]
-extraPaths = ["backend"]
+extraPaths = [".", "backend"]
 
 [tool.pytest.ini_options]
-pythonpath = ["backend"]
+pythonpath = [".", "backend"]
