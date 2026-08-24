@@ -18,10 +18,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.main import app, get_db
-from app.core.database import Base
-from app.core.security import hash_password, create_access_token
-from app.models import User, Pair, Message, Media, ConnectionPin
+from backend.app.main import app, get_db
+from backend.app.core.database import Base
+from backend.app.core.security import hash_password, create_access_token
+from backend.app.models import User, Pair, Message, Media, ConnectionPin
 
 # Use an isolated test database
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_security_audit.db"
