@@ -1,5 +1,5 @@
 [tool.pyrefly]
-python-interpreter = "C:/Users/ASUS/AppData/Local/Programs/Python/Python311/python.exe"
+python-interpreter = "D:/TwoOfUs/backend/venv/Scripts/python.exe"
 search-paths = [".", "backend"]
 
 [tool.pyright]
