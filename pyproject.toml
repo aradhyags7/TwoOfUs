@@ -1,3 +1,8 @@
+[project]
+name = "twoofus"
+version = "1.0.0"
+requires-python = ">=3.11, <3.12"
+
 [tool.pyrefly]
 python-interpreter = "C:/Users/ASUS/AppData/Local/Programs/Python/Python311/python.exe"
 search-paths = [".", "backend", "backend/venv/Lib/site-packages"]
