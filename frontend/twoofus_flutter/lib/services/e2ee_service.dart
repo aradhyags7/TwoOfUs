@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
@@ -81,7 +81,7 @@ class E2EEService {
         await ApiService.uploadPublicKey(_myPublicKeyHex!);
       }
     } catch (e) {
-      print("E2EE INIT ERROR: $e");
+      debugPrint("E2EE INIT ERROR: $e");
     }
   }
 
@@ -167,7 +167,7 @@ class E2EEService {
         nonce: base64Encode(nonce),
       );
     } catch (e) {
-      print("E2EE TEXT ENCRYPT ERROR: $e");
+      debugPrint("E2EE TEXT ENCRYPT ERROR: $e");
       return null;
     }
   }
@@ -198,7 +198,7 @@ class E2EEService {
       );
       return utf8.decode(decryptedBytes);
     } catch (e) {
-      print("E2EE TEXT DECRYPT ERROR: $e");
+      debugPrint("E2EE TEXT DECRYPT ERROR: $e");
       return ciphertextBase64; // Fallback to raw content if decryption fails
     }
   }
@@ -243,7 +243,7 @@ class E2EEService {
         nonce: base64Encode(nonce),
       );
     } catch (e) {
-      print("E2EE MEDIA ENCRYPT ERROR: $e");
+      debugPrint("E2EE MEDIA ENCRYPT ERROR: $e");
       return null;
     }
   }
@@ -292,7 +292,7 @@ class E2EEService {
 
       return Uint8List.fromList(decryptedBytes);
     } catch (e) {
-      print("E2EE MEDIA DECRYPT ERROR: $e");
+      debugPrint("E2EE MEDIA DECRYPT ERROR: $e");
       return null;
     }
   }

@@ -288,7 +288,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onSurface: Colors.white,
             secondary: _violet,
           ),
-          dialogBackgroundColor: _bg,
+          dialogTheme: DialogThemeData(backgroundColor: _bg),
           textButtonTheme: TextButtonThemeData(
             style: TextButton.styleFrom(foregroundColor: _rose),
           ),

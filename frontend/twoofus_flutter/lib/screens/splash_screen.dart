@@ -39,7 +39,6 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double>   _subtitleFade;
 
   // ── Palette ────────────────────────────────────────────────────────────────
-  Color get _bg       => ThemeController.currentTheme.value.bg;
   Color get _rose     => ThemeController.currentTheme.value.primary;
   Color get _violet   => ThemeController.currentTheme.value.secondary;
   Color get _lavender => ThemeController.currentTheme.value.gradientEnd;

@@ -24,7 +24,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool isLoading = false;
 
   // ── Palette ───────────────────────────────────────────────────────────────
-  Color get _bg       => ThemeController.currentTheme.value.bg;
   Color get _surface  => ThemeController.currentTheme.value.surface;
   Color get _rose     => ThemeController.currentTheme.value.primary;
   Color get _violet   => ThemeController.currentTheme.value.secondary;

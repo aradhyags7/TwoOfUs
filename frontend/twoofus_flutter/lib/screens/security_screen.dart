@@ -326,7 +326,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   isActive: passcodeEnabled,
                   onTap: _onTapPasscodeTile,
                   trailing: Switch(
-                    activeColor: rose,
+                    activeThumbColor: rose,
                     value: passcodeEnabled,
                     onChanged: (_) => _onTapPasscodeTile(),
                   ),
@@ -345,7 +345,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   isActive: fingerprintEnabled,
                   onTap: _onTapFingerprintTile,
                   trailing: Switch(
-                    activeColor: rose,
+                    activeThumbColor: rose,
                     value: fingerprintEnabled,
                     onChanged: (_) => _onTapFingerprintTile(),
                   ),

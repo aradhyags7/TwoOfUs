@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import '../models/media.dart';
@@ -483,7 +483,7 @@ class _AuthenticatedImageState extends State<AuthenticatedImage> {
           }
         }
       } catch (e) {
-        print("E2EE IMAGE DECRYPT IN BUBBLE ERROR: $e");
+        debugPrint("E2EE IMAGE DECRYPT IN BUBBLE ERROR: $e");
       }
     }
 

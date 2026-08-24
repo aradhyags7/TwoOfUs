@@ -106,7 +106,7 @@ class _ImageCropEditorState extends State<ImageCropEditor> with SingleTickerProv
   final List<DrawnStroke> _strokes = [];
   DrawnStroke? _currentStroke;
   Color _brushColor = const Color(0xFFFF2D75);
-  double _brushWidth = 5.0;
+  final double _brushWidth = 5.0;
 
   // 5. Text & Stickers
   final List<ImageStickerItem> _stickers = [];

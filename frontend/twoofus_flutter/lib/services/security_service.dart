@@ -81,7 +81,11 @@ class SecurityService {
         }
         _lastBackgroundTime = null;
       }
-      resetInactivityTimer(context);
+      if (context.mounted) {
+        resetInactivityTimer(context);
+      } else {
+        resetInactivityTimer();
+      }
     }
   }
 
@@ -166,7 +170,11 @@ class SecurityService {
       ),
     );
     isLocked = false;
-    resetInactivityTimer(context);
+    if (context.mounted) {
+      resetInactivityTimer(context);
+    } else {
+      resetInactivityTimer();
+    }
   }
 
   /// Parse auto-lock duration string to seconds threshold
