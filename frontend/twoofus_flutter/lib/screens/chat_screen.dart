@@ -927,13 +927,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                   builder: (_, __) => Transform.scale(
                                     scale: _pulseAnim.value,
                                     child: Container(
-                                      width: 9, height: 9,
+                                      width: 8, height: 8,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         color: Colors.greenAccent,
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.greenAccent.withOpacity(0.55),
+                                            color: Colors.greenAccent.withValues(alpha: 0.55),
                                             blurRadius: 6, spreadRadius: 1,
                                           ),
                                         ],
@@ -942,17 +942,37 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                   ),
                                 ),
                               ],
-                              const SizedBox(width: 4),
-                              Icon(
-                                _isPartnerVerified ? Icons.verified_user_rounded : Icons.lock_rounded,
-                                color: _isPartnerVerified ? Colors.greenAccent : Colors.pinkAccent.withOpacity(0.85),
-                                size: 12,
-                              ),
+                              // Only show lock icon if chats are genuinely E2EE (partner public key is loaded & active)
+                              if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) ...[
+                                const SizedBox(width: 5),
+                                GestureDetector(
+                                  onTap: () async {
+                                    await EncryptionVerificationModal.show(
+                                      context,
+                                      partnerId: widget.partnerId,
+                                      partnerName: widget.partnerName,
+                                      partnerPubKey: _partnerPubKey,
+                                    );
+                                    final v = await E2EEService.isPartnerVerified(widget.partnerId);
+                                    if (mounted) setState(() => _isPartnerVerified = v);
+                                  },
+                                  child: Tooltip(
+                                    message: _isPartnerVerified
+                                        ? "Verified E2EE Session"
+                                        : "End-to-End Encrypted (Tap to verify)",
+                                    child: Icon(
+                                      _isPartnerVerified ? Icons.verified_user_rounded : Icons.lock_rounded,
+                                      color: _isPartnerVerified ? Colors.greenAccent : _rose.withValues(alpha: 0.85),
+                                      size: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                           if (_isPartnerTyping)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 1),
+                            const Padding(
+                              padding: EdgeInsets.only(top: 1),
                               child: Text(
                                 'typing...',
                                 style: TextStyle(
@@ -964,26 +984,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               ),
                             )
                           else
-                            GestureDetector(
-                              onTap: () async {
-                                await EncryptionVerificationModal.show(
-                                  context,
-                                  partnerId: widget.partnerId,
-                                  partnerName: widget.partnerName,
-                                  partnerPubKey: _partnerPubKey,
-                                );
-                                final v = await E2EEService.isPartnerVerified(widget.partnerId);
-                                if (mounted) setState(() => _isPartnerVerified = v);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 1),
-                                child: Text(
-                                  _isPartnerVerified ? 'Verified E2EE 🛡️' : 'End-to-End Encrypted 🔒',
-                                  style: TextStyle(
-                                    color: _isPartnerVerified ? Colors.greenAccent : _rose.withOpacity(0.9),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 1),
+                              child: Text(
+                                _isOnline ? 'Online' : 'Offline',
+                                style: TextStyle(
+                                  color: _isOnline ? Colors.greenAccent.withValues(alpha: 0.85) : _sub,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
