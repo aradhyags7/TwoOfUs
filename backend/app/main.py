@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+import json
 import os
 import shutil
 import string
@@ -906,9 +907,9 @@ def delete_message(
         )
 
     # If this message is a CALL_LOG, also remove the underlying CallSession record so it is not re-created
-    if message.content and message.content.startswith("CALL_LOG:"):
+    if message.content and str(message.content).startswith("CALL_LOG:"):
         try:
-            raw = message.content[len("CALL_LOG:"):]
+            raw = str(message.content)[len("CALL_LOG:"):]
             data = json.loads(raw)
             call_id = data.get("call_id")
             if call_id:

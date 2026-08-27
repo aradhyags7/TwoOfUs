@@ -4,12 +4,12 @@ version = "1.0.0"
 requires-python = ">=3.11, <3.12"
 
 [tool.pyrefly]
-python-interpreter = "C:/Users/ASUS/AppData/Local/Programs/Python/Python311/python.exe"
+python-interpreter = "D:/TwoOfUs/backend/venv/Scripts/python.exe"
 search-paths = [".", "backend", "backend/venv/Lib/site-packages"]
 
 [tool.pyright]
 include = ["backend"]
-extraPaths = [".", "backend"]
+extraPaths = [".", "backend", "backend/venv/Lib/site-packages"]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "backend"]
