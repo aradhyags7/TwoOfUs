@@ -1,0 +1,8 @@
+{
+  "python-interpreter": "C:/Users/ASUS/AppData/Local/Programs/Python/Python311/python.exe",
+  "search-paths": [
+    ".",
+    "backend",
+    "backend/venv/Lib/site-packages"
+  ]
+}
