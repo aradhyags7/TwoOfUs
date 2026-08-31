@@ -11,16 +11,10 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from fastapi.testclient import TestClient
-try:
-    from backend.app.main import app
-    from backend.app.services.totp import generate_totp_code
-    from backend.app.core.database import SessionLocal
-    from backend.app.models.user import User
-except ImportError:
-    from app.main import app
-    from app.services.totp import generate_totp_code
-    from app.core.database import SessionLocal
-    from app.models.user import User
+from backend.app.main import app
+from backend.app.services.totp import generate_totp_code
+from backend.app.core.database import SessionLocal
+from backend.app.models.user import User
 
 client = TestClient(app)
 _test_suffix = uuid.uuid4().hex[:6]
@@ -187,6 +181,7 @@ class TestTwoFactorAuth:
         # Query user directly from test DB or inspect OTP
         db = SessionLocal()
         user = db.query(User).filter(User.email == self.test_user["email"]).first()
+        assert user is not None
         email_otp = user.email_2fa_otp
         db.close()
         assert email_otp is not None and len(email_otp) == 6
@@ -230,6 +225,7 @@ class TestTwoFactorAuth:
         # Fetch the generated email code
         db = SessionLocal()
         user = db.query(User).filter(User.email == self.test_user["email"]).first()
+        assert user is not None
         email_otp = user.email_2fa_otp
         db.close()
         assert email_otp is not None

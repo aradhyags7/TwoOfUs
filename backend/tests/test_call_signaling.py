@@ -64,7 +64,7 @@ class CallSignalingTests(unittest.TestCase):
         db.refresh(user)
         user_id = int(getattr(user, "id"))
         db.close()
-        token = str(create_access_token(data={"sub": str(user_id), "email": email}))
+        token = create_access_token(data={"sub": str(user_id), "email": email})
         return user_id, token
 
     def create_test_pair(self, user1_id: int, user2_id: int):
