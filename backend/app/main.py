@@ -57,6 +57,10 @@ from .services.storage import (
     delete_physical_file,
     ensure_media_dirs,
 )
+from .services.email_service import (
+    send_password_reset_email,
+    send_2fa_otp_email,
+)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -377,15 +381,11 @@ def send_2fa_email_code(
     user.email_2fa_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
     db.commit()
 
-    print(f"\n==========================================")
-    print(f" [2FA EMAIL OTP DISPATCHED]")
-    print(f" To: {user.email}")
-    print(f" Code: {otp}")
-    print(f" Expires: 10 minutes")
-    print(f"==========================================\n")
+    # Dispatch email
+    send_2fa_otp_email(to_email=user.email, username=user.username, code=otp)
 
     return {
-        "message": "Verification code sent to your email",
+        "message": f"Verification code sent to {user.email}",
         "email": user.email,
         "expires_in_seconds": 600
     }
@@ -598,8 +598,11 @@ def forgot_password(
     user.reset_otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
     db.commit()
 
+    # Dispatch email
+    send_password_reset_email(to_email=user.email, username=user.username, code=code)
+
     return {
-        "message": "Reset code generated successfully",
+        "message": f"Reset code sent to {user.email}",
         "email": user.email,
         "username": user.username,
         "reset_code": code,

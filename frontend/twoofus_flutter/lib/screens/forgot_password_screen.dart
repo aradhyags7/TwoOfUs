@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
@@ -31,6 +32,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   String? _targetEmail;
   String? _generatedCode;
 
+  // 60-second cooldown timer for resending email code
+  int _resendCooldown = 0;
+  Timer? _resendTimer;
+
   // ── Theme Accessors ───────────────────────────────────────────────────────
   Color get _bg => ThemeController.currentTheme.value.bg;
   Color get _surface => ThemeController.currentTheme.value.surface;
@@ -62,7 +67,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     _codeFocus.dispose();
     _newPassFocus.dispose();
     _confirmPassFocus.dispose();
+    _resendTimer?.cancel();
     super.dispose();
+  }
+
+  void _startResendTimer() {
+    setState(() => _resendCooldown = 60);
+    _resendTimer?.cancel();
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_resendCooldown <= 1) {
+        timer.cancel();
+        setState(() => _resendCooldown = 0);
+      } else {
+        setState(() => _resendCooldown--);
+      }
+    });
   }
 
   void _toast(String msg, {bool isError = false}) {
@@ -72,7 +92,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         content: Row(
           children: [
             Icon(
-              isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+              isError ? Icons.error_outline_rounded : Icons.mark_email_read_rounded,
               color: isError ? Colors.redAccent : Colors.pinkAccent,
               size: 20,
             ),
@@ -94,6 +114,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   }
 
   Future<void> _requestCode() async {
+    if (_resendCooldown > 0 && _currentStep == 2) return;
     final query = _emailCtrl.text.trim();
     if (query.isEmpty) {
       _toast("Please enter your email or username", isError: true);
@@ -113,7 +134,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         _generatedCode = res["reset_code"]?.toString();
         _currentStep = 2;
       });
-      _toast("Reset code generated! Check your email or code banner ❤️");
+      _startResendTimer();
+      _toast("Password reset email sent to ${_targetEmail ?? 'your email'}! 📬");
     } else {
       final err = res?["error"]?.toString() ?? "Could not find an account with those details";
       _toast(err, isError: true);
@@ -153,9 +175,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
 
     if (res != null && !res.containsKey("error")) {
       setState(() => _currentStep = 3);
-      HapticFeedback.mediumImpact();
+      HapticFeedback.heavyImpact();
     } else {
-      final err = res?["error"]?.toString() ?? "Failed to reset password";
+      final err = res?["error"]?.toString() ?? "Failed to reset password. Check your code.";
       _toast(err, isError: true);
     }
   }
@@ -240,7 +262,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          "Don't worry! Enter your registered email address or username to receive a 6-digit security reset code.",
+          "Don't worry! Enter your registered email address or username to receive a 6-digit security reset code directly to your email.",
           style: TextStyle(color: _sub, fontSize: 14, height: 1.45),
         ),
         const SizedBox(height: 32),
@@ -248,7 +270,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         _buildField(
           controller: _emailCtrl,
           focusNode: _emailFocus,
-          hint: "Email or Username",
+          hint: "Email address or username",
           icon: Icons.alternate_email_rounded,
           keyboardType: TextInputType.emailAddress,
         ),
@@ -256,7 +278,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         const SizedBox(height: 28),
 
         _buildGradientButton(
-          label: "Send Reset Code",
+          label: "Send Reset Code to Email",
           icon: Icons.send_rounded,
           onTap: _isLoading ? null : _requestCode,
         ),
@@ -272,10 +294,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
       children: [
         Center(
           child: Container(
-            width: 72,
-            height: 72,
+            width: 70,
+            height: 70,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_violet, _lavender]),
+              gradient: LinearGradient(colors: [_violet, _rose]),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
@@ -285,12 +307,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                 ),
               ],
             ),
-            child: const Icon(Icons.key_rounded, color: Colors.white, size: 34),
+            child: const Icon(Icons.mark_email_read_rounded, color: Colors.white, size: 34),
           ),
         ),
         const SizedBox(height: 24),
         Text(
-          "Reset Your Password 🔑",
+          "Check Your Email 📬",
           style: TextStyle(
             color: _text,
             fontSize: 24,
@@ -300,42 +322,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          "We generated a 6-digit verification code for ${_targetEmail ?? 'your account'}.",
+          "We have sent a 6-digit verification code to ${_targetEmail ?? 'your registered email'}.",
           style: TextStyle(color: _sub, fontSize: 13, height: 1.4),
         ),
-
-        // Development/Local auto-fill hint card
-        if (_generatedCode != null) ...[
-          const SizedBox(height: 16),
-          InkWell(
-            onTap: () {
-              setState(() => _codeCtrl.text = _generatedCode!);
-              HapticFeedback.lightImpact();
-              _toast("Code copied into input!");
-            },
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: _rose.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _rose.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.bolt_rounded, color: Colors.amberAccent, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "Security Code: $_generatedCode (Tap to auto-fill)",
-                      style: TextStyle(color: _rose, fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
 
         const SizedBox(height: 24),
 
@@ -343,7 +332,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         _buildField(
           controller: _codeCtrl,
           focusNode: _codeFocus,
-          hint: "6-Digit Reset Code",
+          hint: "6-Digit Reset Code (e.g. 123456)",
           icon: Icons.pin_outlined,
           keyboardType: TextInputType.number,
         ),
@@ -397,9 +386,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         const SizedBox(height: 12),
         Center(
           child: TextButton.icon(
-            onPressed: _isLoading ? null : _requestCode,
-            icon: Icon(Icons.refresh_rounded, color: _sub, size: 16),
-            label: Text("Resend Code", style: TextStyle(color: _sub, fontSize: 13)),
+            onPressed: (_isLoading || _resendCooldown > 0) ? null : _requestCode,
+            icon: Icon(Icons.refresh_rounded, color: _resendCooldown > 0 ? _sub.withValues(alpha: 0.4) : _sub, size: 16),
+            label: Text(
+              _resendCooldown > 0
+                  ? "Resend Email Code in ${_resendCooldown}s"
+                  : "Resend Code to Email",
+              style: TextStyle(
+                color: _resendCooldown > 0 ? _sub.withValues(alpha: 0.4) : _sub,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ),
       ],
@@ -455,7 +453,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     );
   }
 
-  // ── UI Components ────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
   Widget _buildField({
     required TextEditingController controller,
     required FocusNode focusNode,
@@ -463,16 +461,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     required IconData icon,
     bool obscure = false,
     Widget? suffix,
-    TextInputType? keyboardType,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: focusNode.hasFocus ? _rose : Colors.white.withValues(alpha: 0.08),
-          width: focusNode.hasFocus ? 1.5 : 1,
+          color: _isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: TextField(
         controller: controller,
@@ -482,7 +486,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         style: TextStyle(color: _text, fontSize: 15),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: TextStyle(color: _sub.withValues(alpha: 0.5), fontSize: 14),
+          hintStyle: TextStyle(color: _sub.withValues(alpha: 0.6), fontSize: 14),
           prefixIcon: Icon(icon, color: _rose, size: 20),
           suffixIcon: suffix,
           border: InputBorder.none,
@@ -497,52 +501,53 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     required IconData icon,
     required VoidCallback? onTap,
   }) {
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 54,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: onTap != null ? LinearGradient(colors: [_rose, _violet]) : null,
-          color: onTap == null ? _surface : null,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: onTap != null
-              ? [
-                  BoxShadow(
-                    color: _rose.withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : null,
+      height: 52,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: onTap == null ? [Colors.grey.shade700, Colors.grey.shade800] : [_rose, _violet],
         ),
-        child: ElevatedButton(
-          onPressed: onTap,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                )
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(icon, color: Colors.white, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: onTap == null
+            ? []
+            : [
+                BoxShadow(
+                  color: _rose.withValues(alpha: 0.35),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
                 ),
+              ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Center(
+            child: _isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, color: Colors.white, size: 20),
+                      const SizedBox(width: 10),
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
