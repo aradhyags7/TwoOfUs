@@ -343,7 +343,12 @@ class SecurityPenetrationTests(unittest.TestCase):
         # 2. Request OTP with email
         req_res = client.post("/forgot-password", json={"email_or_username": "forgot_u1@twoofus.app"})
         self.assertEqual(req_res.status_code, 200)
-        reset_code = req_res.json()["reset_code"]
+        
+        db = TestingSessionLocal()
+        user_db = db.query(User).filter(User.email == "forgot_u1@twoofus.app").first()
+        self.assertIsNotNone(user_db)
+        reset_code = str(user_db.reset_otp)
+        db.close()
         self.assertEqual(len(reset_code), 6)
 
         # 3. Wrong reset code returns 400

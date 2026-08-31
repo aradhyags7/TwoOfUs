@@ -602,10 +602,9 @@ def forgot_password(
     send_password_reset_email(to_email=user.email, username=user.username, code=code)
 
     return {
-        "message": f"Reset code sent to {user.email}",
+        "message": f"Reset code sent to your registered email",
         "email": user.email,
         "username": user.username,
-        "reset_code": code,
         "expires_in_minutes": 15
     }
 

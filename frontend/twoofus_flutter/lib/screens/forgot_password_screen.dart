@@ -30,7 +30,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   bool _obscureNewPass = true;
   bool _obscureConfirmPass = true;
   String? _targetEmail;
-  String? _generatedCode;
 
   // 60-second cooldown timer for resending email code
   int _resendCooldown = 0;
@@ -128,10 +127,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (res != null && res.containsKey("reset_code")) {
+    if (res != null && !res.containsKey("error")) {
       setState(() {
         _targetEmail = res["email"]?.toString() ?? query;
-        _generatedCode = res["reset_code"]?.toString();
         _currentStep = 2;
       });
       _startResendTimer();
@@ -322,8 +320,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          "We have sent a 6-digit verification code to ${_targetEmail ?? 'your registered email'}.",
-          style: TextStyle(color: _sub, fontSize: 13, height: 1.4),
+          "We have sent a 6-digit verification code to ${_targetEmail ?? 'your registered email'}.\nPlease check your inbox (and spam/junk folder), then enter the code below to reset your password:",
+          style: TextStyle(color: _sub, fontSize: 13, height: 1.45),
         ),
 
         const SizedBox(height: 24),
