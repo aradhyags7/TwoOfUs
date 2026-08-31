@@ -102,46 +102,55 @@ class _SplashScreenState extends State<SplashScreen>
 
   // ── Navigation logic ────────────────────────────────────────────────────────
   Future<void> _checkLogin() async {
-    // Minimum 1.5 s so the entrance animation plays smoothly.
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    final token = await Session.getToken();
+    // Minimum 1.2s so the entrance animation plays smoothly.
+    await Future.delayed(const Duration(milliseconds: 1200));
 
     if (!mounted) return;
 
-    if (token == null || token.isEmpty) {
+    final isLoggedIn = await Session.isLoggedIn();
+    if (!isLoggedIn) {
       _navigate(const LoginScreen());
       return;
     }
 
-    final userId = await Session.getUserId();
+    final token = (await Session.getToken())!;
+    final userId = (await Session.getUserId())!;
+    final cachedPartnerId = await Session.getCachedPartnerId();
+    final cachedPartnerName = await Session.getCachedPartnerName() ?? "Partner";
 
-    if (!mounted) return;
-
-    if (userId == null) {
-      _navigate(const LoginScreen());
-      return;
-    }
-
-    // Fetch pair status with explicit auth token and retry if initial attempt fails
-    Map<String, dynamic>? pairStatus = await ApiService.getPairStatus(userId, token: token);
-    if (pairStatus == null) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      pairStatus = await ApiService.getPairStatus(userId, token: token);
-    }
+    // Attempt to verify/refresh pair status from backend (with quick timeout)
+    Map<String, dynamic>? pairStatus;
+    try {
+      pairStatus = await ApiService.getPairStatus(userId, token: token)
+          .timeout(const Duration(milliseconds: 2500));
+    } catch (_) {}
 
     if (!mounted) return;
 
     Widget targetScreen;
-    if (pairStatus != null && pairStatus["connected"] == true && pairStatus["partner_id"] != null) {
-      final partnerId = pairStatus["partner_id"] as int;
-      final partnerName = (pairStatus["partner_name"] ?? "Partner").toString();
-      targetScreen = ChatScreen(
-        partnerId: partnerId,
-        partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
-      );
+    if (pairStatus != null) {
+      if (pairStatus["connected"] == true && pairStatus["partner_id"] != null) {
+        final partnerId = pairStatus["partner_id"] as int;
+        final partnerName = (pairStatus["partner_name"] ?? "Partner").toString();
+        await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
+        targetScreen = ChatScreen(
+          partnerId: partnerId,
+          partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
+        );
+      } else {
+        await Session.clearPartner();
+        targetScreen = const HomeScreen();
+      }
     } else {
-      targetScreen = const HomeScreen();
+      // Offline or network discovery in progress: seamlessly fallback to cached partner session!
+      if (cachedPartnerId != null) {
+        targetScreen = ChatScreen(
+          partnerId: cachedPartnerId,
+          partnerName: cachedPartnerName,
+        );
+      } else {
+        targetScreen = const HomeScreen();
+      }
     }
 
     final hasPasscode = await SecurityService.hasPasscode();

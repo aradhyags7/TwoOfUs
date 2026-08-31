@@ -64,26 +64,11 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
 
       if (result != null && result.containsKey("access_token")) {
-        final prefs = await SharedPreferences.getInstance();
-
-        await prefs.setString(
-          "token",
-          result["access_token"],
-        );
-
-        await prefs.setInt(
-          "user_id",
-          result["user_id"],
-        );
-
-        await prefs.setString(
-          "email",
-          result["email"],
-        );
-
-        await prefs.setString(
-          "username",
-          result["username"],
+        await Session.saveLogin(
+          token: result["access_token"],
+          userId: result["user_id"],
+          username: result["username"],
+          email: result["email"],
         );
 
         if (!mounted) return;
@@ -100,6 +85,7 @@ class _LoginScreenState extends State<LoginScreen>
             pairStatus["partner_id"] != null) {
           final partnerId = pairStatus["partner_id"] as int;
           final partnerName = (pairStatus["partner_name"] ?? "Partner").toString();
+          await Session.savePartner(partnerId, partnerName);
 
           Navigator.pushReplacement(
             context,

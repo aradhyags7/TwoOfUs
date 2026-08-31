@@ -163,17 +163,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               : "Not Connected";
         });
 
-        // If user is connected to a partner, directly navigate to ChatScreen
-        if (connected && partnerId != null && autoNavigate && mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ChatScreen(
-                partnerId: partnerId,
-                partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
+        // If user is connected to a partner, save partner cache and directly navigate to ChatScreen
+        if (connected && partnerId != null) {
+          await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
+          if (autoNavigate && mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  partnerId: partnerId,
+                  partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
+                ),
               ),
-            ),
-          );
+            );
+          }
         }
       }
     } catch (_) {}
