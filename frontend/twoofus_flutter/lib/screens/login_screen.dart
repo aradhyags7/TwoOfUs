@@ -99,7 +99,10 @@ class _LoginScreenState extends State<LoginScreen>
   void _show2FALoginSheet(String tempToken) {
     final codeCtrl = TextEditingController();
     bool isVerifying = false;
+    bool isSendingEmail = false;
+    int emailCooldown = 0;
     String? errorText;
+    String? successText;
 
     showModalBottomSheet(
       context: context,
@@ -145,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  "Enter the 6-digit code from your Authenticator app (or an 8-character backup recovery code):",
+                  "Enter the 6-digit code from your Authenticator app, Email, or an 8-character backup recovery code:",
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
@@ -179,7 +182,14 @@ class _LoginScreenState extends State<LoginScreen>
                     errorText: errorText,
                   ),
                 ),
-                const SizedBox(height: 20),
+                if (successText != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    successText!,
+                    style: const TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -229,7 +239,45 @@ class _LoginScreenState extends State<LoginScreen>
                           ),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
+
+                // Send to Email Alternative Button
+                TextButton.icon(
+                  onPressed: (isSendingEmail || emailCooldown > 0)
+                      ? null
+                      : () async {
+                          setSheetState(() {
+                            isSendingEmail = true;
+                            errorText = null;
+                          });
+                          final res = await ApiService.send2FAEmailCode(tempToken: tempToken);
+                          setSheetState(() => isSendingEmail = false);
+                          if (res != null && !res.containsKey("error")) {
+                            setSheetState(() {
+                              emailCooldown = 60;
+                              successText = "📬 Code sent to ${res['email'] ?? 'your email'}!";
+                            });
+                          } else {
+                            setSheetState(() {
+                              errorText = res?["error"] ?? "Failed to send email code.";
+                            });
+                          }
+                        },
+                  icon: isSendingEmail
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                        )
+                      : const Icon(Icons.mail_outline_rounded, size: 16, color: Colors.white70),
+                  label: Text(
+                    emailCooldown > 0
+                        ? "Resend email code in ${emailCooldown}s"
+                        : "Send verification code to my email",
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 6),
               ],
             ),
           );

@@ -7,11 +7,14 @@ class TwoFactorSetupResponse(BaseModel):
     secret: str
     otpauth_url: str
     backup_codes: List[str]
+    email: Optional[str] = None
+    two_factor_method: Optional[str] = "totp"
 
 
 class TwoFactorEnableRequest(BaseModel):
+    method: str = "totp"  # "totp" | "email"
     code: str
-    secret: str
+    secret: Optional[str] = None
     backup_codes: List[str]
 
 
@@ -23,8 +26,15 @@ class TwoFactorDisableRequest(BaseModel):
 class TwoFactorVerifyLoginRequest(BaseModel):
     temp_token: str
     code: str
+    method: Optional[str] = None
+
+
+class Send2FAEmailRequest(BaseModel):
+    temp_token: Optional[str] = None
 
 
 class TwoFactorStatusResponse(BaseModel):
     is_2fa_enabled: bool
+    two_factor_method: str = "totp"
     remaining_backup_codes: int
+    email: Optional[str] = None

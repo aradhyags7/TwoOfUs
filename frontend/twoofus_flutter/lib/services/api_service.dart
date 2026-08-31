@@ -446,10 +446,47 @@ class ApiService {
     return {"error": "Cannot connect to server."};
   }
 
+  static Future<Map<String, dynamic>?> send2FAEmailCode({
+    String? tempToken,
+    String? token,
+  }) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final headers = await _authHeaders(token: token);
+        final response = await http.post(
+          Uri.parse('$baseUrl/2fa/email/send-code'),
+          headers: headers,
+          body: jsonEncode({
+            if (tempToken != null) 'temp_token': tempToken,
+          }),
+        ).timeout(defaultTimeout);
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Failed to send email verification code"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
+        }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) continue;
+        }
+        return {"error": "Cannot connect to server."};
+      }
+    }
+    return {"error": "Cannot connect to server."};
+  }
+
   static Future<Map<String, dynamic>?> enable2FA({
     required String code,
-    required String secret,
     required List<String> backupCodes,
+    String method = "totp",
+    String? secret,
     String? token,
   }) async {
     for (int attempt = 0; attempt < 2; attempt++) {
@@ -459,8 +496,9 @@ class ApiService {
           Uri.parse('$baseUrl/2fa/enable'),
           headers: headers,
           body: jsonEncode({
+            'method': method,
             'code': code,
-            'secret': secret,
+            if (secret != null) 'secret': secret,
             'backup_codes': backupCodes,
           }),
         ).timeout(defaultTimeout);

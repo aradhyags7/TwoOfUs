@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../services/api_service.dart';
 import '../theme/theme_controller.dart';
 
@@ -19,14 +21,24 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String? _secret;
+  String? _otpauthUrl;
+  String? _userEmail;
   List<String> _backupCodes = [];
 
-  // Step 0: Setup / Copy key & Enter OTP, Step 1: Backup codes display
+  // Selected setup method: 0 = Google Authenticator (TOTP), 1 = Email OTP
+  int _selectedMethod = 0;
+
+  // Step: 0 = Method Setup & OTP confirmation, 1 = Backup codes display
   int _currentStep = 0;
   final TextEditingController _codeController = TextEditingController();
   bool _isSubmitting = false;
   bool _copiedSecret = false;
   bool _copiedBackupCodes = false;
+
+  // Email OTP timer & state
+  bool _isSendingEmail = false;
+  int _emailCooldownSeconds = 0;
+  Timer? _cooldownTimer;
 
   @override
   void initState() {
@@ -37,6 +49,7 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
   @override
   void dispose() {
     _codeController.dispose();
+    _cooldownTimer?.cancel();
     super.dispose();
   }
 
@@ -52,6 +65,8 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
     if (res != null && res.containsKey("secret")) {
       setState(() {
         _secret = res["secret"];
+        _otpauthUrl = res["otpauth_url"];
+        _userEmail = res["email"];
         _backupCodes = List<String>.from(res["backup_codes"] ?? []);
         _isLoading = false;
       });
@@ -63,12 +78,55 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
     }
   }
 
+  void _startCooldownTimer() {
+    setState(() => _emailCooldownSeconds = 60);
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_emailCooldownSeconds <= 1) {
+        timer.cancel();
+        setState(() => _emailCooldownSeconds = 0);
+      } else {
+        setState(() => _emailCooldownSeconds--);
+      }
+    });
+  }
+
+  Future<void> _sendEmailOtp() async {
+    if (_emailCooldownSeconds > 0 || _isSendingEmail) return;
+    setState(() => _isSendingEmail = true);
+    HapticFeedback.lightImpact();
+
+    final res = await ApiService.send2FAEmailCode();
+    if (!mounted) return;
+    setState(() => _isSendingEmail = false);
+
+    if (res != null && !res.containsKey("error")) {
+      _startCooldownTimer();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("6-digit code sent to ${_userEmail ?? 'your email'}! 📬"),
+          backgroundColor: const Color(0xFF200F35),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res?["error"] ?? "Failed to send email verification code."),
+          backgroundColor: Colors.redAccent.shade700,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _submitVerification() async {
     final code = _codeController.text.trim();
     if (code.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text("Please enter the 6-digit code from your authenticator app"),
+          content: const Text("Please enter the complete 6-digit code"),
           backgroundColor: Colors.redAccent.shade700,
           behavior: SnackBarBehavior.floating,
         ),
@@ -79,9 +137,11 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
     setState(() => _isSubmitting = true);
     HapticFeedback.lightImpact();
 
+    final isTotp = _selectedMethod == 0;
     final res = await ApiService.enable2FA(
+      method: isTotp ? "totp" : "email",
       code: code,
-      secret: _secret!,
+      secret: isTotp ? _secret : null,
       backupCodes: _backupCodes,
     );
 
@@ -91,7 +151,7 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
     if (res != null && !res.containsKey("error")) {
       HapticFeedback.heavyImpact();
       setState(() {
-        _currentStep = 1; // Move to backup codes view
+        _currentStep = 1; // Show backup recovery codes
       });
     } else {
       HapticFeedback.vibrate();
@@ -155,7 +215,7 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.pinkAccent))
+          ? Center(child: CircularProgressIndicator(color: rose))
           : _errorMessage != null
               ? Center(
                   child: Padding(
@@ -189,54 +249,54 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Hero Card
+          // Method Segmented Selector
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [rose.withValues(alpha: 0.25), violet.withValues(alpha: 0.15)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: rose.withValues(alpha: 0.3)),
+              color: surfaceCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: rose.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
+                Expanded(
+                  child: _methodTab(
+                    index: 0,
+                    icon: Icons.qr_code_scanner_rounded,
+                    label: "Authenticator App",
                   ),
-                  child: Icon(Icons.shield_rounded, color: rose, size: 30),
                 ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Secure Your Account",
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        "Use Google Authenticator, Microsoft Authenticator, or 1Password.",
-                        style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
-                      ),
-                    ],
+                Expanded(
+                  child: _methodTab(
+                    index: 1,
+                    icon: Icons.mail_outline_rounded,
+                    label: "Email OTP",
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 20),
+
+          if (_selectedMethod == 0) ...[
+            _buildAuthenticatorAppSection(),
+          ] else ...[
+            _buildEmailOtpSection(),
+          ],
+
           const SizedBox(height: 24),
 
-          // Step 1: Copy Key
-          const Text(
-            "STEP 1: ADD SECRET KEY",
-            style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1),
+          // Common Verification Code Input
+          Text(
+            _selectedMethod == 0
+                ? "ENTER 6-DIGIT CODE FROM AUTHENTICATOR:"
+                : "ENTER 6-DIGIT CODE SENT TO EMAIL:",
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
           ),
           const SizedBox(height: 10),
 
@@ -248,70 +308,7 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
               border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Open your Authenticator app, choose 'Add Account' > 'Enter a setup key' (or manual entry), and paste the key below:",
-                  style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _secret ?? "",
-                          style: const TextStyle(
-                            color: Colors.amberAccent,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'monospace',
-                            letterSpacing: 2,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: _copySecret,
-                        icon: Icon(_copiedSecret ? Icons.check_circle_rounded : Icons.copy_rounded,
-                            color: _copiedSecret ? Colors.greenAccent : Colors.white70, size: 20),
-                        tooltip: "Copy Key",
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Step 2: Verification Code
-          const Text(
-            "STEP 2: ENTER 6-DIGIT CODE",
-            style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1),
-          ),
-          const SizedBox(height: 10),
-
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: surfaceCard,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Enter the 6-digit code currently generated by your Authenticator app:",
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-                const SizedBox(height: 14),
                 TextField(
                   controller: _codeController,
                   keyboardType: TextInputType.number,
@@ -358,9 +355,9 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const Text(
-                            "Verify & Activate 2FA",
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        : Text(
+                            _selectedMethod == 0 ? "Verify & Enable Authenticator" : "Verify & Enable Email 2FA",
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                           ),
                   ),
                 ),
@@ -368,6 +365,216 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
             ),
           ),
           const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  Widget _methodTab({
+    required int index,
+    required IconData icon,
+    required String label,
+  }) {
+    final isSelected = _selectedMethod == index;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() {
+          _selectedMethod = index;
+          _codeController.clear();
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? rose : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: isSelected ? Colors.white : Colors.white60, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.white70,
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthenticatorAppSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // QR Code Card
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: surfaceCard,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Column(
+            children: [
+              const Text(
+                "Scan with Google Authenticator",
+                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                "Open Google Authenticator, Authy, or Microsoft Authenticator and scan this QR code:",
+                style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+
+              // Rendered QR Code
+              if (_otpauthUrl != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: QrImageView(
+                    data: _otpauthUrl!,
+                    version: QrVersions.auto,
+                    size: 175,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              const SizedBox(height: 16),
+
+              // Manual Entry Secret Key Box
+              const Text(
+                "OR ENTER KEY MANUALLY:",
+                style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _secret ?? "",
+                        style: const TextStyle(
+                          color: Colors.amberAccent,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'monospace',
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _copySecret,
+                      icon: Icon(_copiedSecret ? Icons.check_circle_rounded : Icons.copy_rounded,
+                          color: _copiedSecret ? Colors.greenAccent : Colors.white70, size: 18),
+                      tooltip: "Copy Key",
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmailOtpSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: surfaceCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.mark_email_read_rounded, color: Colors.blueAccent, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Email Verification (OTP)",
+                      style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _userEmail ?? "Registered Email",
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "Every time you log in from a new device, a 6-digit security code will be dispatched to your registered email.",
+            style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: (_emailCooldownSeconds > 0 || _isSendingEmail) ? null : _sendEmailOtp,
+              icon: _isSendingEmail
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amberAccent),
+                    )
+                  : const Icon(Icons.send_rounded, size: 16, color: Colors.amberAccent),
+              label: Text(
+                _emailCooldownSeconds > 0
+                    ? "Resend Code in ${_emailCooldownSeconds}s"
+                    : "Send 6-Digit Code to Email",
+                style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.amberAccent),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -387,20 +594,22 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4)),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 32),
-                SizedBox(width: 14),
+                const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 32),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "2FA Enabled Successfully!",
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        _selectedMethod == 0
+                            ? "Google Authenticator Enabled!"
+                            : "Email 2FA Enabled!",
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                      SizedBox(height: 4),
-                      Text(
+                      const SizedBox(height: 4),
+                      const Text(
                         "Your account is now protected with Two-Factor Authentication.",
                         style: TextStyle(color: Colors.white70, fontSize: 12),
                       ),
@@ -427,7 +636,7 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    "Save these 8 one-time backup recovery codes in a safe place. If you lose access to your Authenticator app, each code can be used once to log in.",
+                    "Save these 8 one-time backup recovery codes in a safe place. If you lose access to your Authenticator app or email, each code can be used once to log in.",
                     style: TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
                   ),
                 ),

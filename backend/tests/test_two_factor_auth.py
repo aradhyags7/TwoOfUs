@@ -51,6 +51,7 @@ class TestTwoFactorAuth:
         assert "secret" in data
         assert "otpauth_url" in data
         assert "backup_codes" in data
+        assert data["email"] == self.test_user["email"]
         assert len(data["backup_codes"]) == 8
         TestTwoFactorAuth.setup_secret = data["secret"]
         TestTwoFactorAuth.backup_codes = data["backup_codes"]
@@ -60,6 +61,7 @@ class TestTwoFactorAuth:
             "/2fa/enable",
             headers={"Authorization": f"Bearer {TestTwoFactorAuth.user_token}"},
             json={
+                "method": "totp",
                 "code": "000000",
                 "secret": TestTwoFactorAuth.setup_secret,
                 "backup_codes": TestTwoFactorAuth.backup_codes
@@ -67,12 +69,13 @@ class TestTwoFactorAuth:
         )
         assert res.status_code == 400
 
-    def test_05_enable_2fa_valid_code_succeeds(self):
+    def test_05_enable_2fa_valid_totp_succeeds(self):
         valid_code = generate_totp_code(TestTwoFactorAuth.setup_secret)
         res = client.post(
             "/2fa/enable",
             headers={"Authorization": f"Bearer {TestTwoFactorAuth.user_token}"},
             json={
+                "method": "totp",
                 "code": valid_code,
                 "secret": TestTwoFactorAuth.setup_secret,
                 "backup_codes": TestTwoFactorAuth.backup_codes
@@ -87,6 +90,7 @@ class TestTwoFactorAuth:
         )
         assert status_res.status_code == 200
         assert status_res.json()["is_2fa_enabled"] is True
+        assert status_res.json()["two_factor_method"] == "totp"
         assert status_res.json()["remaining_backup_codes"] == 8
 
     def test_06_login_intercepted_by_2fa(self):
@@ -151,7 +155,81 @@ class TestTwoFactorAuth:
         })
         assert verify_res2.status_code == 401
 
-    def test_08_disable_2fa_with_password(self):
+    def test_08_enable_email_2fa(self):
+        # Request email OTP
+        send_res = client.post(
+            "/2fa/email/send-code",
+            headers={"Authorization": f"Bearer {TestTwoFactorAuth.user_token}"}
+        )
+        assert send_res.status_code == 200
+        assert "email" in send_res.json()
+
+        # Query user directly from test DB or inspect OTP
+        from app.core.database import SessionLocal
+        from app.models.user import User
+        db = SessionLocal()
+        user = db.query(User).filter(User.email == self.test_user["email"]).first()
+        email_otp = user.email_2fa_otp
+        db.close()
+        assert email_otp is not None and len(email_otp) == 6
+
+        # Enable email 2FA
+        enable_res = client.post(
+            "/2fa/enable",
+            headers={"Authorization": f"Bearer {TestTwoFactorAuth.user_token}"},
+            json={
+                "method": "email",
+                "code": email_otp,
+                "backup_codes": TestTwoFactorAuth.backup_codes
+            }
+        )
+        assert enable_res.status_code == 200
+
+        # Check status is now email 2FA
+        status_res = client.get(
+            "/2fa/status",
+            headers={"Authorization": f"Bearer {TestTwoFactorAuth.user_token}"}
+        )
+        assert status_res.status_code == 200
+        assert status_res.json()["is_2fa_enabled"] is True
+        assert status_res.json()["two_factor_method"] == "email"
+
+    def test_09_login_with_email_2fa(self):
+        login_res = client.post("/login", json={
+            "email": self.test_user["email"],
+            "password": self.test_user["password"]
+        })
+        assert login_res.status_code == 200
+        temp_token = login_res.json()["temp_token"]
+
+        # Request email code using temp_token
+        send_res = client.post(
+            "/2fa/email/send-code",
+            json={"temp_token": temp_token}
+        )
+        assert send_res.status_code == 200
+
+        # Fetch the generated email code
+        from app.core.database import SessionLocal
+        from app.models.user import User
+        db = SessionLocal()
+        user = db.query(User).filter(User.email == self.test_user["email"]).first()
+        email_otp = user.email_2fa_otp
+        db.close()
+        assert email_otp is not None
+
+        # Verify login with email OTP
+        verify_res = client.post(
+            "/2fa/verify-login",
+            json={
+                "temp_token": temp_token,
+                "code": email_otp
+            }
+        )
+        assert verify_res.status_code == 200
+        assert "access_token" in verify_res.json()
+
+    def test_10_disable_2fa_with_password(self):
         res = client.post(
             "/2fa/disable",
             headers={"Authorization": f"Bearer {TestTwoFactorAuth.user_token}"},

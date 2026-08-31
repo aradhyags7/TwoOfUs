@@ -41,6 +41,7 @@ from .schemas.two_factor import (
     TwoFactorDisableRequest,
     TwoFactorVerifyLoginRequest,
     TwoFactorStatusResponse,
+    Send2FAEmailRequest,
 )
 from .services.totp import (
     generate_totp_secret,
@@ -69,8 +70,11 @@ try:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp TEXT;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TIMESTAMP;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_2fa_enabled BOOLEAN DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_method TEXT DEFAULT 'totp';"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes TEXT;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_2fa_otp TEXT;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_2fa_expires_at TIMESTAMP;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_view_once BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_expired BOOLEAN DEFAULT FALSE;"))
@@ -340,7 +344,50 @@ def setup_2fa(
     return {
         "secret": secret,
         "otpauth_url": otpauth_url,
-        "backup_codes": plain_codes
+        "backup_codes": plain_codes,
+        "email": user.email,
+        "two_factor_method": user.two_factor_method or "totp"
+    }
+
+
+@app.post("/2fa/email/send-code")
+def send_2fa_email_code(
+    req: Optional[Send2FAEmailRequest] = None,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+):
+    user = None
+    if req and req.temp_token:
+        payload = decode_access_token(req.temp_token)
+        if payload and payload.get("sub"):
+            user = get_user_by_id(db, int(payload["sub"]))
+    elif credentials:
+        payload = decode_access_token(credentials.credentials)
+        if payload and payload.get("sub"):
+            user = get_user_by_id(db, int(payload["sub"]))
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication or valid 2FA temporary token required"
+        )
+
+    otp = "".join(choices(string.digits, k=6))
+    user.email_2fa_otp = otp
+    user.email_2fa_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    db.commit()
+
+    print(f"\n==========================================")
+    print(f" [2FA EMAIL OTP DISPATCHED]")
+    print(f" To: {user.email}")
+    print(f" Code: {otp}")
+    print(f" Expires: 10 minutes")
+    print(f"==========================================\n")
+
+    return {
+        "message": "Verification code sent to your email",
+        "email": user.email,
+        "expires_in_seconds": 600
     }
 
 
@@ -352,21 +399,44 @@ def enable_2fa(
 ):
     user = get_user_by_id(db, int(current_user["sub"]))
 
-    if not verify_totp_code(req.secret, req.code):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid 6-digit authentication code. Please check your authenticator app and try again."
-        )
+    if req.method == "totp":
+        if not req.secret or not verify_totp_code(req.secret, req.code):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid 6-digit authenticator code. Check your Google Authenticator app and try again."
+            )
+        user.totp_secret = req.secret
+        user.two_factor_method = "totp"
+    elif req.method == "email":
+        now = datetime.now(timezone.utc)
+        if not user.email_2fa_otp or user.email_2fa_otp != req.code.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid email verification code. Please check your inbox or resend code."
+            )
+        if not user.email_2fa_expires_at:
+            raise HTTPException(status_code=400, detail="Verification code has expired. Please request a new one.")
+        
+        expires_at = user.email_2fa_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+            
+        if now > expires_at:
+            raise HTTPException(status_code=400, detail="Verification code has expired. Please request a new one.")
+
+        user.email_2fa_otp = None
+        user.email_2fa_expires_at = None
+        user.two_factor_method = "email"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid 2FA method")
 
     hashed_codes = [hash_backup_code(c) for c in req.backup_codes]
-
-    user.totp_secret = req.secret
     user.backup_codes = json.dumps(hashed_codes)
     user.is_2fa_enabled = True
     db.commit()
 
     return {
-        "message": "Two-Factor Authentication successfully enabled 🛡️"
+        "message": f"Two-Factor Authentication ({req.method.upper()}) successfully enabled 🛡️"
     }
 
 
@@ -386,6 +456,8 @@ def disable_2fa(
         is_verified = True
     elif req.code and user.totp_secret and verify_totp_code(user.totp_secret, req.code):
         is_verified = True
+    elif req.code and user.email_2fa_otp and user.email_2fa_otp == req.code.strip():
+        is_verified = True
     elif req.code and user.backup_codes:
         hashed_list = json.loads(user.backup_codes or "[]")
         is_backup, _ = verify_and_consume_backup_code(req.code, hashed_list)
@@ -400,6 +472,8 @@ def disable_2fa(
 
     user.is_2fa_enabled = False
     user.totp_secret = None
+    user.email_2fa_otp = None
+    user.email_2fa_expires_at = None
     user.backup_codes = None
     db.commit()
 
@@ -423,7 +497,7 @@ def verify_2fa_login(
     user_id = int(payload["sub"])
     user = get_user_by_id(db, user_id)
 
-    if not user.is_2fa_enabled or not user.totp_secret:
+    if not user.is_2fa_enabled:
         raise HTTPException(
             status_code=400,
             detail="2FA is not enabled for this account"
@@ -433,8 +507,21 @@ def verify_2fa_login(
     is_valid = False
 
     # Check 6-digit TOTP
-    if len(code_clean) == 6 and code_clean.isdigit():
+    if user.totp_secret and len(code_clean) == 6 and code_clean.isdigit():
         is_valid = verify_totp_code(user.totp_secret, code_clean)
+
+    # Check Email OTP
+    if not is_valid and user.email_2fa_otp and user.email_2fa_otp == code_clean:
+        now = datetime.now(timezone.utc)
+        expires_at = user.email_2fa_expires_at
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if now <= expires_at:
+                is_valid = True
+                user.email_2fa_otp = None
+                user.email_2fa_expires_at = None
+                db.commit()
 
     # Check Backup recovery code
     if not is_valid and user.backup_codes:
@@ -448,7 +535,7 @@ def verify_2fa_login(
     if not is_valid:
         raise HTTPException(
             status_code=401,
-            detail="Invalid 6-digit authentication code or backup recovery code"
+            detail="Invalid 6-digit code or backup recovery code"
         )
 
     access_token = create_access_token(
@@ -476,7 +563,9 @@ def get_2fa_status(
     codes = json.loads(user.backup_codes or "[]")
     return {
         "is_2fa_enabled": bool(user.is_2fa_enabled),
-        "remaining_backup_codes": len(codes)
+        "two_factor_method": user.two_factor_method or "totp",
+        "remaining_backup_codes": len(codes),
+        "email": user.email
     }
 
 

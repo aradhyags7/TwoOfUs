@@ -20,7 +20,10 @@ class User(Base):
     reset_otp: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     reset_otp_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    # Two-Factor Authentication (TOTP 2FA)
+    # Two-Factor Authentication (2FA)
     is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    two_factor_method: Mapped[str] = mapped_column(String, default="totp")  # "totp", "email"
     totp_secret: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    backup_codes: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # JSON-encoded array of SHA-256 hashes
+    backup_codes: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # JSON-encoded array of SHA-256 hashes
+    email_2fa_otp: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    email_2fa_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

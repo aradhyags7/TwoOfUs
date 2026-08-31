@@ -24,6 +24,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   bool fingerprintEnabled = false;
   bool biometricsSupported = false;
   bool is2faEnabled = false;
+  String twoFactorMethod = "totp";
   int remainingBackupCodes = 0;
   String autoLockDuration = "immediately";
   Map<String, String> storageStatus = {
@@ -48,11 +49,13 @@ class _SecurityScreenState extends State<SecurityScreen> {
 
     // Fetch 2FA status from backend
     bool twoFa = false;
+    String method = "totp";
     int backupCount = 0;
     try {
       final twoFaStatus = await ApiService.get2FAStatus();
       if (twoFaStatus != null) {
         twoFa = twoFaStatus["is_2fa_enabled"] == true;
+        method = twoFaStatus["two_factor_method"] ?? "totp";
         backupCount = (twoFaStatus["remaining_backup_codes"] ?? 0) as int;
       }
     } catch (_) {}
@@ -63,6 +66,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
         fingerprintEnabled = fpEnabled;
         biometricsSupported = bioSupport;
         is2faEnabled = twoFa;
+        twoFactorMethod = method;
         remainingBackupCodes = backupCount;
         autoLockDuration = autoLock;
         storageStatus = storageInfo;
@@ -578,8 +582,8 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   icon: Icons.security_rounded,
                   title: "Two-Factor Auth (2FA)",
                   subtitle: is2faEnabled
-                      ? "Enabled 🛡️ • Authenticator App ($remainingBackupCodes recovery codes)"
-                      : "Disabled • Protect login with Authenticator app",
+                      ? "Enabled 🛡️ • ${twoFactorMethod == 'email' ? 'Email OTP' : 'Authenticator App'} ($remainingBackupCodes recovery codes)"
+                      : "Disabled • Protect login with Authenticator app or Email OTP",
                   isActive: is2faEnabled,
                   onTap: _onTap2FATile,
                   trailing: Switch(
