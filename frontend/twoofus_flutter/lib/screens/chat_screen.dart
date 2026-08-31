@@ -11,13 +11,13 @@ import '../services/e2ee_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/session.dart';
-import '../widgets/passcode_lock_button.dart';
-import 'account_screen.dart';
+import 'change_password_screen.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'partner_profile_screen.dart';
 import 'security_screen.dart';
 import 'theme_selection_screen.dart';
+import '../widgets/server_config_dialog.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/media.dart';
 import '../models/diary_memory.dart';
@@ -68,6 +68,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   List<Message> _messages = [];
   int?   _myId;
   String _myUsername = '';
+  String? _myAvatarUrl;
   String _userToken = '';
   String? _partnerPubKey;
   bool   _loading    = true;
@@ -153,6 +154,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _userToken = token ?? prefs.getString('token') ?? '';
       });
     }
+    _loadMyProfile();
     try {
       await E2EEService.initialize();
       _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
@@ -164,6 +166,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     } finally {
       if (mounted) setState(() => _loading = false);
       _scrollToBottom();
+    }
+  }
+
+  Future<void> _loadMyProfile() async {
+    final userId = await Session.getUserId();
+    if (userId != null) {
+      try {
+        final prof = await ApiService.getProfile(userId);
+        if (prof != null && mounted) {
+          setState(() {
+            if (prof['username'] != null && prof['username'].toString().isNotEmpty) {
+              _myUsername = prof['username'].toString();
+            }
+            _myAvatarUrl = prof['avatar_url']?.toString();
+          });
+        }
+      } catch (_) {}
     }
   }
 
@@ -2891,270 +2910,439 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Settings Panel ────────────────────────────────────────────────────────
-  Widget _buildSettingsPanel() => Material(
-    color: _surf,
-    elevation: 16,
-    shadowColor: Colors.black45,
-    child: SafeArea(
-      child: Column(
-        children: [
-          // Profile header
-          InkWell(
-            onTap: () {
-              _closeAll();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ProfileScreen(),
-                ),
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+  // ── Settings & Navigation Drawer Panel ───────────────────────────────────
+  Widget _buildSettingsPanel() {
+    final myInitial = _myUsername.isNotEmpty ? _myUsername[0].toUpperCase() : 'U';
+
+    return Material(
+      color: _surf,
+      elevation: 20,
+      shadowColor: Colors.black54,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── 1. Top User Profile Header ────────────────────────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [_violet.withOpacity(0.20), _rose.withOpacity(0.10)],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  colors: [_violet.withOpacity(0.18), _rose.withOpacity(0.10)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
                 border: Border(bottom: BorderSide(color: _border)),
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: 56, height: 56,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(colors: [_rose, _violet]),
+                  GestureDetector(
+                    onTap: () async {
+                      _closeAll();
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                      );
+                      _loadMyProfile();
+                    },
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(colors: [_rose, _violet]),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _rose.withOpacity(0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: _myAvatarUrl != null && _myAvatarUrl!.isNotEmpty
+                            ? Image.network(
+                                _myAvatarUrl!.startsWith('http')
+                                    ? _myAvatarUrl!
+                                    : "${ApiService.baseUrl}/${_myAvatarUrl!.startsWith('/') ? _myAvatarUrl!.substring(1) : _myAvatarUrl!}",
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Center(
+                                  child: Text(
+                                    myInitial,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child: Text(
+                                  myInitial,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                      ),
                     ),
-                    child: const Icon(Icons.person_rounded, color: Colors.white, size: 28),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(_myUsername.isNotEmpty ? _myUsername : 'My Profile',
-                            style: TextStyle(color: _text, fontSize: 17, fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Text('View & Edit Profile', style: TextStyle(color: _rose, fontSize: 12, fontWeight: FontWeight.w600)),
-                            const SizedBox(width: 4),
-                            Icon(Icons.edit_outlined, size: 12, color: _rose),
-                          ],
-                        ),
-                      ],
+                    child: GestureDetector(
+                      onTap: () async {
+                        _closeAll();
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                        );
+                        _loadMyProfile();
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _myUsername.isNotEmpty ? _myUsername : 'My Profile',
+                            style: TextStyle(
+                              color: _text,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Text(
+                                'Edit Profile',
+                                style: TextStyle(
+                                  color: _rose,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 3),
+                              Icon(Icons.arrow_forward_ios_rounded, size: 10, color: _rose),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   IconButton(
                     icon: Icon(Icons.close_rounded, color: _sub, size: 22),
+                    tooltip: 'Close',
                     onPressed: _closeAll,
                   ),
                 ],
               ),
             ),
-          ),
-          // Merged Partner Info & Connection Card
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: InkWell(
-              onTap: () {
-                _closeAll();
-                _openPartnerProfile();
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _bg,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _rose.withOpacity(0.3)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _rose.withOpacity(0.08),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 10, height: 10,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.greenAccent,
-                        boxShadow: [
-                          BoxShadow(color: Colors.greenAccent, blurRadius: 6, spreadRadius: 1),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Connected to ${widget.partnerName} ❤️',
-                              style: TextStyle(color: _text, fontSize: 13, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 2),
-                          Text('Tap to view profile, shared media & info',
-                              style: TextStyle(color: _rose, fontSize: 11, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.arrow_forward_ios_rounded, color: _sub, size: 14),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Settings items
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              children: [
-                _sTile(
-                  Icons.photo_library_outlined,
-                  'Media Gallery',
-                  'Photos, videos & shared files',
-                  () {
-                    _closeAll();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MediaGalleryScreen(
-                          partnerId: widget.partnerId,
-                          partnerName: widget.partnerName,
-                          token: _userToken,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                _sTile(
-                  Icons.person_outline_rounded,
-                  'My Profile',
-                  'View & edit personal details',
-                  () {
-                    _closeAll();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ProfileScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _sTile(
-                  Icons.tune_rounded,
-                  'Account & Settings',
-                  'Profile, privacy, account details',
-                  () {
-                    _closeAll();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AccountScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _sTile(
-                  Icons.shield_outlined,
-                  'App Security',
-                  'Passcode lock, biometrics & auto-lock',
-                  () {
-                    _closeAll();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const SecurityScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _notificationsToggleTile(),
-                _themesTile(),
-              ],
-            ),
-          ),
-          // Logout
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-            child: SizedBox(
-              width: double.infinity, height: 52,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.redAccent.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
-                ),
-                child: TextButton(
-                  onPressed: _showLogoutDialog,
-                  style: TextButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.logout_rounded, color: Colors.redAccent, size: 18),
-                      SizedBox(width: 8),
-                      Text('Sign Out', style: TextStyle(
-                          color: Colors.redAccent, fontWeight: FontWeight.w700, fontSize: 15)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
 
-  Widget _notificationsToggleTile() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _bg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border),
+            // ── 2. Scrollable Action List with Categorized Sections ───────
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  // ── COUPLE SPACE ──
+                  _drawerSectionHeader("COUPLE SPACE"),
+                  _drawerPartnerCard(),
+                  const SizedBox(height: 6),
+                  _drawerTile(
+                    icon: Icons.photo_library_outlined,
+                    title: "Shared Media Gallery",
+                    subtitle: "Photos, videos, audio & files",
+                    gradientColors: [_violet, _lavender],
+                    onTap: () {
+                      _closeAll();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MediaGalleryScreen(
+                            partnerId: widget.partnerId,
+                            partnerName: widget.partnerName,
+                            token: _userToken,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ── PREFERENCES ──
+                  _drawerSectionHeader("PREFERENCES"),
+                  _themesTile(),
+                  const SizedBox(height: 6),
+                  _notificationsToggleTile(),
+
+                  const SizedBox(height: 14),
+
+                  // ── SECURITY & PRIVACY ──
+                  _drawerSectionHeader("SECURITY & PRIVACY"),
+                  _drawerTile(
+                    icon: Icons.shield_outlined,
+                    title: "Security & Lock",
+                    subtitle: "Passcode, Biometrics & 2FA",
+                    gradientColors: [const Color(0xFF00C853), const Color(0xFF64DD17)],
+                    onTap: () {
+                      _closeAll();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SecurityScreen()),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  _drawerTile(
+                    icon: Icons.key_outlined,
+                    title: "Change Password",
+                    subtitle: "Update account password",
+                    gradientColors: [_rose, _violet],
+                    onTap: () {
+                      _closeAll();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ── NETWORK & SYSTEM ──
+                  _drawerSectionHeader("NETWORK & CONNECTION"),
+                  _drawerTile(
+                    icon: Icons.dns_outlined,
+                    title: "Server Configuration",
+                    subtitle: "Custom IP, port & connection test",
+                    gradientColors: [Colors.blueAccent, Colors.cyanAccent],
+                    onTap: () {
+                      _closeAll();
+                      ServerConfigDialog.show(context);
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+
+            // ── 3. Bottom Sign Out Button ─────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.redAccent.withOpacity(0.25)),
+                  ),
+                  child: TextButton(
+                    onPressed: _showLogoutDialog,
+                    style: TextButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.logout_rounded, color: Colors.redAccent, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'Sign Out',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(colors: [_rose, _violet]),
-            ),
-            child: Icon(
-              _notificationsEnabled ? Icons.notifications_active_outlined : Icons.notifications_off_outlined,
-              color: Colors.white, size: 20,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Notifications', style: TextStyle(color: _text, fontSize: 14, fontWeight: FontWeight.w700)),
-                Text(_notificationsEnabled ? 'Chat sounds & alerts active' : 'Chat alerts muted',
-                    style: TextStyle(color: _sub, fontSize: 11)),
-              ],
-            ),
-          ),
-          Switch(
-            activeColor: _rose,
-            value: _notificationsEnabled,
-            onChanged: (val) => setState(() => _notificationsEnabled = val),
-          ),
-        ],
+    );
+  }
+
+  Widget _drawerSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: _sub,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.1,
+        ),
       ),
+    );
+  }
+
+  Widget _drawerPartnerCard() {
+    return InkWell(
+      onTap: () {
+        _closeAll();
+        _openPartnerProfile();
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _bg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _rose.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: _rose.withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.greenAccent,
+                boxShadow: [
+                  BoxShadow(color: Colors.greenAccent, blurRadius: 6, spreadRadius: 1),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${widget.partnerName} ❤️',
+                    style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Partner info & relationship details',
+                    style: TextStyle(color: _rose, fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded, color: _sub, size: 13),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    List<Color>? gradientColors,
+  }) {
+    final colors = gradientColors ?? [_rose, _violet];
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _bg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(colors: colors),
+              ),
+              child: Icon(icon, color: Colors.white, size: 19),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: _sub, fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded, color: _sub, size: 13),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _notificationsToggleTile() => AnimatedContainer(
+    duration: const Duration(milliseconds: 300),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+    decoration: BoxDecoration(
+      color: _bg,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _border),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 38, height: 38,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(colors: [_rose, _violet]),
+          ),
+          child: Icon(
+            _notificationsEnabled ? Icons.notifications_active_outlined : Icons.notifications_off_outlined,
+            color: Colors.white, size: 19,
+          ),
+        ),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Notifications', style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.w700)),
+              Text(_notificationsEnabled ? 'Chat sounds & alerts active' : 'Chat alerts muted',
+                  style: TextStyle(color: _sub, fontSize: 11)),
+            ],
+          ),
+        ),
+        Switch(
+          activeColor: _rose,
+          value: _notificationsEnabled,
+          onChanged: (val) => setState(() => _notificationsEnabled = val),
+        ),
+      ],
     ),
   );
 
@@ -3162,83 +3350,80 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return ValueListenableBuilder<AppTheme>(
       valueListenable: ThemeController.currentTheme,
       builder: (context, activeTheme, _) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: GestureDetector(
-            onTap: () {
-              _closeAll();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ThemeSelectionScreen(),
-                ),
-              );
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: _bg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _border),
+        return GestureDetector(
+          onTap: () {
+            _closeAll();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ThemeSelectionScreen(),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [activeTheme.gradientStart, activeTheme.gradientEnd],
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.palette_outlined,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Themes',
-                          style: TextStyle(
-                            color: _text,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          'Customize your TwoOfUs',
-                          style: TextStyle(
-                            color: _sub,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
+            );
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: _bg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [activeTheme.gradientStart, activeTheme.gradientEnd],
                     ),
                   ),
-                  Row(
+                  child: const Icon(
+                    Icons.palette_outlined,
+                    color: Colors.white,
+                    size: 19,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _smallDot(activeTheme.bg),
-                      const SizedBox(width: 3),
-                      _smallDot(activeTheme.surface),
-                      const SizedBox(width: 3),
-                      _smallDot(activeTheme.primary),
+                      Text(
+                        'Themes & Palette',
+                        style: TextStyle(
+                          color: _text,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'Customize colors & background',
+                        style: TextStyle(
+                          color: _sub,
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: _sub,
-                    size: 14,
-                  ),
-                ],
-              ),
+                ),
+                Row(
+                  children: [
+                    _smallDot(activeTheme.bg),
+                    const SizedBox(width: 3),
+                    _smallDot(activeTheme.surface),
+                    const SizedBox(width: 3),
+                    _smallDot(activeTheme.primary),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: _sub,
+                  size: 13,
+                ),
+              ],
             ),
           ),
         );
@@ -3257,46 +3442,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
     );
   }
-
-  Widget _sTile(IconData icon, String title, String sub, VoidCallback onTap) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: GestureDetector(
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: _bg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _border),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: [_rose, _violet]),
-                  ),
-                  child: Icon(icon, color: Colors.white, size: 20),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: TextStyle(color: _text, fontSize: 14, fontWeight: FontWeight.w700)),
-                      Text(sub, style: TextStyle(color: _sub, fontSize: 11)),
-                    ],
-                  ),
-                ),
-                Icon(Icons.arrow_forward_ios_rounded, color: _sub, size: 14),
-              ],
-            ),
-          ),
-        ),
-      );
 
   // ── Logout Dialog ─────────────────────────────────────────────────────────
   void _showLogoutDialog() {
