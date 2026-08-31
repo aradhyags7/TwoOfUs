@@ -1,20 +1,40 @@
+import os
+import sys
+import uuid
 import pytest
+
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+root_dir = os.path.dirname(backend_dir)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from fastapi.testclient import TestClient
-from app.main import app
-from app.services.totp import generate_totp_code
+try:
+    from backend.app.main import app
+    from backend.app.services.totp import generate_totp_code
+    from backend.app.core.database import SessionLocal
+    from backend.app.models.user import User
+except ImportError:
+    from app.main import app
+    from app.services.totp import generate_totp_code
+    from app.core.database import SessionLocal
+    from app.models.user import User
 
 client = TestClient(app)
+_test_suffix = uuid.uuid4().hex[:6]
 
 
 class TestTwoFactorAuth:
     test_user = {
-        "email": "twofactor_user@test.com",
-        "username": "twofactor_user",
+        "email": f"twofactor_{_test_suffix}@test.com",
+        "username": f"twofactor_{_test_suffix}",
         "password": "Password123!"
     }
-    user_token = None
-    setup_secret = None
-    backup_codes = None
+    user_token: str = ""
+    setup_secret: str = ""
+    backup_codes: list = []
 
     def test_01_register_and_login_without_2fa(self):
         # Register
@@ -165,8 +185,6 @@ class TestTwoFactorAuth:
         assert "email" in send_res.json()
 
         # Query user directly from test DB or inspect OTP
-        from app.core.database import SessionLocal
-        from app.models.user import User
         db = SessionLocal()
         user = db.query(User).filter(User.email == self.test_user["email"]).first()
         email_otp = user.email_2fa_otp
@@ -210,8 +228,6 @@ class TestTwoFactorAuth:
         assert send_res.status_code == 200
 
         # Fetch the generated email code
-        from app.core.database import SessionLocal
-        from app.models.user import User
         db = SessionLocal()
         user = db.query(User).filter(User.email == self.test_user["email"]).first()
         email_otp = user.email_2fa_otp

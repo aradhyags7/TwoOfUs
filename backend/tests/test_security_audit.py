@@ -49,6 +49,7 @@ class SecurityPenetrationTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)
         if os.path.exists("./test_security_audit.db"):
             try:
