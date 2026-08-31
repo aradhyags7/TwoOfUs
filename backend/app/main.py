@@ -343,7 +343,7 @@ def setup_2fa(
 ):
     user = get_user_by_id(db, int(current_user["sub"]))
     secret = generate_totp_secret()
-    otpauth_url = get_totp_uri(secret, user.email)
+    otpauth_url = get_totp_uri(secret, str(user.email))
     plain_codes, _ = generate_backup_codes(count=8)
 
     return {
@@ -383,7 +383,7 @@ def send_2fa_email_code(
     db.commit()
 
     # Dispatch email
-    send_2fa_otp_email(to_email=user.email, username=user.username, code=otp)
+    send_2fa_otp_email(to_email=str(user.email), username=str(user.username), code=otp)
 
     return {
         "message": f"Verification code sent to {user.email}",
@@ -455,12 +455,12 @@ def disable_2fa(
     is_verified = False
     if req.password and verify_password(req.password, str(user.password_hash)):
         is_verified = True
-    elif req.code and user.totp_secret and verify_totp_code(user.totp_secret, req.code):
+    elif req.code and user.totp_secret and verify_totp_code(str(user.totp_secret), req.code):
         is_verified = True
     elif req.code and user.email_2fa_otp and user.email_2fa_otp == req.code.strip():
         is_verified = True
     elif req.code and user.backup_codes:
-        hashed_list = json.loads(user.backup_codes or "[]")
+        hashed_list = json.loads(str(user.backup_codes or "[]"))
         is_backup, _ = verify_and_consume_backup_code(req.code, hashed_list)
         if is_backup:
             is_verified = True
@@ -509,7 +509,7 @@ def verify_2fa_login(
 
     # Check 6-digit TOTP
     if user.totp_secret and len(code_clean) == 6 and code_clean.isdigit():
-        is_valid = verify_totp_code(user.totp_secret, code_clean)
+        is_valid = verify_totp_code(str(user.totp_secret), code_clean)
 
     # Check Email OTP
     if not is_valid and user.email_2fa_otp and user.email_2fa_otp == code_clean:
@@ -526,7 +526,7 @@ def verify_2fa_login(
 
     # Check Backup recovery code
     if not is_valid and user.backup_codes:
-        hashed_list = json.loads(user.backup_codes or "[]")
+        hashed_list = json.loads(str(user.backup_codes or "[]"))
         is_backup, updated_list = verify_and_consume_backup_code(code_clean, hashed_list)
         if is_backup:
             is_valid = True
@@ -561,7 +561,7 @@ def get_2fa_status(
     db: Session = Depends(get_db)
 ):
     user = get_user_by_id(db, int(current_user["sub"]))
-    codes = json.loads(user.backup_codes or "[]")
+    codes = json.loads(str(user.backup_codes or "[]"))
     return {
         "is_2fa_enabled": bool(user.is_2fa_enabled),
         "two_factor_method": user.two_factor_method or "totp",
@@ -600,7 +600,7 @@ def forgot_password(
     db.commit()
 
     # Dispatch email
-    send_password_reset_email(to_email=user.email, username=user.username, code=code)
+    send_password_reset_email(to_email=str(user.email), username=str(user.username), code=code)
 
     return {
         "message": f"Reset code sent to your registered email",
