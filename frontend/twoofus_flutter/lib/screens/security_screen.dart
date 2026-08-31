@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../widgets/passcode_lock_button.dart';
 import 'passcode_setup_screen.dart';
+import 'two_factor_setup_screen.dart';
 
 class SecurityScreen extends StatefulWidget {
   const SecurityScreen({super.key});
@@ -21,6 +23,8 @@ class _SecurityScreenState extends State<SecurityScreen> {
   bool passcodeEnabled = false;
   bool fingerprintEnabled = false;
   bool biometricsSupported = false;
+  bool is2faEnabled = false;
+  int remainingBackupCodes = 0;
   String autoLockDuration = "immediately";
   Map<String, String> storageStatus = {
     "status": "Active",
@@ -42,16 +46,233 @@ class _SecurityScreenState extends State<SecurityScreen> {
     final autoLock = await SecurityService.getAutoLock();
     final storageInfo = await SecurityService.getEncryptedStorageStatus();
 
+    // Fetch 2FA status from backend
+    bool twoFa = false;
+    int backupCount = 0;
+    try {
+      final twoFaStatus = await ApiService.get2FAStatus();
+      if (twoFaStatus != null) {
+        twoFa = twoFaStatus["is_2fa_enabled"] == true;
+        backupCount = (twoFaStatus["remaining_backup_codes"] ?? 0) as int;
+      }
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
         passcodeEnabled = hasCode;
         fingerprintEnabled = fpEnabled;
         biometricsSupported = bioSupport;
+        is2faEnabled = twoFa;
+        remainingBackupCodes = backupCount;
         autoLockDuration = autoLock;
         storageStatus = storageInfo;
         isLoading = false;
       });
     }
+  }
+
+  void _onTap2FATile() async {
+    if (!is2faEnabled) {
+      final res = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const TwoFactorSetupScreen(),
+        ),
+      );
+      if (res == true) _loadSecuritySettings();
+    } else {
+      _show2FAOptionsModal();
+    }
+  }
+
+  void _show2FAOptionsModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: surfaceCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.verified_user_rounded, color: Colors.greenAccent, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    "Two-Factor Authentication",
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "Status: Active 🛡️ ($remainingBackupCodes backup recovery codes remaining)",
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: Colors.white10,
+                  child: Icon(Icons.refresh_rounded, color: Colors.amberAccent),
+                ),
+                title: const Text(
+                  "Reconfigure / Generate New Secret",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text("Replace existing authenticator key with a new one",
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final res = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const TwoFactorSetupScreen(),
+                    ),
+                  );
+                  if (res == true) _loadSecuritySettings();
+                },
+              ),
+              const Divider(color: Colors.white12, height: 24),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: Colors.redAccent.withValues(alpha: 0.15),
+                  child: const Icon(Icons.no_encryption_rounded, color: Colors.redAccent),
+                ),
+                title: const Text(
+                  "Disable Two-Factor Auth",
+                  style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text("Requires your account password",
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showDisable2FADialog();
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDisable2FADialog() {
+    final passCtrl = TextEditingController();
+    bool isDisabling = false;
+
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: surfaceCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("Disable 2FA?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Enter your account password to confirm disabling Two-Factor Authentication:",
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: passCtrl,
+                obscureText: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: "Account Password",
+                  labelStyle: const TextStyle(color: Colors.white54),
+                  filled: true,
+                  fillColor: Colors.black26,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text("Cancel", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              onPressed: isDisabling
+                  ? null
+                  : () async {
+                      final pass = passCtrl.text.trim();
+                      if (pass.isEmpty) return;
+                      setDlgState(() => isDisabling = true);
+                      final res = await ApiService.disable2FA(password: pass);
+                      if (!mounted) return;
+                      if (res != null && !res.containsKey("error")) {
+                        if (dlgCtx.mounted) Navigator.pop(dlgCtx);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Two-Factor Authentication disabled."),
+                              backgroundColor: Color(0xFF200F35),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          _loadSecuritySettings();
+                        }
+                      } else {
+                        setDlgState(() => isDisabling = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(res?["error"] ?? "Invalid password."),
+                              backgroundColor: Colors.redAccent.shade700,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              child: isDisabling
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text("Disable 2FA"),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onTapPasscodeTile() async {
@@ -352,7 +573,24 @@ class _SecurityScreenState extends State<SecurityScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // 3. Auto Lock Tile
+                // 3. Two-Factor Authentication (2FA) Tile
+                _buildCardTile(
+                  icon: Icons.security_rounded,
+                  title: "Two-Factor Auth (2FA)",
+                  subtitle: is2faEnabled
+                      ? "Enabled 🛡️ • Authenticator App ($remainingBackupCodes recovery codes)"
+                      : "Disabled • Protect login with Authenticator app",
+                  isActive: is2faEnabled,
+                  onTap: _onTap2FATile,
+                  trailing: Switch(
+                    activeThumbColor: rose,
+                    value: is2faEnabled,
+                    onChanged: (_) => _onTap2FATile(),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // 4. Auto Lock Tile
                 _buildCardTile(
                   icon: Icons.timer_outlined,
                   title: "Auto Lock",

@@ -52,6 +52,191 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  Future<void> _handleSuccessfulAuth(Map<String, dynamic> authData) async {
+    await Session.saveLogin(
+      token: authData["access_token"],
+      userId: authData["user_id"],
+      username: authData["username"],
+      email: authData["email"],
+    );
+
+    if (!mounted) return;
+
+    final pairStatus = await ApiService.getPairStatus(
+      authData["user_id"],
+      token: authData["access_token"],
+    );
+
+    if (!mounted) return;
+
+    if (pairStatus != null &&
+        pairStatus["connected"] == true &&
+        pairStatus["partner_id"] != null) {
+      final partnerId = pairStatus["partner_id"] as int;
+      final partnerName = (pairStatus["partner_name"] ?? "Partner").toString();
+      await Session.savePartner(partnerId, partnerName);
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            partnerId: partnerId,
+            partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
+          ),
+        ),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const HomeScreen(),
+        ),
+      );
+    }
+  }
+
+  void _show2FALoginSheet(String tempToken) {
+    final codeCtrl = TextEditingController();
+    bool isVerifying = false;
+    String? errorText;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16082A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 24,
+              bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF4081).withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.shield_rounded, color: Color(0xFFFF4081), size: 32),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  "Two-Factor Authentication",
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Enter the 6-digit code from your Authenticator app (or an 8-character backup recovery code):",
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: codeCtrl,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 4,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: "123456 / CODE-1234",
+                    hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      fontSize: 13,
+                      letterSpacing: 2,
+                    ),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: Color(0xFFFF4081), width: 2),
+                    ),
+                    errorText: errorText,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: isVerifying
+                        ? null
+                        : () async {
+                            final code = codeCtrl.text.trim();
+                            if (code.isEmpty) return;
+                            setSheetState(() {
+                              isVerifying = true;
+                              errorText = null;
+                            });
+
+                            final verifyRes = await ApiService.verify2FALogin(
+                              tempToken: tempToken,
+                              code: code,
+                            );
+
+                            if (!mounted) return;
+
+                            if (verifyRes != null && verifyRes.containsKey("access_token")) {
+                              Navigator.pop(sheetCtx);
+                              await _handleSuccessfulAuth(verifyRes);
+                            } else {
+                              setSheetState(() {
+                                isVerifying = false;
+                                errorText = verifyRes?["error"] ?? "Invalid code. Try again.";
+                              });
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF4081),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
+                    ),
+                    child: isVerifying
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text(
+                            "Verify & Log In",
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> login() async {
     HapticFeedback.lightImpact();
     setState(() => isLoading = true);
@@ -63,47 +248,11 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (!mounted) return;
 
-      if (result != null && result.containsKey("access_token")) {
-        await Session.saveLogin(
-          token: result["access_token"],
-          userId: result["user_id"],
-          username: result["username"],
-          email: result["email"],
-        );
-
-        if (!mounted) return;
-
-        final pairStatus = await ApiService.getPairStatus(
-          result["user_id"],
-          token: result["access_token"],
-        );
-
-        if (!mounted) return;
-
-        if (pairStatus != null &&
-            pairStatus["connected"] == true &&
-            pairStatus["partner_id"] != null) {
-          final partnerId = pairStatus["partner_id"] as int;
-          final partnerName = (pairStatus["partner_name"] ?? "Partner").toString();
-          await Session.savePartner(partnerId, partnerName);
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ChatScreen(
-                partnerId: partnerId,
-                partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
-              ),
-            ),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const HomeScreen(),
-            ),
-          );
-        }
+      if (result != null && result["requires_2fa"] == true) {
+        final tempToken = result["temp_token"] as String;
+        _show2FALoginSheet(tempToken);
+      } else if (result != null && result.containsKey("access_token")) {
+        await _handleSuccessfulAuth(result);
       } else {
         final errMsg = (result != null && result.containsKey("error"))
             ? result["error"].toString()

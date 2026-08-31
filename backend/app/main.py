@@ -35,6 +35,21 @@ from .schemas.message import EditMessageRequest, MessageCreate
 from .schemas.media import MediaResponse, MediaUploadResponse
 from .schemas.password import ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest
 from .schemas.profile import ProfileUpdate
+from .schemas.two_factor import (
+    TwoFactorSetupResponse,
+    TwoFactorEnableRequest,
+    TwoFactorDisableRequest,
+    TwoFactorVerifyLoginRequest,
+    TwoFactorStatusResponse,
+)
+from .services.totp import (
+    generate_totp_secret,
+    get_totp_uri,
+    verify_totp_code,
+    generate_backup_codes,
+    verify_and_consume_backup_code,
+    hash_backup_code,
+)
 from .services.storage import (
     validate_file,
     save_upload_file,
@@ -53,6 +68,9 @@ try:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp TEXT;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TIMESTAMP;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_2fa_enabled BOOLEAN DEFAULT FALSE;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes TEXT;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_view_once BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_expired BOOLEAN DEFAULT FALSE;"))
@@ -120,15 +138,19 @@ def get_current_user(
     return payload
 
 
+def get_user_by_id(db: Session, user_id: int) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
 def get_user_from_token_str(token: str, db: Session) -> User:
     payload = decode_access_token(token)
     if not payload or not payload.get("sub"):
         raise HTTPException(status_code=401, detail="Invalid token")
     user_id = int(payload["sub"])
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    return get_user_by_id(db, user_id)
 
 
 def verify_pair_access(db: Session, user1_id: int, user2_id: int) -> Optional[Pair]:
@@ -272,6 +294,20 @@ def login(
             detail="Invalid email or password"
         )
 
+    if existing_user.is_2fa_enabled and existing_user.totp_secret:
+        temp_token = create_access_token(
+            data={
+                "sub": str(existing_user.id),
+                "email": existing_user.email,
+                "type": "2fa_pending"
+            }
+        )
+        return {
+            "requires_2fa": True,
+            "temp_token": temp_token,
+            "user_id": existing_user.id
+        }
+
     access_token = create_access_token(
         data={
             "sub": str(existing_user.id),
@@ -285,6 +321,162 @@ def login(
         "user_id": existing_user.id,
         "email": existing_user.email,
         "username": existing_user.username
+    }
+
+
+# ==========================
+# Two-Factor Authentication (2FA)
+# ==========================
+@app.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+def setup_2fa(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = get_user_by_id(db, int(current_user["sub"]))
+    secret = generate_totp_secret()
+    otpauth_url = get_totp_uri(secret, user.email)
+    plain_codes, _ = generate_backup_codes(count=8)
+
+    return {
+        "secret": secret,
+        "otpauth_url": otpauth_url,
+        "backup_codes": plain_codes
+    }
+
+
+@app.post("/2fa/enable")
+def enable_2fa(
+    req: TwoFactorEnableRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = get_user_by_id(db, int(current_user["sub"]))
+
+    if not verify_totp_code(req.secret, req.code):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid 6-digit authentication code. Please check your authenticator app and try again."
+        )
+
+    hashed_codes = [hash_backup_code(c) for c in req.backup_codes]
+
+    user.totp_secret = req.secret
+    user.backup_codes = json.dumps(hashed_codes)
+    user.is_2fa_enabled = True
+    db.commit()
+
+    return {
+        "message": "Two-Factor Authentication successfully enabled 🛡️"
+    }
+
+
+@app.post("/2fa/disable")
+def disable_2fa(
+    req: TwoFactorDisableRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = get_user_by_id(db, int(current_user["sub"]))
+
+    if not user.is_2fa_enabled:
+        return {"message": "Two-Factor Authentication is already disabled"}
+
+    is_verified = False
+    if req.password and verify_password(req.password, str(user.password_hash)):
+        is_verified = True
+    elif req.code and user.totp_secret and verify_totp_code(user.totp_secret, req.code):
+        is_verified = True
+    elif req.code and user.backup_codes:
+        hashed_list = json.loads(user.backup_codes or "[]")
+        is_backup, _ = verify_and_consume_backup_code(req.code, hashed_list)
+        if is_backup:
+            is_verified = True
+
+    if not is_verified:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid password or verification code to disable 2FA"
+        )
+
+    user.is_2fa_enabled = False
+    user.totp_secret = None
+    user.backup_codes = None
+    db.commit()
+
+    return {
+        "message": "Two-Factor Authentication disabled"
+    }
+
+
+@app.post("/2fa/verify-login")
+def verify_2fa_login(
+    req: TwoFactorVerifyLoginRequest,
+    db: Session = Depends(get_db)
+):
+    payload = decode_access_token(req.temp_token)
+    if not payload or payload.get("type") != "2fa_pending":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired 2FA session token. Please log in again."
+        )
+
+    user_id = int(payload["sub"])
+    user = get_user_by_id(db, user_id)
+
+    if not user.is_2fa_enabled or not user.totp_secret:
+        raise HTTPException(
+            status_code=400,
+            detail="2FA is not enabled for this account"
+        )
+
+    code_clean = req.code.strip()
+    is_valid = False
+
+    # Check 6-digit TOTP
+    if len(code_clean) == 6 and code_clean.isdigit():
+        is_valid = verify_totp_code(user.totp_secret, code_clean)
+
+    # Check Backup recovery code
+    if not is_valid and user.backup_codes:
+        hashed_list = json.loads(user.backup_codes or "[]")
+        is_backup, updated_list = verify_and_consume_backup_code(code_clean, hashed_list)
+        if is_backup:
+            is_valid = True
+            user.backup_codes = json.dumps(updated_list)
+            db.commit()
+
+    if not is_valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid 6-digit authentication code or backup recovery code"
+        )
+
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "email": user.email
+        }
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "email": user.email,
+        "username": user.username
+    }
+
+
+@app.get("/2fa/status", response_model=TwoFactorStatusResponse)
+def get_2fa_status(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = get_user_by_id(db, int(current_user["sub"]))
+    codes = json.loads(user.backup_codes or "[]")
+    return {
+        "is_2fa_enabled": bool(user.is_2fa_enabled),
+        "remaining_backup_codes": len(codes)
     }
 
 

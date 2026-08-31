@@ -414,6 +414,172 @@ class ApiService {
   }
 
   // =========================
+  // TWO-FACTOR AUTHENTICATION (2FA)
+  // =========================
+  static Future<Map<String, dynamic>?> setup2FA({String? token}) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final headers = await _authHeaders(token: token);
+        final response = await http.post(
+          Uri.parse('$baseUrl/2fa/setup'),
+          headers: headers,
+        ).timeout(defaultTimeout);
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Failed to setup 2FA"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
+        }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) continue;
+        }
+        return {"error": "Cannot connect to server."};
+      }
+    }
+    return {"error": "Cannot connect to server."};
+  }
+
+  static Future<Map<String, dynamic>?> enable2FA({
+    required String code,
+    required String secret,
+    required List<String> backupCodes,
+    String? token,
+  }) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final headers = await _authHeaders(token: token);
+        final response = await http.post(
+          Uri.parse('$baseUrl/2fa/enable'),
+          headers: headers,
+          body: jsonEncode({
+            'code': code,
+            'secret': secret,
+            'backup_codes': backupCodes,
+          }),
+        ).timeout(defaultTimeout);
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Failed to enable 2FA"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
+        }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) continue;
+        }
+        return {"error": "Cannot connect to server."};
+      }
+    }
+    return {"error": "Cannot connect to server."};
+  }
+
+  static Future<Map<String, dynamic>?> disable2FA({
+    String? password,
+    String? code,
+    String? token,
+  }) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final headers = await _authHeaders(token: token);
+        final response = await http.post(
+          Uri.parse('$baseUrl/2fa/disable'),
+          headers: headers,
+          body: jsonEncode({
+            if (password != null) 'password': password,
+            if (code != null) 'code': code,
+          }),
+        ).timeout(defaultTimeout);
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Failed to disable 2FA"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
+        }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) continue;
+        }
+        return {"error": "Cannot connect to server."};
+      }
+    }
+    return {"error": "Cannot connect to server."};
+  }
+
+  static Future<Map<String, dynamic>?> verify2FALogin({
+    required String tempToken,
+    required String code,
+  }) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/2fa/verify-login'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'temp_token': tempToken,
+            'code': code,
+          }),
+        ).timeout(defaultTimeout);
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Invalid 2FA code (${response.statusCode})"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
+        }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) continue;
+        }
+        return {"error": "Cannot connect to server."};
+      }
+    }
+    return {"error": "Cannot connect to server."};
+  }
+
+  static Future<Map<String, dynamic>?> get2FAStatus({String? token}) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.get(
+        Uri.parse('$baseUrl/2fa/status'),
+        headers: headers,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // =========================
   // GENERATE PIN
   // =========================
   static Future<Map<String, dynamic>?> generatePin(
