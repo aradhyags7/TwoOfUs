@@ -47,6 +47,33 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
     super.dispose();
   }
 
+  Future<void> _runAutoDiscover() async {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _isTesting = true;
+      _testPassed = null;
+      _statusMessage = "Auto-scanning current network for backend server...";
+    });
+
+    final found = await ApiService.autoDiscoverServer(forceScan: true);
+    if (!mounted) return;
+
+    if (found != null) {
+      setState(() {
+        _isTesting = false;
+        _testPassed = true;
+        _urlCtrl.text = found;
+        _statusMessage = "Discovered TwoOfUs server at $found! 🚀";
+      });
+    } else {
+      setState(() {
+        _isTesting = false;
+        _testPassed = false;
+        _statusMessage = "No server responded on this network. Ensure backend is running.";
+      });
+    }
+  }
+
   Future<void> _runTest() async {
     final target = _urlCtrl.text.trim();
     if (target.isEmpty) return;
@@ -126,7 +153,7 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "When running on a physical phone, connect using your computer's Wi-Fi LAN IP or a deployed URL.",
+              "TwoOfUs automatically discovers and connects to the backend server across any Wi-Fi or Hotspot network.",
               style: TextStyle(color: _sub, fontSize: 13, height: 1.4),
             ),
             const SizedBox(height: 16),
@@ -158,6 +185,24 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
                   ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isTesting ? null : _runAutoDiscover,
+                icon: const Icon(Icons.radar_rounded, size: 18, color: Colors.amberAccent),
+                label: const Text(
+                  "⚡ Auto-Detect Server IP",
+                  style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.amberAccent, width: 1.2),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
@@ -216,7 +261,7 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _presetChip("🏠 Wi-Fi (10.57.63.218)", "http://10.57.63.218:8000"),
+                _presetChip("🔄 Current (${ApiService.baseUrl})", ApiService.baseUrl),
                 _presetChip("📱 Emulator (10.0.2.2)", "http://10.0.2.2:8000"),
                 _presetChip("💻 Localhost (127.0.0.1)", "http://127.0.0.1:8000"),
               ],

@@ -88,6 +88,19 @@ app.mount(
     name="uploads"
 )
 
+
+@app.get("/")
+@app.get("/health")
+@app.get("/ping")
+def health_check():
+    return {
+        "status": "ok",
+        "app": "TwoOfUs",
+        "version": "1.0.0",
+        "time": datetime.now(timezone.utc).isoformat()
+    }
+
+
 security = HTTPBearer()
 
 

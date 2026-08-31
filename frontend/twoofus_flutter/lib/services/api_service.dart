@@ -7,13 +7,22 @@ import '../utils/session.dart';
 
 class ApiService {
   static const String _serverPrefKey = "custom_server_base_url";
+  static const String _lastWorkingPrefKey = "last_working_server_url";
   static String? _customBaseUrl;
+  static String? _discoveredBaseUrl;
+  static bool _isDiscovering = false;
 
-  /// Loads configured custom server address on app startup
+  /// Loads configured custom server address on app startup and triggers background discovery
   static Future<void> initServerConfig() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       _customBaseUrl = prefs.getString(_serverPrefKey);
+      _discoveredBaseUrl = prefs.getString(_lastWorkingPrefKey);
+      
+      // Auto-discover in background if no custom base URL is explicitly forced
+      if (_customBaseUrl == null || _customBaseUrl!.isEmpty) {
+        autoDiscoverServer();
+      }
     } catch (_) {}
   }
 
@@ -48,22 +57,171 @@ class ApiService {
       if (target.endsWith("/")) {
         target = target.substring(0, target.length - 1);
       }
-      final res = await http.get(Uri.parse(target)).timeout(const Duration(seconds: 4));
-      return res.statusCode >= 200 && res.statusCode < 500;
+      final res = await http.get(Uri.parse("$target/health")).timeout(const Duration(milliseconds: 1500));
+      if (res.statusCode == 200) {
+        return true;
+      }
+      final fallbackRes = await http.get(Uri.parse(target)).timeout(const Duration(milliseconds: 1500));
+      return fallbackRes.statusCode >= 200 && fallbackRes.statusCode < 500;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Fast parallel candidate probing & subnet scanning to discover server on any network
+  static Future<String?> autoDiscoverServer({bool forceScan = false}) async {
+    if (_isDiscovering) return _discoveredBaseUrl;
+    _isDiscovering = true;
+    try {
+      // 1. If custom URL is explicitly set, check if it works
+      if (_customBaseUrl != null && _customBaseUrl!.isNotEmpty) {
+        if (await _probeCandidate(_customBaseUrl!)) {
+          _isDiscovering = false;
+          return _customBaseUrl;
+        }
+      }
+
+      // 2. Fast candidate list: last known working, emulator loopback, localhost/adb reverse, etc.
+      final List<String> fastCandidates = [];
+      if (_discoveredBaseUrl != null && _discoveredBaseUrl!.isNotEmpty) {
+        fastCandidates.add(_discoveredBaseUrl!);
+      }
+      fastCandidates.addAll([
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://10.0.2.2:8000",
+      ]);
+
+      for (final candidate in fastCandidates) {
+        if (await _probeCandidate(candidate, timeoutMs: 800)) {
+          await _saveWorkingUrl(candidate);
+          _isDiscovering = false;
+          return candidate;
+        }
+      }
+
+      // 3. Scan dynamic local Wi-Fi / Hotspot network interfaces
+      final dynamicCandidates = <String>{};
+      try {
+        final interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4,
+          includeLoopback: false,
+        );
+        for (final iface in interfaces) {
+          for (final addr in iface.addresses) {
+            final ip = addr.address;
+            final lastDot = ip.lastIndexOf('.');
+            if (lastDot != -1) {
+              final prefix = ip.substring(0, lastDot + 1);
+              // Common host / router / hotspot server IPs
+              dynamicCandidates.add("http://${prefix}1:8000");
+              dynamicCandidates.add("http://${prefix}2:8000");
+              dynamicCandidates.add("http://${prefix}100:8000");
+              dynamicCandidates.add("http://${prefix}101:8000");
+              dynamicCandidates.add("http://${prefix}102:8000");
+              dynamicCandidates.add("http://${prefix}103:8000");
+              dynamicCandidates.add("http://${prefix}104:8000");
+              dynamicCandidates.add("http://${prefix}105:8000");
+              dynamicCandidates.add("http://${prefix}106:8000");
+              dynamicCandidates.add("http://${prefix}107:8000");
+              dynamicCandidates.add("http://${prefix}108:8000");
+              dynamicCandidates.add("http://${prefix}109:8000");
+              dynamicCandidates.add("http://${prefix}110:8000");
+              dynamicCandidates.add("http://$ip:8000");
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (dynamicCandidates.isNotEmpty) {
+        final results = await Future.wait(
+          dynamicCandidates.map((url) async {
+            final isAlive = await _probeCandidate(url, timeoutMs: 1000);
+            return isAlive ? url : null;
+          }),
+        );
+        for (final res in results) {
+          if (res != null) {
+            await _saveWorkingUrl(res);
+            _isDiscovering = false;
+            return res;
+          }
+        }
+      }
+
+      // 4. Full local subnet sweep (1-254) in concurrent chunks of 30
+      try {
+        final interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4,
+          includeLoopback: false,
+        );
+        for (final iface in interfaces) {
+          for (final addr in iface.addresses) {
+            final ip = addr.address;
+            final lastDot = ip.lastIndexOf('.');
+            if (lastDot != -1) {
+              final prefix = ip.substring(0, lastDot + 1);
+              for (int start = 1; start < 255; start += 30) {
+                final chunk = <String>[];
+                for (int i = start; i < start + 30 && i < 255; i++) {
+                  chunk.add("http://$prefix$i:8000");
+                }
+                final chunkResults = await Future.wait(
+                  chunk.map((url) async {
+                    final ok = await _probeCandidate(url, timeoutMs: 700);
+                    return ok ? url : null;
+                  }),
+                );
+                for (final found in chunkResults) {
+                  if (found != null) {
+                    await _saveWorkingUrl(found);
+                    _isDiscovering = false;
+                    return found;
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+    } catch (_) {} finally {
+      _isDiscovering = false;
+    }
+    return _discoveredBaseUrl;
+  }
+
+  static Future<bool> _probeCandidate(String url, {int timeoutMs = 900}) async {
+    try {
+      final res = await http.get(Uri.parse("$url/health")).timeout(Duration(milliseconds: timeoutMs));
+      if (res.statusCode == 200) {
+        return true;
+      }
+      final fallback = await http.get(Uri.parse(url)).timeout(Duration(milliseconds: timeoutMs));
+      return fallback.statusCode >= 200 && fallback.statusCode < 500;
+    } catch (_) {}
+    return false;
+  }
+
+  static Future<void> _saveWorkingUrl(String url) async {
+    _discoveredBaseUrl = url;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastWorkingPrefKey, url);
+    } catch (_) {}
   }
 
   static String get baseUrl {
     if (_customBaseUrl != null && _customBaseUrl!.isNotEmpty) {
       return _customBaseUrl!;
     }
+    if (_discoveredBaseUrl != null && _discoveredBaseUrl!.isNotEmpty) {
+      return _discoveredBaseUrl!;
+    }
     if (kIsWeb) {
       return "http://localhost:8000";
     } else if (Platform.isAndroid) {
-      // Default to host machine LAN IP so physical APK connects seamlessly; fallback to 10.0.2.2 on emulator if custom set
-      return "http://10.57.63.218:8000";
+      return "http://10.0.2.2:8000";
     } else {
       return "http://127.0.0.1:8000";
     }
@@ -90,31 +248,41 @@ class ApiService {
     String email,
     String password,
   ) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/login'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-        }),
-      ).timeout(defaultTimeout);
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/login'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'email': email,
+            'password': password,
+          }),
+        ).timeout(defaultTimeout);
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        try {
-          final err = jsonDecode(response.body);
-          return {"error": err["detail"] ?? "Login failed (${response.statusCode})"};
-        } catch (_) {
-          return {"error": "Server error (${response.statusCode})"};
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Login failed (${response.statusCode})"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
         }
+      } catch (e) {
+        if (attempt == 0) {
+          // Auto-discover backend on the new network and retry immediately
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) {
+            continue;
+          }
+        }
+        return {"error": "Cannot connect to server. Please check backend connection."};
       }
-    } catch (e) {
-      return {"error": "Cannot connect to server. Please check backend connection."};
     }
+    return {"error": "Cannot connect to server. Please check backend connection."};
   }
 
   // =========================
@@ -125,32 +293,41 @@ class ApiService {
     String username,
     String password,
   ) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/register'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email,
-          'username': username,
-          'password': password,
-        }),
-      ).timeout(defaultTimeout);
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/register'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'email': email,
+            'username': username,
+            'password': password,
+          }),
+        ).timeout(defaultTimeout);
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        try {
-          final err = jsonDecode(response.body);
-          return {"error": err["detail"] ?? "Registration failed (${response.statusCode})"};
-        } catch (_) {
-          return {"error": "Server error (${response.statusCode})"};
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Registration failed (${response.statusCode})"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
         }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) {
+            continue;
+          }
+        }
+        return {"error": "Cannot connect to server. Please check backend connection."};
       }
-    } catch (e) {
-      return {"error": "Cannot connect to server. Please check backend connection."};
     }
+    return {"error": "Cannot connect to server. Please check backend connection."};
   }
 
   // =========================
@@ -159,30 +336,39 @@ class ApiService {
   static Future<Map<String, dynamic>?> requestPasswordReset(
     String emailOrUsername,
   ) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/forgot-password'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'email_or_username': emailOrUsername,
-        }),
-      ).timeout(defaultTimeout);
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/forgot-password'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'email_or_username': emailOrUsername,
+          }),
+        ).timeout(defaultTimeout);
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        try {
-          final err = jsonDecode(response.body);
-          return {"error": err["detail"] ?? "Request failed (${response.statusCode})"};
-        } catch (_) {
-          return {"error": "Server error (${response.statusCode})"};
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Request failed (${response.statusCode})"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
         }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) {
+            continue;
+          }
+        }
+        return {"error": "Cannot connect to server. Please check backend connection."};
       }
-    } catch (e) {
-      return {"error": "Cannot connect to server. Please check backend connection."};
     }
+    return {"error": "Cannot connect to server. Please check backend connection."};
   }
 
   static Future<Map<String, dynamic>?> resetPassword({
@@ -190,32 +376,41 @@ class ApiService {
     required String resetCode,
     required String newPassword,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/reset-password'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'email_or_username': emailOrUsername,
-          'reset_code': resetCode,
-          'new_password': newPassword,
-        }),
-      ).timeout(defaultTimeout);
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/reset-password'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'email_or_username': emailOrUsername,
+            'reset_code': resetCode,
+            'new_password': newPassword,
+          }),
+        ).timeout(defaultTimeout);
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        try {
-          final err = jsonDecode(response.body);
-          return {"error": err["detail"] ?? "Reset failed (${response.statusCode})"};
-        } catch (_) {
-          return {"error": "Server error (${response.statusCode})"};
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Reset failed (${response.statusCode})"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
         }
+      } catch (e) {
+        if (attempt == 0) {
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) {
+            continue;
+          }
+        }
+        return {"error": "Cannot connect to server. Please check backend connection."};
       }
-    } catch (e) {
-      return {"error": "Cannot connect to server. Please check backend connection."};
     }
+    return {"error": "Cannot connect to server. Please check backend connection."};
   }
 
   // =========================
