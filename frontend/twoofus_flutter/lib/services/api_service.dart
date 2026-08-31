@@ -1009,6 +1009,39 @@ class ApiService {
     }
   }
 
+  static Future<bool> sendHeartbeat({String? token}) async {
+    try {
+      final headers = await _authHeaders(token: token, json: false);
+      final response = await http.post(
+        Uri.parse("$baseUrl/heartbeat"),
+        headers: headers,
+      ).timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getOnlineStatus(
+    int userId, {
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token, json: false);
+      final response = await http.get(
+        Uri.parse("$baseUrl/user/$userId/status"),
+        headers: headers,
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>?> getProfile(
     int userId, {
     String? token,

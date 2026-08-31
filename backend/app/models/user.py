@@ -26,4 +26,5 @@ class User(Base):
     totp_secret: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     backup_codes: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # JSON-encoded array of SHA-256 hashes
     email_2fa_otp: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    email_2fa_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    email_2fa_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_seen: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

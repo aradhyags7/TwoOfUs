@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -70,6 +71,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   int?   _myId;
   String _myUsername = '';
   String? _myAvatarUrl;
+  String? _partnerAvatarUrl;
   String _userToken = '';
   String? _partnerPubKey;
   bool   _loading    = true;
@@ -77,10 +79,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   // ── Theme & Preferences ───────────────────────────────────────────────────
   bool _isDark               = true;
-  bool _isOnline             = true;
+  bool _isOnline             = false;
   bool _isPartnerTyping      = false;
   bool _notificationsEnabled = true;
   bool _isPartnerVerified    = false;
+  Timer? _presenceTimer;
 
   // ── Panels ────────────────────────────────────────────────────────────────
   bool _leftOpen  = false;   // memories  (swipe →)
@@ -131,10 +134,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _pulseAnim = Tween<double>(begin: 0.5, end: 1.0)
         .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
     _initialize();
+    _startPresencePolling();
   }
 
   @override
   void dispose() {
+    _presenceTimer?.cancel();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
     _memoryCtrl.dispose();
@@ -142,6 +147,47 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _searchCtrl.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  // ── Presence & Polling ────────────────────────────────────────────────────
+  void _startPresencePolling() {
+    _presenceTimer?.cancel();
+    _syncPresence();
+    _presenceTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _syncPresence();
+    });
+  }
+
+  Future<void> _syncPresence() async {
+    try {
+      ApiService.sendHeartbeat();
+      final status = await ApiService.getOnlineStatus(widget.partnerId);
+      if (status != null && mounted) {
+        final online = status['is_online'] == true;
+        if (_isOnline != online) {
+          setState(() => _isOnline = online);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Widget _buildAvatarFallback() {
+    final initial = widget.partnerName.trim().isNotEmpty
+        ? widget.partnerName.trim()[0].toUpperCase()
+        : '';
+    if (initial.isNotEmpty) {
+      return Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      );
+    }
+    return const Icon(Icons.favorite_rounded, color: Colors.white, size: 18);
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -156,6 +202,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       });
     }
     _loadMyProfile();
+    _loadPartnerProfile();
     try {
       await E2EEService.initialize();
       _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
@@ -185,6 +232,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         }
       } catch (_) {}
     }
+  }
+
+  Future<void> _loadPartnerProfile() async {
+    try {
+      final prof = await ApiService.getProfile(widget.partnerId);
+      if (prof != null && mounted) {
+        setState(() {
+          _partnerAvatarUrl = prof['avatar_url']?.toString();
+          if (prof.containsKey('is_online')) {
+            _isOnline = prof['is_online'] == true;
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadMessages() async {
@@ -805,6 +866,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (res == 'open_search' && mounted) {
       _startSearch();
     }
+    _loadPartnerProfile();
   }
 
   // ── Search Logic ─────────────────────────────────────────────────────────
@@ -914,13 +976,26 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           gradient: LinearGradient(colors: [_rose, _violet]),
                           boxShadow: [
                             BoxShadow(
-                              color: _rose.withOpacity(0.3),
+                              color: _rose.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                        child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 18),
+                        child: _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty
+                            ? ClipOval(
+                                child: Image.network(
+                                  _partnerAvatarUrl!.startsWith('http')
+                                      ? _partnerAvatarUrl!
+                                      : '${ApiService.baseUrl}${_partnerAvatarUrl!.startsWith('/') ? '' : '/'}$_partnerAvatarUrl',
+                                  fit: BoxFit.cover,
+                                  headers: _userToken.isNotEmpty
+                                      ? {'Authorization': 'Bearer $_userToken'}
+                                      : null,
+                                  errorBuilder: (_, __, ___) => _buildAvatarFallback(),
+                                ),
+                              )
+                            : _buildAvatarFallback(),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -3203,10 +3278,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         decoration: BoxDecoration(
           color: _bg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _rose.withOpacity(0.3)),
+          border: Border.all(color: _rose.withValues(alpha: 0.3)),
           boxShadow: [
             BoxShadow(
-              color: _rose.withOpacity(0.06),
+              color: _rose.withValues(alpha: 0.06),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -3214,16 +3289,46 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
         child: Row(
           children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.greenAccent,
-                boxShadow: [
-                  BoxShadow(color: Colors.greenAccent, blurRadius: 6, spreadRadius: 1),
-                ],
-              ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(colors: [_rose, _violet]),
+                  ),
+                  child: _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty
+                      ? ClipOval(
+                          child: Image.network(
+                            _partnerAvatarUrl!.startsWith('http')
+                                ? _partnerAvatarUrl!
+                                : '${ApiService.baseUrl}${_partnerAvatarUrl!.startsWith('/') ? '' : '/'}$_partnerAvatarUrl',
+                            fit: BoxFit.cover,
+                            headers: _userToken.isNotEmpty ? {'Authorization': 'Bearer $_userToken'} : null,
+                            errorBuilder: (_, __, ___) => _buildAvatarFallback(),
+                          ),
+                        )
+                      : _buildAvatarFallback(),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _isOnline ? Colors.greenAccent : Colors.grey,
+                      border: Border.all(color: _bg, width: 1.5),
+                      boxShadow: _isOnline
+                          ? const [BoxShadow(color: Colors.greenAccent, blurRadius: 4, spreadRadius: 0.5)]
+                          : null,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -3238,8 +3343,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Partner info & relationship details',
-                    style: TextStyle(color: _rose, fontSize: 11, fontWeight: FontWeight.w600),
+                    _isOnline ? 'Active now 🟢' : 'Partner profile & details',
+                    style: TextStyle(
+                      color: _isOnline ? Colors.greenAccent : _rose,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),

@@ -79,6 +79,7 @@ try:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes TEXT;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_2fa_otp TEXT;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_2fa_expires_at TIMESTAMP;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_view_once BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_expired BOOLEAN DEFAULT FALSE;"))
@@ -1553,6 +1554,49 @@ def edit_message(
     }
 
 
+@app.post("/heartbeat")
+def heartbeat(
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        user.last_seen = datetime.now(timezone.utc)
+        db.commit()
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/user/{user_id}/status")
+def get_user_online_status(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    if auth_user_id != user_id:
+        pair = verify_pair_access(db, auth_user_id, user_id)
+        if not pair:
+            raise HTTPException(status_code=403, detail="Forbidden: Not authorized to view user status")
+
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    is_online = False
+    if target_user.last_seen:
+        last_seen_utc = target_user.last_seen if target_user.last_seen.tzinfo else target_user.last_seen.replace(tzinfo=timezone.utc)
+        diff = (datetime.now(timezone.utc) - last_seen_utc).total_seconds()
+        if diff <= 45:
+            is_online = True
+
+    return {
+        "user_id": target_user.id,
+        "is_online": is_online,
+        "last_seen": target_user.last_seen.isoformat() if target_user.last_seen else None
+    }
+
+
 @app.get("/profile/{user_id}")
 def get_profile(
     user_id: int,
@@ -1577,13 +1621,22 @@ def get_profile(
             detail="User not found"
         )
 
+    is_online = False
+    if user.last_seen:
+        last_seen_utc = user.last_seen if user.last_seen.tzinfo else user.last_seen.replace(tzinfo=timezone.utc)
+        diff = (datetime.now(timezone.utc) - last_seen_utc).total_seconds()
+        if diff <= 45:
+            is_online = True
+
     return {
         "id": user.id,
         "username": user.username,
         "email": user.email,
         "bio": user.bio,
         "birthday": user.birthday,
-        "avatar_url": user.avatar_url
+        "avatar_url": user.avatar_url,
+        "is_online": is_online,
+        "last_seen": user.last_seen.isoformat() if user.last_seen else None
     }
 
 
