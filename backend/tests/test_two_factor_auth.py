@@ -182,9 +182,9 @@ class TestTwoFactorAuth:
         db = SessionLocal()
         user = db.query(User).filter(User.email == self.test_user["email"]).first()
         assert user is not None
-        email_otp = user.email_2fa_otp
+        email_otp = str(user.email_2fa_otp or "")
         db.close()
-        assert email_otp is not None and len(email_otp) == 6
+        assert len(email_otp) == 6
 
         # Enable email 2FA
         enable_res = client.post(
@@ -226,9 +226,9 @@ class TestTwoFactorAuth:
         db = SessionLocal()
         user = db.query(User).filter(User.email == self.test_user["email"]).first()
         assert user is not None
-        email_otp = user.email_2fa_otp
+        email_otp = str(user.email_2fa_otp or "")
         db.close()
-        assert email_otp is not None
+        assert len(email_otp) == 6
 
         # Verify login with email OTP
         verify_res = client.post(
