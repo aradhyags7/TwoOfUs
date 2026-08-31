@@ -7,6 +7,17 @@ from typing import Optional
 from ..core.config import settings
 
 
+def _safe_print(text: str):
+    """Safely print text on any terminal without Windows cp1252 crashes."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        try:
+            print(text.encode("ascii", errors="replace").decode("ascii"))
+        except Exception:
+            pass
+
+
 def _send_smtp_message(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
     """Internal SMTP delivery worker."""
     smtp_host = settings.SMTP_HOST
@@ -17,16 +28,16 @@ def _send_smtp_message(to_email: str, subject: str, html_content: str, text_cont
 
     # If no SMTP configured, log clearly in the server console with full email content
     if not smtp_host or not smtp_user:
-        print("\n" + "=" * 55)
-        print(" [EMAIL DISPATCH - LOCAL SIMULATION]")
-        print(f" To: {to_email}")
-        print(f" Subject: {subject}")
-        print("-" * 55)
-        print(text_content.strip())
-        print("=" * 55)
-        print("💡 Tip: To deliver to real inboxes, configure SMTP_HOST,")
-        print("   SMTP_PORT, SMTP_USER, & SMTP_PASSWORD in backend/.env")
-        print("=" * 55 + "\n")
+        _safe_print("\n" + "=" * 55)
+        _safe_print(" [EMAIL DISPATCH - LOCAL SIMULATION]")
+        _safe_print(f" To: {to_email}")
+        _safe_print(f" Subject: {subject}")
+        _safe_print("-" * 55)
+        _safe_print(text_content.strip())
+        _safe_print("=" * 55)
+        _safe_print(" Tip: To deliver to real inboxes, configure SMTP_HOST,")
+        _safe_print("   SMTP_PORT, SMTP_USER, & SMTP_PASSWORD in backend/.env")
+        _safe_print("=" * 55 + "\n")
         return True
 
     try:
@@ -52,15 +63,15 @@ def _send_smtp_message(to_email: str, subject: str, html_content: str, text_cont
 
         server.sendmail(from_email, [to_email], msg.as_string())
         server.quit()
-        print(f"✅ [EMAIL DELIVERED] Successfully sent '{subject}' to {to_email}")
+        _safe_print(f"[EMAIL DELIVERED] Successfully sent '{subject}' to {to_email}")
         return True
     except Exception as e:
-        print(f"❌ [EMAIL DELIVERY FAILED] Could not send email to {to_email}: {e}")
+        _safe_print(f"[EMAIL DELIVERY FAILED] Could not send email to {to_email}: {e}")
         # Always fallback to printing code so user is never locked out
-        print("\n" + "-" * 55)
-        print(f" [FALLBACK CODE LOG] To: {to_email} | Subject: {subject}")
-        print(text_content.strip())
-        print("-" * 55 + "\n")
+        _safe_print("\n" + "-" * 55)
+        _safe_print(f" [FALLBACK CODE LOG] To: {to_email} | Subject: {subject}")
+        _safe_print(text_content.strip())
+        _safe_print("-" * 55 + "\n")
         return False
 
 
@@ -76,7 +87,7 @@ def send_email_async(to_email: str, subject: str, html_content: str, text_conten
 
 def send_password_reset_email(to_email: str, username: str, code: str, run_async: bool = True) -> bool:
     """Sends a password reset code email with TwoOfUs branding."""
-    subject = "TwoOfUs • Password Reset Code 🔑"
+    subject = "TwoOfUs - Password Reset Code"
     
     text_content = f"""
 Hello {username},
@@ -169,7 +180,7 @@ The TwoOfUs Team ❤️
 
 def send_2fa_otp_email(to_email: str, username: str, code: str, run_async: bool = True) -> bool:
     """Sends a 2FA login verification code email."""
-    subject = "TwoOfUs • 2FA Verification Code 🛡️"
+    subject = "TwoOfUs - 2FA Verification Code"
     
     text_content = f"""
 Hello {username},
