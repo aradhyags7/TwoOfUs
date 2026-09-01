@@ -28,6 +28,7 @@ import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/media_composer_modal.dart';
 import '../widgets/encryption_verification_modal.dart';
 import '../services/call_service.dart';
+import '../utils/date_time_utils.dart';
 import 'media_gallery_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -718,25 +719,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  bool _sameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+  bool _sameDay(DateTime a, DateTime b) => DateTimeUtils.isSameDay(a, b);
 
-  String _fmtTime(DateTime dt) {
-    final now = DateTime.now();
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
-    if (_sameDay(dt, now)) return '$h:$m';
-    const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return '${mo[dt.month-1]} ${dt.day}  $h:$m';
-  }
+  String _fmtTime(DateTime dt) => DateTimeUtils.formatTime(dt);
 
-  String _fmtDateLabel(DateTime dt) {
-    final now = DateTime.now();
-    if (_sameDay(dt, now)) return 'Today';
-    if (_sameDay(dt, now.subtract(const Duration(days: 1)))) return 'Yesterday';
-    const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return '${mo[dt.month-1]} ${dt.day}, ${dt.year}';
-  }
+  String _fmtDateLabel(DateTime dt) => DateTimeUtils.formatDateLabel(dt);
 
   void _toast(String msg, {bool isError = false}) {
     final screenHeight = MediaQuery.of(context).size.height;

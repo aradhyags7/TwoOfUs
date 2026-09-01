@@ -1,4 +1,5 @@
 import '../services/api_service.dart';
+import '../utils/date_time_utils.dart';
 
 class DiaryMemoryItem {
   final int id;
@@ -30,7 +31,7 @@ class DiaryMemoryItem {
       content: json['content'] ?? '',
       moodEmoji: json['mood_emoji'],
       imageUrl: json['image_url'],
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+      createdAt: json['created_at'] != null ? DateTimeUtils.parseToLocal(json['created_at']) : null,
     );
   }
 

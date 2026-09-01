@@ -1,4 +1,5 @@
 import 'media.dart';
+import '../utils/date_time_utils.dart';
 
 class Message {
   final int id;
@@ -47,7 +48,7 @@ class Message {
       isEncrypted: json["is_encrypted"] ?? false,
       isEdited: json["is_edited"] ?? false,
 
-      createdAt: DateTime.parse(
+      createdAt: DateTimeUtils.parseToLocal(
         json["created_at"],
       ),
       mediaAttachments: mediaList,

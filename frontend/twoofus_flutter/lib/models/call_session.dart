@@ -1,3 +1,5 @@
+import '../utils/date_time_utils.dart';
+
 class CallSessionModel {
   final int id;
   final int callerId;
@@ -28,11 +30,11 @@ class CallSessionModel {
       receiverId: json['receiver_id'] as int,
       callType: (json['call_type'] as String?) ?? 'voice',
       status: (json['status'] as String?) ?? 'ringing',
-      startedAt: json['started_at'] != null ? DateTime.tryParse(json['started_at']) : null,
-      endedAt: json['ended_at'] != null ? DateTime.tryParse(json['ended_at']) : null,
+      startedAt: json['started_at'] != null ? DateTimeUtils.parseToLocal(json['started_at']) : null,
+      endedAt: json['ended_at'] != null ? DateTimeUtils.parseToLocal(json['ended_at']) : null,
       durationSeconds: (json['duration_seconds'] as int?) ?? 0,
       createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
+          ? DateTimeUtils.parseToLocal(json['created_at'])
           : DateTime.now(),
     );
   }

@@ -126,6 +126,16 @@ try:
 except Exception as e:
     print("Migration exception:", e)
 
+
+def to_utc_iso(dt: Optional[datetime]) -> Optional[str]:
+    """Ensures consistent ISO 8601 UTC timestamps with 'Z' suffix across all APIs."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.isoformat() + "Z"
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 app = FastAPI(
     title="TwoOfUs API",
     version="1.0.0"
@@ -1187,7 +1197,7 @@ def get_messages(
             "nonce": m.nonce,
             "is_encrypted": m.is_encrypted if m.is_encrypted is not None else False,
             "is_edited": m.is_edited if m.is_edited is not None else False,
-            "created_at": str(m.created_at),
+            "created_at": to_utc_iso(m.created_at),
             "media": [
                 {
                     "id": med.id,
@@ -1203,10 +1213,10 @@ def get_messages(
                     "is_encrypted": med.is_encrypted if med.is_encrypted is not None else False,
                     "is_view_once": med.is_view_once if med.is_view_once is not None else False,
                     "is_expired": med.is_expired if med.is_expired is not None else False,
-                    "viewed_at": str(med.viewed_at) if med.viewed_at else None,
+                    "viewed_at": to_utc_iso(med.viewed_at) if med.viewed_at else None,
                     "encrypted_media_key": med.encrypted_media_key,
                     "encryption_nonce": med.encryption_nonce,
-                    "created_at": str(med.created_at)
+                    "created_at": to_utc_iso(med.created_at)
                 } for med in attached_media
             ]
         })
@@ -2085,7 +2095,7 @@ def _create_call_log_message(db: Session, session: CallSession):
             "call_type": call_type,
             "status": status,
             "duration_seconds": duration_seconds,
-            "ended_at": session.ended_at.isoformat() if session.ended_at else datetime.now(timezone.utc).isoformat()
+            "ended_at": to_utc_iso(session.ended_at) if session.ended_at else to_utc_iso(datetime.now(timezone.utc))
         }
         content_str = f"CALL_LOG:{json.dumps(call_payload)}"
         msg = Message(

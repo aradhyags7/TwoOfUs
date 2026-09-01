@@ -1,3 +1,5 @@
+import '../utils/date_time_utils.dart';
+
 class MediaItem {
   final int id;
   final int? messageId;
@@ -53,11 +55,11 @@ class MediaItem {
       fileSize: json['file_size'] ?? 0,
       storagePath: json['storage_path'] ?? '',
       thumbnailPath: json['thumbnail_path'],
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+      createdAt: json['created_at'] != null ? DateTimeUtils.parseToLocal(json['created_at']) : null,
       isEncrypted: json['is_encrypted'] ?? false,
       isViewOnce: json['is_view_once'] ?? false,
       isExpired: json['is_expired'] ?? false,
-      viewedAt: json['viewed_at'] != null ? DateTime.tryParse(json['viewed_at'].toString()) : null,
+      viewedAt: json['viewed_at'] != null ? DateTimeUtils.parseToLocal(json['viewed_at']) : null,
       encryptedMediaKey: json['encrypted_media_key'],
       encryptionNonce: json['encryption_nonce'],
     );
