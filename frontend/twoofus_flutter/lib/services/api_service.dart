@@ -58,7 +58,7 @@ class ApiService {
       if (target.endsWith("/")) {
         target = target.substring(0, target.length - 1);
       }
-      final res = await http.get(Uri.parse("$target/health")).timeout(const Duration(milliseconds: 2000));
+      final res = await http.get(Uri.parse("$target/health")).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         try {
           final body = jsonDecode(res.body);
@@ -67,7 +67,7 @@ class ApiService {
           }
         } catch (_) {}
       }
-      final pingRes = await http.get(Uri.parse("$target/ping")).timeout(const Duration(milliseconds: 2000));
+      final pingRes = await http.get(Uri.parse("$target/ping")).timeout(const Duration(seconds: 15));
       if (pingRes.statusCode == 200) {
         try {
           final body = jsonDecode(pingRes.body);
@@ -261,7 +261,7 @@ class ApiService {
     return headers;
   }
 
-  static const Duration defaultTimeout = Duration(seconds: 15);
+  static const Duration defaultTimeout = Duration(seconds: 25);
 
   // =========================
   // LOGIN
