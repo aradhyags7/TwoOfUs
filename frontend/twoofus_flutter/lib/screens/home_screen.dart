@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -49,6 +50,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isConnecting = false;
   bool _loading = true;
 
+  // ── Active Real-Time Pairing Polling ───────────────────────────────────────
+  Timer? _pairingPollTimer;
+  bool _hasTriggeredCelebration = false;
+
   // ── Animations ─────────────────────────────────────────────────────────────
   late AnimationController _heartCtrl;
   late Animation<double> _heartScale;
@@ -87,6 +92,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
 
+    _startPairingPolling();
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadAllData();
     });
@@ -94,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _pairingPollTimer?.cancel();
     _pinController.dispose();
     _heartCtrl.dispose();
     _pulseCtrl.dispose();
@@ -140,6 +148,52 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } catch (_) {}
   }
 
+  void _startPairingPolling() {
+    _pairingPollTimer?.cancel();
+    _pairingPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
+      if (!mounted || _isPartnerConnected || _hasTriggeredCelebration) {
+        _pairingPollTimer?.cancel();
+        return;
+      }
+      await _checkPartnerStatusLive();
+    });
+  }
+
+  Future<void> _checkPartnerStatusLive() async {
+    try {
+      final userId = await Session.getUserId();
+      final token = await Session.getToken();
+      if (userId == null) return;
+
+      final result = await ApiService.getPairStatus(userId, token: token);
+      if (result != null && mounted) {
+        final connected = result["connected"] == true;
+        final partnerId = result["partner_id"] as int?;
+        final partnerName = (result["partner_name"] ?? "Partner").toString();
+        final partnerEmail = (result["partner_email"] ?? "").toString();
+
+        if (connected && partnerId != null && !_hasTriggeredCelebration) {
+          _pairingPollTimer?.cancel();
+          _hasTriggeredCelebration = true;
+
+          setState(() {
+            _isPartnerConnected = true;
+            _partnerId = partnerId;
+            _partnerName = partnerName;
+            _partnerEmail = partnerEmail;
+            _partnerLabel = partnerName.isNotEmpty ? partnerName : "Connected ❤️";
+          });
+
+          await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
+
+          if (mounted) {
+            _showConnectedCelebrationModal(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadPartnerStatus({bool autoNavigate = true}) async {
     try {
       final userId = await Session.getUserId();
@@ -165,6 +219,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
         // If user is connected to a partner, save partner cache and directly navigate to ChatScreen
         if (connected && partnerId != null) {
+          _pairingPollTimer?.cancel();
           await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
           if (autoNavigate && mounted) {
             Navigator.pushReplacement(
@@ -180,6 +235,62 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
       }
     } catch (_) {}
+  }
+
+  void _showConnectedCelebrationModal(int partnerId, String partnerName) {
+    if (!mounted) return;
+    _pairingPollTimer?.cancel();
+    _hasTriggeredCelebration = true;
+
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 150), () => HapticFeedback.mediumImpact());
+    Future.delayed(const Duration(milliseconds: 300), () => HapticFeedback.selectionClick());
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: "Connected",
+      barrierColor: Colors.black.withValues(alpha: 0.82),
+      transitionDuration: const Duration(milliseconds: 400),
+      transitionBuilder: (ctx, anim, secondaryAnim, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return ScaleTransition(
+          scale: curved,
+          child: FadeTransition(opacity: anim, child: child),
+        );
+      },
+      pageBuilder: (dialogContext, _, __) {
+        return _ConnectedCelebrationDialog(
+          partnerName: partnerName,
+          userName: _username,
+          onEnter: () {
+            Navigator.of(dialogContext, rootNavigator: true).pop();
+            Navigator.pushReplacement(
+              context,
+              PageRouteBuilder(
+                transitionDuration: const Duration(milliseconds: 500),
+                pageBuilder: (_, animation, secondaryAnimation) => ChatScreen(
+                  partnerId: partnerId,
+                  partnerName: partnerName,
+                ),
+                transitionsBuilder: (_, animation, secondaryAnimation, child) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.0, 0.04),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+                      child: child,
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _generatePin({bool silent = false}) async {
@@ -233,8 +344,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     if (result != null) {
       _pinController.clear();
-      _toast("Connected successfully with your partner ❤️");
-      await _loadPartnerStatus(autoNavigate: true);
+      _pairingPollTimer?.cancel();
+      _hasTriggeredCelebration = true;
+
+      final partnerId = result["partner_id"] as int?;
+      final partnerName = (result["partner_name"] ?? "Partner").toString();
+
+      if (partnerId != null) {
+        setState(() {
+          _isPartnerConnected = true;
+          _partnerId = partnerId;
+          _partnerName = partnerName;
+          _partnerLabel = partnerName;
+        });
+
+        await Session.savePartner(partnerId, partnerName);
+        _showConnectedCelebrationModal(partnerId, partnerName);
+      } else {
+        await _loadPartnerStatus(autoNavigate: true);
+      }
     } else {
       _toast("Invalid PIN or connection failed. Please check and try again.", isError: true);
     }
@@ -2075,3 +2203,298 @@ class _Glow extends StatelessWidget {
         ),
       );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Romantic Connected Celebration Modal Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+class _ConnectedCelebrationDialog extends StatefulWidget {
+  final String partnerName;
+  final String userName;
+  final VoidCallback onEnter;
+
+  const _ConnectedCelebrationDialog({
+    required this.partnerName,
+    required this.userName,
+    required this.onEnter,
+  });
+
+  @override
+  State<_ConnectedCelebrationDialog> createState() =>
+      _ConnectedCelebrationDialogState();
+}
+
+class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animCtrl;
+  late Animation<double> _scaleAnim;
+  late Animation<double> _glowAnim;
+  late Animation<double> _progressAnim;
+
+  Timer? _autoEnterTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    );
+
+    _scaleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.15).chain(CurveTween(curve: Curves.easeOutBack)), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.15, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08).chain(CurveTween(curve: Curves.easeInOut)), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 20),
+    ]).animate(_animCtrl);
+
+    _glowAnim = Tween<double>(begin: 0.6, end: 1.0).animate(
+      CurvedAnimation(parent: _animCtrl, curve: Curves.easeInOut),
+    );
+
+    _progressAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animCtrl, curve: Curves.linear),
+    );
+
+    _animCtrl.forward();
+
+    // Auto-enter chat room after 2.4 seconds
+    _autoEnterTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (mounted) {
+        widget.onEnter();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoEnterTimer?.cancel();
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const rose = Color(0xFFFF2D78);
+    const violet = Color(0xFF9C27B0);
+    const surface = Color(0xFF191128);
+
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 26),
+              decoration: BoxDecoration(
+                color: surface,
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(
+                  color: rose.withValues(alpha: 0.45),
+                  width: 1.8,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: rose.withValues(alpha: 0.35),
+                    blurRadius: 36,
+                    spreadRadius: 4,
+                    offset: const Offset(0, 10),
+                  ),
+                  BoxShadow(
+                    color: violet.withValues(alpha: 0.25),
+                    blurRadius: 48,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Dual Glowing Hearts Celebration Icon
+                  AnimatedBuilder(
+                    animation: _animCtrl,
+                    builder: (context, _) {
+                      return Transform.scale(
+                        scale: _scaleAnim.value,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Outer Halo
+                            Container(
+                              width: 110,
+                              height: 110,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    rose.withValues(alpha: 0.35 * _glowAnim.value),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                            // Gradient Core Circle
+                            Container(
+                              width: 86,
+                              height: 86,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const LinearGradient(
+                                  colors: [rose, violet],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: rose.withValues(alpha: 0.5),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.favorite_rounded,
+                                size: 46,
+                                color: Colors.white,
+                              ),
+                            ),
+                            // Connected sparkles
+                            Positioned(
+                              top: 2,
+                              right: 4,
+                              child: Icon(
+                                Icons.auto_awesome,
+                                size: 24,
+                                color: Colors.amberAccent.withValues(alpha: _glowAnim.value),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Celebration Headline
+                  ShaderMask(
+                    shaderCallback: (b) => const LinearGradient(
+                      colors: [Color(0xFFFF528F), Color(0xFFFFB3D1)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ).createShader(b),
+                    blendMode: BlendMode.srcIn,
+                    child: const Text(
+                      "You're Connected! ❤️",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Couple Subtitle
+                  RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        color: Colors.white70,
+                        height: 1.4,
+                      ),
+                      children: [
+                        const TextSpan(text: "Your private couple space with\n"),
+                        TextSpan(
+                          text: widget.partnerName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const TextSpan(text: " is now active! ✨"),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  // Live Auto-Entering Progress Bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: AnimatedBuilder(
+                      animation: _progressAnim,
+                      builder: (context, _) {
+                        return LinearProgressIndicator(
+                          value: _progressAnim.value,
+                          backgroundColor: Colors.white12,
+                          valueColor: const AlwaysStoppedAnimation<Color>(rose),
+                          minHeight: 4,
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  // Action Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: const LinearGradient(
+                          colors: [rose, violet],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: rose.withValues(alpha: 0.4),
+                            blurRadius: 18,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          _autoEnterTimer?.cancel();
+                          HapticFeedback.mediumImpact();
+                          widget.onEnter();
+                        },
+                        icon: const Icon(Icons.favorite, color: Colors.white, size: 20),
+                        label: const Text(
+                          "Enter Our Space ❤️",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
