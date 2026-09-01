@@ -85,6 +85,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _notificationsEnabled = true;
   bool _isPartnerVerified    = false;
   Timer? _presenceTimer;
+  Timer? _messagePollingTimer;
+  final Map<int, String> _decryptedCache = {};
 
   // ── Panels ────────────────────────────────────────────────────────────────
   bool _leftOpen  = false;   // memories  (swipe →)
@@ -136,12 +138,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
     _initialize();
     _startPresencePolling();
+    _startMessagePolling();
     CallService.startIncomingCallWatcher(context);
   }
 
   @override
   void dispose() {
     _presenceTimer?.cancel();
+    _messagePollingTimer?.cancel();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
     _memoryCtrl.dispose();
@@ -149,6 +153,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _searchCtrl.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  // ── Real-Time Message Polling ─────────────────────────────────────────────
+  void _startMessagePolling() {
+    _messagePollingTimer?.cancel();
+    _messagePollingTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) async {
+      if (!mounted || _myId == null) return;
+      await _syncMessagesLive();
+    });
   }
 
   // ── Presence & Polling ────────────────────────────────────────────────────
@@ -250,42 +263,144 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     } catch (_) {}
   }
 
-  Future<void> _loadMessages() async {
+    Future<void> _loadMessages() async {
     if (_myId == null) return;
-    final result = await ApiService.getMessages(_myId!, widget.partnerId);
-    final rawMessages = result.map<Message>((e) => Message.fromJson(e)).toList();
+    try {
+      final result = await ApiService.getMessages(_myId!, widget.partnerId);
+      final rawMessages = result.map<Message>((e) => Message.fromJson(e)).toList();
 
-    List<Message> decryptedMessages = [];
-    for (var m in rawMessages) {
-      if (m.isEncrypted && m.nonce != null && m.nonce!.isNotEmpty) {
-        if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
-          final decryptedContent = await E2EEService.decryptText(
-            ciphertextBase64: m.content,
-            nonceBase64: m.nonce!,
-            remotePublicKeyBase64: _partnerPubKey!,
-          );
-          decryptedMessages.add(Message(
-            id: m.id,
-            senderId: m.senderId,
-            receiverId: m.receiverId,
-            content: decryptedContent,
-            nonce: m.nonce,
-            isEncrypted: true,
-            isEdited: m.isEdited,
-            createdAt: m.createdAt,
-            mediaAttachments: m.mediaAttachments,
-          ));
+      List<Message> decryptedMessages = [];
+      for (var m in rawMessages) {
+        if (m.isEncrypted && m.nonce != null && m.nonce!.isNotEmpty) {
+          if (_decryptedCache.containsKey(m.id) && !m.isEdited) {
+            decryptedMessages.add(Message(
+              id: m.id,
+              senderId: m.senderId,
+              receiverId: m.receiverId,
+              content: _decryptedCache[m.id]!,
+              nonce: m.nonce,
+              isEncrypted: true,
+              isEdited: m.isEdited,
+              createdAt: m.createdAt,
+              mediaAttachments: m.mediaAttachments,
+            ));
+          } else if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
+            final decryptedContent = await E2EEService.decryptText(
+              ciphertextBase64: m.content,
+              nonceBase64: m.nonce!,
+              remotePublicKeyBase64: _partnerPubKey!,
+            );
+            _decryptedCache[m.id] = decryptedContent;
+            decryptedMessages.add(Message(
+              id: m.id,
+              senderId: m.senderId,
+              receiverId: m.receiverId,
+              content: decryptedContent,
+              nonce: m.nonce,
+              isEncrypted: true,
+              isEdited: m.isEdited,
+              createdAt: m.createdAt,
+              mediaAttachments: m.mediaAttachments,
+            ));
+          } else {
+            decryptedMessages.add(m);
+          }
         } else {
           decryptedMessages.add(m);
         }
-      } else {
-        decryptedMessages.add(m);
       }
-    }
 
-    if (mounted) {
-      setState(() => _messages = decryptedMessages);
-    }
+      if (mounted) {
+        setState(() => _messages = decryptedMessages);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _syncMessagesLive() async {
+    if (_myId == null) return;
+    try {
+      final result = await ApiService.getMessages(_myId!, widget.partnerId);
+      final rawMessages = result.map<Message>((e) => Message.fromJson(e)).toList();
+
+      // Check for changes (length, last message ID, or edited flag)
+      bool hasChanges = rawMessages.length != _messages.length;
+      if (!hasChanges && rawMessages.isNotEmpty) {
+        if (rawMessages.last.id != _messages.last.id) {
+          hasChanges = true;
+        } else {
+          for (int i = 0; i < rawMessages.length; i++) {
+            if (rawMessages[i].id != _messages[i].id ||
+                rawMessages[i].isEdited != _messages[i].isEdited ||
+                rawMessages[i].content != _messages[i].content) {
+              hasChanges = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!hasChanges) return;
+
+      List<Message> decryptedMessages = [];
+      for (var m in rawMessages) {
+        if (m.isEncrypted && m.nonce != null && m.nonce!.isNotEmpty) {
+          if (_decryptedCache.containsKey(m.id) && !m.isEdited) {
+            decryptedMessages.add(Message(
+              id: m.id,
+              senderId: m.senderId,
+              receiverId: m.receiverId,
+              content: _decryptedCache[m.id]!,
+              nonce: m.nonce,
+              isEncrypted: true,
+              isEdited: m.isEdited,
+              createdAt: m.createdAt,
+              mediaAttachments: m.mediaAttachments,
+            ));
+          } else if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
+            final decryptedContent = await E2EEService.decryptText(
+              ciphertextBase64: m.content,
+              nonceBase64: m.nonce!,
+              remotePublicKeyBase64: _partnerPubKey!,
+            );
+            _decryptedCache[m.id] = decryptedContent;
+            decryptedMessages.add(Message(
+              id: m.id,
+              senderId: m.senderId,
+              receiverId: m.receiverId,
+              content: decryptedContent,
+              nonce: m.nonce,
+              isEncrypted: true,
+              isEdited: m.isEdited,
+              createdAt: m.createdAt,
+              mediaAttachments: m.mediaAttachments,
+            ));
+          } else {
+            decryptedMessages.add(m);
+          }
+        } else {
+          decryptedMessages.add(m);
+        }
+      }
+
+      if (mounted) {
+        final wasAtBottom = !_scrollCtrl.hasClients ||
+            (_scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels < 120);
+        final bool isNewIncoming = decryptedMessages.length > _messages.length &&
+            decryptedMessages.last.senderId != _myId;
+
+        setState(() {
+          _messages = decryptedMessages;
+        });
+
+        if (isNewIncoming) {
+          HapticFeedback.lightImpact();
+        }
+
+        if (wasAtBottom) {
+          _scrollToBottom();
+        }
+      }
+    } catch (_) {}
   }
 
   // ── Attachment Helpers ───────────────────────────────────────────────────
@@ -658,6 +773,28 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       String? sendNonce;
       bool isEncrypted = false;
 
+      // Optimistic instant local rendering (0ms lag)
+      final tempId = -DateTime.now().millisecondsSinceEpoch;
+      final optimisticMsg = Message(
+        id: tempId,
+        senderId: _myId!,
+        receiverId: widget.partnerId,
+        content: text,
+        isEncrypted: true,
+        createdAt: DateTime.now(),
+      );
+      _decryptedCache[tempId] = text;
+
+      _msgCtrl.clear();
+      _removeSelectedMedia();
+      HapticFeedback.lightImpact();
+
+      setState(() {
+        _messages.add(optimisticMsg);
+        _replyingTo = null;
+      });
+      _scrollToBottom();
+
       if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
         final payload = await E2EEService.encryptText(text, _partnerPubKey!);
         if (payload != null) {
@@ -675,11 +812,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         isEncrypted: isEncrypted,
       );
       if (ok) {
-        _msgCtrl.clear();
-        _removeSelectedMedia();
-        setState(() { _replyingTo = null; });
-        await _loadMessages();
-        _scrollToBottom();
+        await _syncMessagesLive();
       }
     }
     if (mounted) setState(() => _isSending = false);
