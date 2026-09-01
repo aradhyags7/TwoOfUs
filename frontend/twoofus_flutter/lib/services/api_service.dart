@@ -1062,7 +1062,41 @@ class ApiService {
       final response = await http.post(
         Uri.parse("$baseUrl/heartbeat"),
         headers: headers,
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 4));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> sendOfflineStatus({String? token}) async {
+    try {
+      final headers = await _authHeaders(token: token, json: false);
+      final response = await http.post(
+        Uri.parse("$baseUrl/presence/offline"),
+        headers: headers,
+      ).timeout(const Duration(seconds: 4));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> sendTypingStatus({
+    required int partnerId,
+    required bool isTyping,
+    String? token,
+  }) async {
+    try {
+      final headers = await _authHeaders(token: token, json: true);
+      final response = await http.post(
+        Uri.parse("$baseUrl/typing"),
+        headers: headers,
+        body: jsonEncode({
+          "partner_id": partnerId,
+          "is_typing": isTyping,
+        }),
+      ).timeout(const Duration(seconds: 3));
       return response.statusCode == 200;
     } catch (_) {
       return false;

@@ -6,6 +6,7 @@ import string
 from random import choices
 
 from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -1600,17 +1601,61 @@ def edit_message(
     }
 
 
+# Real-time in-memory presence and typing trackers
+user_last_heartbeat: Dict[int, datetime] = {}
+user_typing_status: Dict[int, Dict[str, Any]] = {}  # {user_id: {"target_id": partner_id, "timestamp": datetime}}
+
+
+class TypingStatusRequest(BaseModel):
+    partner_id: int
+    is_typing: bool
+
+
 @app.post("/heartbeat")
 def heartbeat(
     db: Session = Depends(get_db),
     current_user_payload = Depends(get_current_user)
 ):
     user_id = int(current_user_payload.get("sub"))
+    now = datetime.now(timezone.utc)
+    user_last_heartbeat[user_id] = now
     user = db.query(User).filter(User.id == user_id).first()
     if user:
-        user.last_seen = datetime.now(timezone.utc)
+        user.last_seen = now
         db.commit()
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "timestamp": to_utc_iso(now)}
+
+
+@app.post("/presence/offline")
+def set_offline(
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    user_last_heartbeat.pop(user_id, None)
+    user_typing_status.pop(user_id, None)
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        user.last_seen = datetime.now(timezone.utc) - timedelta(seconds=120)
+        db.commit()
+    return {"status": "offline"}
+
+
+@app.post("/typing")
+def update_typing_status(
+    data: TypingStatusRequest,
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    now = datetime.now(timezone.utc)
+    if data.is_typing:
+        user_typing_status[user_id] = {
+            "target_id": data.partner_id,
+            "timestamp": now,
+        }
+    else:
+        user_typing_status.pop(user_id, None)
+    return {"status": "ok"}
 
 
 @app.get("/user/{user_id}/status")
@@ -1629,17 +1674,38 @@ def get_user_online_status(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    now = datetime.now(timezone.utc)
     is_online = False
-    if target_user.last_seen:
-        last_seen_utc = target_user.last_seen if target_user.last_seen.tzinfo else target_user.last_seen.replace(tzinfo=timezone.utc)
-        diff = (datetime.now(timezone.utc) - last_seen_utc).total_seconds()
-        if diff <= 45:
+
+    # Check high-speed in-memory heartbeat tracker first
+    if user_id in user_last_heartbeat:
+        diff = (now - user_last_heartbeat[user_id]).total_seconds()
+        if diff <= 4.0:
             is_online = True
+        else:
+            user_last_heartbeat.pop(user_id, None)
+    elif target_user.last_seen:
+        last_seen_utc = target_user.last_seen if target_user.last_seen.tzinfo else target_user.last_seen.replace(tzinfo=timezone.utc)
+        diff = (now - last_seen_utc).total_seconds()
+        if diff <= 4.0:
+            is_online = True
+
+    # Check typing status
+    is_typing = False
+    if user_id in user_typing_status:
+        typing_data = user_typing_status[user_id]
+        if typing_data.get("target_id") == auth_user_id:
+            diff_typing = (now - typing_data["timestamp"]).total_seconds()
+            if diff_typing <= 3.5:
+                is_typing = True
+            else:
+                user_typing_status.pop(user_id, None)
 
     return {
         "user_id": target_user.id,
         "is_online": is_online,
-        "last_seen": target_user.last_seen.isoformat() if target_user.last_seen else None
+        "is_typing": is_typing,
+        "last_seen": to_utc_iso(target_user.last_seen)
     }
 
 

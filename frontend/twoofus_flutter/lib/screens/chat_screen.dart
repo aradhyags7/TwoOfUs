@@ -48,7 +48,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
+class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
 
   // ── Controllers ──────────────────────────────────────────────────────────
   final _msgCtrl     = TextEditingController();
@@ -87,6 +87,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Timer? _presenceTimer;
   Timer? _messagePollingTimer;
   final Map<int, String> _decryptedCache = {};
+  DateTime? _lastTypingSentTime;
 
   // ── Panels ────────────────────────────────────────────────────────────────
   bool _leftOpen  = false;   // memories  (swipe →)
@@ -132,10 +133,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
       ..repeat(reverse: true);
     _pulseAnim = Tween<double>(begin: 0.5, end: 1.0)
         .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+    _msgCtrl.addListener(_onTypingChanged);
     _initialize();
     _startPresencePolling();
     _startMessagePolling();
@@ -144,8 +147,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _presenceTimer?.cancel();
     _messagePollingTimer?.cancel();
+    _msgCtrl.removeListener(_onTypingChanged);
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
     _memoryCtrl.dispose();
@@ -153,6 +158,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _searchCtrl.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden || state == AppLifecycleState.inactive) {
+      ApiService.sendOfflineStatus(token: _userToken);
+      if (_lastTypingSentTime != null) {
+        _lastTypingSentTime = null;
+        ApiService.sendTypingStatus(partnerId: widget.partnerId, isTyping: false, token: _userToken);
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      _syncPresence();
+    }
+  }
+
+  void _onTypingChanged() {
+    final text = _msgCtrl.text.trim();
+    if (text.isNotEmpty) {
+      final now = DateTime.now();
+      if (_lastTypingSentTime == null || now.difference(_lastTypingSentTime!).inSeconds >= 2) {
+        _lastTypingSentTime = now;
+        ApiService.sendTypingStatus(partnerId: widget.partnerId, isTyping: true, token: _userToken);
+      }
+    } else {
+      if (_lastTypingSentTime != null) {
+        _lastTypingSentTime = null;
+        ApiService.sendTypingStatus(partnerId: widget.partnerId, isTyping: false, token: _userToken);
+      }
+    }
   }
 
   // ── Real-Time Message Polling ─────────────────────────────────────────────
@@ -168,19 +202,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _startPresencePolling() {
     _presenceTimer?.cancel();
     _syncPresence();
-    _presenceTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    _presenceTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
       _syncPresence();
     });
   }
 
   Future<void> _syncPresence() async {
     try {
-      ApiService.sendHeartbeat();
-      final status = await ApiService.getOnlineStatus(widget.partnerId);
+      ApiService.sendHeartbeat(token: _userToken);
+      final status = await ApiService.getOnlineStatus(widget.partnerId, token: _userToken);
       if (status != null && mounted) {
         final online = status['is_online'] == true;
-        if (_isOnline != online) {
-          setState(() => _isOnline = online);
+        final typing = status['is_typing'] == true;
+        if (_isOnline != online || _isPartnerTyping != typing) {
+          setState(() {
+            _isOnline = online;
+            _isPartnerTyping = typing;
+          });
         }
       }
     } catch (_) {}
@@ -789,6 +827,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _removeSelectedMedia();
       HapticFeedback.lightImpact();
 
+      _lastTypingSentTime = null;
+      ApiService.sendTypingStatus(partnerId: widget.partnerId, isTyping: false, token: _userToken);
+
       setState(() {
         _messages.add(optimisticMsg);
         _replyingTo = null;
@@ -925,6 +966,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 children: [
                   _buildAppBar(),
                   Expanded(child: _buildMsgList()),
+                  _buildFloatingTypingIndicator(),
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 200),
                     child: (_replyingTo != null || _editingMsg != null)
@@ -1866,6 +1908,91 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return "${m}m ${s}s";
     }
     return "${s}s";
+  }
+
+  // ── Floating Typing Indicator Bubble ──────────────────────────────────────
+  Widget _buildFloatingTypingIndicator() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, anim) => SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 0.45), end: Offset.zero).animate(anim),
+        child: FadeTransition(opacity: anim, child: child),
+      ),
+      child: _isPartnerTyping
+          ? Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                key: const ValueKey("typing_bubble"),
+                margin: const EdgeInsets.only(left: 18, bottom: 6, top: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: _surf,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(_isDark ? 0.22 : 0.07),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildBouncingDots(),
+                    const SizedBox(width: 8),
+                    Text(
+                      "${widget.partnerName} is typing…",
+                      style: TextStyle(
+                        color: _rose,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : const SizedBox.shrink(key: ValueKey("typing_none")),
+    );
+  }
+
+  Widget _buildBouncingDots() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (i) {
+        return AnimatedBuilder(
+          animation: _pulseCtrl,
+          builder: (ctx, child) {
+            final delay = i * 0.28;
+            final val = ((_pulseCtrl.value + delay) % 1.0);
+            final bounce = -4.0 * (0.5 - (val - 0.5).abs());
+            return Transform.translate(
+              offset: Offset(0, bounce),
+              child: Container(
+                width: 5,
+                height: 5,
+                margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _rose,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _rose.withOpacity(0.55),
+                      blurRadius: 3,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      }),
+    );
   }
 
   // ── Context Bar (reply / edit indicator) ──────────────────────────────────
