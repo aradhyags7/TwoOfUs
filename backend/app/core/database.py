@@ -4,8 +4,12 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:1905@localhost/twoofus"
+    "sqlite:///./twoofus.db"
 )
+
+# Render / Heroku compatibility: convert postgres:// to postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Configure engine based on dialect (PostgreSQL vs SQLite)
 if DATABASE_URL.startswith("sqlite"):

@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: twoofus-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "525600"
+      - key: DATABASE_URL
+        value: sqlite:///./twoofus.db
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: twoofus.app@gmail.com
+      - key: SMTP_FROM_EMAIL
+        value: "TwoOfUs <twoofus.app@gmail.com>"
+      - key: SMTP_USE_TLS
+        value: "true"
+      - key: SMTP_PASSWORD
+        sync: false
