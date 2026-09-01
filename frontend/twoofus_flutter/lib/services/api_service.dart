@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/session.dart';
 
 class ApiService {
+  static const String productionServerUrl = "https://twoofus.onrender.com";
   static const String _serverPrefKey = "custom_server_base_url";
   static const String _lastWorkingPrefKey = "last_working_server_url";
   static String? _customBaseUrl;
@@ -36,7 +37,7 @@ class ApiService {
       } else {
         String cleanUrl = url.trim();
         if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-          cleanUrl = "http://$cleanUrl";
+          cleanUrl = "https://$cleanUrl";
         }
         if (cleanUrl.endsWith("/")) {
           cleanUrl = cleanUrl.substring(0, cleanUrl.length - 1);
@@ -52,7 +53,7 @@ class ApiService {
     try {
       String target = testUrl ?? baseUrl;
       if (!target.startsWith("http://") && !target.startsWith("https://")) {
-        target = "http://$target";
+        target = "https://$target";
       }
       if (target.endsWith("/")) {
         target = target.substring(0, target.length - 1);
@@ -94,15 +95,17 @@ class ApiService {
         }
       }
 
-      // 2. Fast candidate list: last known working, emulator loopback, localhost/adb reverse, etc.
+      // 2. Fast candidate list: production cloud first, then last known, emulator, etc.
       final List<String> fastCandidates = [];
       if (_discoveredBaseUrl != null && _discoveredBaseUrl!.isNotEmpty) {
         fastCandidates.add(_discoveredBaseUrl!);
       }
       fastCandidates.addAll([
+        productionServerUrl,
+        "http://10.20.9.103:8000",
         "http://127.0.0.1:8000",
-        "http://localhost:8000",
         "http://10.0.2.2:8000",
+        "http://localhost:8000",
       ]);
 
       for (final candidate in fastCandidates) {
@@ -243,13 +246,7 @@ class ApiService {
     if (_discoveredBaseUrl != null && _discoveredBaseUrl!.isNotEmpty) {
       return _discoveredBaseUrl!;
     }
-    if (kIsWeb) {
-      return "http://localhost:8000";
-    } else if (Platform.isAndroid) {
-      return "http://10.0.2.2:8000";
-    } else {
-      return "http://127.0.0.1:8000";
-    }
+    return productionServerUrl;
   }
 
   static Future<Map<String, String>> _authHeaders({String? token, bool json = true}) async {

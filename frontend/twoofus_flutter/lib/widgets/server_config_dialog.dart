@@ -261,6 +261,7 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                _presetChip("🌐 Production Cloud", ApiService.productionServerUrl),
                 _presetChip("🔄 Current (${ApiService.baseUrl})", ApiService.baseUrl),
                 _presetChip("📱 Emulator (10.0.2.2)", "http://10.0.2.2:8000"),
                 _presetChip("💻 Localhost (127.0.0.1)", "http://127.0.0.1:8000"),

@@ -62,31 +62,66 @@ from .services.email_service import (
     send_2fa_otp_email,
 )
 
+from sqlalchemy import inspect
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 try:
+    inspector = inspect(engine)
     with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE;"))
-        conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS nonce TEXT;"))
-        conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp TEXT;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TIMESTAMP;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_2fa_enabled BOOLEAN DEFAULT FALSE;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_method TEXT DEFAULT 'totp';"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes TEXT;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_2fa_otp TEXT;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_2fa_expires_at TIMESTAMP;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP;"))
-        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE;"))
-        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_view_once BOOLEAN DEFAULT FALSE;"))
-        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS is_expired BOOLEAN DEFAULT FALSE;"))
-        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMP;"))
-        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS encrypted_media_key TEXT;"))
-        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS encryption_nonce TEXT;"))
-        conn.execute(text("ALTER TABLE media ADD COLUMN IF NOT EXISTS ciphertext_hash TEXT;"))
+        # Message columns
+        if inspector.has_table("messages"):
+            msg_cols = [c["name"] for c in inspector.get_columns("messages")]
+            if "is_edited" not in msg_cols:
+                conn.execute(text("ALTER TABLE messages ADD COLUMN is_edited BOOLEAN DEFAULT FALSE;"))
+            if "nonce" not in msg_cols:
+                conn.execute(text("ALTER TABLE messages ADD COLUMN nonce TEXT;"))
+            if "is_encrypted" not in msg_cols:
+                conn.execute(text("ALTER TABLE messages ADD COLUMN is_encrypted BOOLEAN DEFAULT FALSE;"))
+
+        # User columns
+        if inspector.has_table("users"):
+            user_cols = [c["name"] for c in inspector.get_columns("users")]
+            if "public_key" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN public_key TEXT;"))
+            if "avatar_url" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url TEXT;"))
+            if "reset_otp" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN reset_otp TEXT;"))
+            if "reset_otp_expires_at" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN reset_otp_expires_at TIMESTAMP;"))
+            if "is_2fa_enabled" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_2fa_enabled BOOLEAN DEFAULT FALSE;"))
+            if "two_factor_method" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN two_factor_method TEXT DEFAULT 'totp';"))
+            if "totp_secret" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN totp_secret TEXT;"))
+            if "backup_codes" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN backup_codes TEXT;"))
+            if "email_2fa_otp" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email_2fa_otp TEXT;"))
+            if "email_2fa_expires_at" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email_2fa_expires_at TIMESTAMP;"))
+            if "last_seen" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_seen TIMESTAMP;"))
+
+        # Media columns
+        if inspector.has_table("media"):
+            media_cols = [c["name"] for c in inspector.get_columns("media")]
+            if "is_encrypted" not in media_cols:
+                conn.execute(text("ALTER TABLE media ADD COLUMN is_encrypted BOOLEAN DEFAULT FALSE;"))
+            if "is_view_once" not in media_cols:
+                conn.execute(text("ALTER TABLE media ADD COLUMN is_view_once BOOLEAN DEFAULT FALSE;"))
+            if "is_expired" not in media_cols:
+                conn.execute(text("ALTER TABLE media ADD COLUMN is_expired BOOLEAN DEFAULT FALSE;"))
+            if "viewed_at" not in media_cols:
+                conn.execute(text("ALTER TABLE media ADD COLUMN viewed_at TIMESTAMP;"))
+            if "encrypted_media_key" not in media_cols:
+                conn.execute(text("ALTER TABLE media ADD COLUMN encrypted_media_key TEXT;"))
+            if "encryption_nonce" not in media_cols:
+                conn.execute(text("ALTER TABLE media ADD COLUMN encryption_nonce TEXT;"))
+            if "ciphertext_hash" not in media_cols:
+                conn.execute(text("ALTER TABLE media ADD COLUMN ciphertext_hash TEXT;"))
         conn.commit()
 except Exception as e:
     print("Migration exception:", e)
