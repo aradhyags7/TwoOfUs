@@ -61,6 +61,8 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
   }
 
   void _handleUnlockSuccess() {
+    SecurityService.isLocked = false;
+    SecurityService.resetInactivityTimer();
     if (widget.onSuccess != null) {
       widget.onSuccess!();
     } else if (Navigator.of(context, rootNavigator: true).canPop()) {

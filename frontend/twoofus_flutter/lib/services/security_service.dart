@@ -39,10 +39,10 @@ class SecurityService {
 
     // Get auto lock duration setting
     final autoLockStr = await getAutoLock();
-    final thresholdSecs = parseAutoLockSeconds(autoLockStr);
+    final thresholdSecs = parseInactivityLockSeconds(autoLockStr);
 
-    // If auto lock duration is "Never" (-1), do not set timer
-    if (thresholdSecs < 0) return;
+    // If inactivity duration is disabled / negative, do not set timer
+    if (thresholdSecs <= 0) return;
 
     // Start timer for screen inactivity
     _inactivityTimer = Timer(Duration(seconds: thresholdSecs), () async {
@@ -61,28 +61,36 @@ class SecurityService {
   static Future<void> handleAppLifecycleState(AppLifecycleState state, BuildContext context) async {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden || state == AppLifecycleState.inactive) {
       cancelInactivityTimer();
-      if (!isLocked) {
+      if (!isLocked && _lastBackgroundTime == null) {
         _lastBackgroundTime = DateTime.now();
       }
     } else if (state == AppLifecycleState.resumed) {
       if (!isLocked && _lastBackgroundTime != null) {
+        final bgTime = _lastBackgroundTime!;
+        _lastBackgroundTime = null;
+
         final hasCode = await hasPasscode();
         if (hasCode) {
           final autoLockStr = await getAutoLock();
-          final thresholdSecs = parseAutoLockSeconds(autoLockStr);
+          final thresholdSecs = parseBackgroundLockSeconds(autoLockStr);
           if (thresholdSecs >= 0) {
-            final elapsed = DateTime.now().difference(_lastBackgroundTime!).inSeconds;
-            _lastBackgroundTime = null;
-            if (elapsed >= thresholdSecs && context.mounted) {
-              await lockApp(context);
-              return;
+            final elapsed = DateTime.now().difference(bgTime).inSeconds;
+            if (elapsed >= thresholdSecs) {
+              final targetContext = navigatorKey.currentContext ?? context;
+              if (targetContext.mounted) {
+                await lockApp(targetContext);
+                return;
+              }
             }
           }
         }
+      } else {
         _lastBackgroundTime = null;
       }
-      if (context.mounted) {
-        resetInactivityTimer(context);
+
+      final targetContext = navigatorKey.currentContext ?? context;
+      if (targetContext.mounted) {
+        resetInactivityTimer(targetContext);
       } else {
         resetInactivityTimer();
       }
@@ -115,6 +123,7 @@ class SecurityService {
       value: passcode,
     );
     passcodeNotifier.value = true;
+    isLocked = false;
     resetInactivityTimer();
   }
 
@@ -145,6 +154,7 @@ class SecurityService {
     await disableFingerprint();
     await disableFaceUnlock();
     passcodeNotifier.value = false;
+    isLocked = false;
     cancelInactivityTimer();
   }
 
@@ -152,11 +162,15 @@ class SecurityService {
   static Future<void> lockApp(BuildContext context) async {
     if (isLocked) return;
     final codeExists = await hasPasscode();
-    if (!codeExists || !context.mounted) return;
+    if (!codeExists) return;
+
+    final targetContext = navigatorKey.currentContext ?? context;
+    if (!targetContext.mounted) return;
 
     isLocked = true;
     cancelInactivityTimer();
-    await Navigator.of(context, rootNavigator: true).push(
+
+    await Navigator.of(targetContext, rootNavigator: true).push(
       PageRouteBuilder(
         opaque: true,
         transitionDuration: const Duration(milliseconds: 250),
@@ -169,19 +183,21 @@ class SecurityService {
         ),
       ),
     );
+
     isLocked = false;
-    if (context.mounted) {
-      resetInactivityTimer(context);
+    final afterContext = navigatorKey.currentContext ?? context;
+    if (afterContext.mounted) {
+      resetInactivityTimer(afterContext);
     } else {
       resetInactivityTimer();
     }
   }
 
-  /// Parse auto-lock duration string to seconds threshold
-  static int parseAutoLockSeconds(String durationStr) {
+  /// Parse background auto-lock timeout (when user minimizes / switches apps)
+  static int parseBackgroundLockSeconds(String durationStr) {
     switch (durationStr.toLowerCase().trim()) {
       case "immediately":
-        return 2;
+        return 0; // Locks immediately upon returning from background
       case "1 min":
       case "1 minute":
         return 60;
@@ -194,7 +210,29 @@ class SecurityService {
       case "never":
         return -1;
       default:
-        return 2;
+        return 0;
+    }
+  }
+
+  /// Parse in-foreground inactivity auto-lock timeout (while app stays open on screen)
+  static int parseInactivityLockSeconds(String durationStr) {
+    switch (durationStr.toLowerCase().trim()) {
+      case "immediately":
+        // "Immediately" means lock on app exit/background, NOT locking screen while reading
+        return -1;
+      case "1 min":
+      case "1 minute":
+        return 60;
+      case "5 mins":
+      case "5 minutes":
+        return 300;
+      case "15 mins":
+      case "15 minutes":
+        return 900;
+      case "never":
+        return -1;
+      default:
+        return -1;
     }
   }
 
