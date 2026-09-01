@@ -357,9 +357,17 @@ def login(
                 "type": "2fa_pending"
             }
         )
+        method = existing_user.two_factor_method or "totp"
+        if method == "email":
+            otp = "".join(choices(string.digits, k=6))
+            existing_user.email_2fa_otp = otp
+            existing_user.email_2fa_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+            db.commit()
+            send_2fa_otp_email(to_email=str(existing_user.email), username=str(existing_user.username), code=otp)
+
         return {
             "requires_2fa": True,
-            "two_factor_method": existing_user.two_factor_method or "totp",
+            "two_factor_method": method,
             "temp_token": temp_token,
             "user_id": existing_user.id
         }
@@ -409,14 +417,17 @@ def send_2fa_email_code(
     db: Session = Depends(get_db)
 ):
     user = None
-    if req and req.temp_token:
-        payload = decode_access_token(req.temp_token)
+    # 1. Check temp_token in request body
+    if req and req.temp_token and req.temp_token.strip():
+        payload = decode_access_token(req.temp_token.strip())
         if payload and payload.get("sub"):
-            user = get_user_by_id(db, int(payload["sub"]))
-    elif credentials:
+            user = db.query(User).filter(User.id == int(payload["sub"])).first()
+
+    # 2. Check Authorization Bearer header
+    if not user and credentials and credentials.credentials:
         payload = decode_access_token(credentials.credentials)
         if payload and payload.get("sub"):
-            user = get_user_by_id(db, int(payload["sub"]))
+            user = db.query(User).filter(User.id == int(payload["sub"])).first()
 
     if not user:
         raise HTTPException(

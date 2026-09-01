@@ -19,7 +19,7 @@ def _safe_print(text: str):
 
 
 def _send_smtp_message(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
-    """Internal SMTP delivery worker."""
+    """Internal SMTP delivery worker with automatic dual-port TLS/SSL fallback."""
     smtp_host = settings.SMTP_HOST
     smtp_port = settings.SMTP_PORT
     smtp_user = settings.SMTP_USER
@@ -40,39 +40,49 @@ def _send_smtp_message(to_email: str, subject: str, html_content: str, text_cont
         _safe_print("=" * 55 + "\n")
         return True
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = from_email
-        msg["To"] = to_email
+    # Try configured port/mode first, then fallback to alternate port/mode if needed
+    modes_to_try = []
+    is_ssl = settings.SMTP_USE_SSL or smtp_port == 465
+    modes_to_try.append((smtp_port, is_ssl))
+    # Add alternate mode fallback
+    alt_port = 465 if smtp_port == 587 else 587
+    alt_ssl = (alt_port == 465)
+    modes_to_try.append((alt_port, alt_ssl))
 
-        part1 = MIMEText(text_content, "plain", "utf-8")
-        part2 = MIMEText(html_content, "html", "utf-8")
-        msg.attach(part1)
-        msg.attach(part2)
+    for port, use_ssl in modes_to_try:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = from_email
+            msg["To"] = to_email
 
-        if settings.SMTP_USE_SSL or smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
-        else:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
-            if settings.SMTP_USE_TLS:
+            part1 = MIMEText(text_content, "plain", "utf-8")
+            part2 = MIMEText(html_content, "html", "utf-8")
+            msg.attach(part1)
+            msg.attach(part2)
+
+            if use_ssl:
+                server = smtplib.SMTP_SSL(smtp_host, port, timeout=15)
+            else:
+                server = smtplib.SMTP(smtp_host, port, timeout=15)
                 server.starttls()
 
-        if smtp_user and smtp_password:
-            server.login(smtp_user, smtp_password)
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
 
-        server.sendmail(from_email, [to_email], msg.as_string())
-        server.quit()
-        _safe_print(f"[EMAIL DELIVERED] Successfully sent '{subject}' to {to_email}")
-        return True
-    except Exception as e:
-        _safe_print(f"[EMAIL DELIVERY FAILED] Could not send email to {to_email}: {e}")
-        # Always fallback to printing code so user is never locked out
-        _safe_print("\n" + "-" * 55)
-        _safe_print(f" [FALLBACK CODE LOG] To: {to_email} | Subject: {subject}")
-        _safe_print(text_content.strip())
-        _safe_print("-" * 55 + "\n")
-        return False
+            server.sendmail(from_email, [to_email], msg.as_string())
+            server.quit()
+            _safe_print(f"[EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} (port {port})")
+            return True
+        except Exception as e:
+            _safe_print(f"[EMAIL ATTEMPT FAILED] (port {port}): {e}")
+
+    _safe_print(f"[EMAIL DELIVERY FAILED] Could not send email to {to_email} on all ports.")
+    _safe_print("\n" + "-" * 55)
+    _safe_print(f" [FALLBACK CODE LOG] To: {to_email} | Subject: {subject}")
+    _safe_print(text_content.strip())
+    _safe_print("-" * 55 + "\n")
+    return False
 
 
 def send_email_async(to_email: str, subject: str, html_content: str, text_content: str):
