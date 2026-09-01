@@ -49,6 +49,7 @@ build/
 **/android/key.properties
 *.keystore
 *.jks
+*.apk
 
 # ── iOS / macOS ──────────────────────────────────────────────────────────────
 **/ios/Pods/

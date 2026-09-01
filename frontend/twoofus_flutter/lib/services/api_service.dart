@@ -20,6 +20,22 @@ class ApiService {
       _customBaseUrl = prefs.getString(_serverPrefKey);
       _discoveredBaseUrl = prefs.getString(_lastWorkingPrefKey);
       
+      // If cached URL was a local IP that is no longer reachable, clear it so production cloud is used
+      if (_customBaseUrl != null && (_customBaseUrl!.contains("10.") || _customBaseUrl!.contains("192.168.") || _customBaseUrl!.contains("127.0.0.1") || _customBaseUrl!.contains("10.0.2.2"))) {
+        final isAlive = await _probeCandidate(_customBaseUrl!, timeoutMs: 700);
+        if (!isAlive) {
+          _customBaseUrl = null;
+          await prefs.remove(_serverPrefKey);
+        }
+      }
+      if (_discoveredBaseUrl != null && (_discoveredBaseUrl!.contains("10.") || _discoveredBaseUrl!.contains("192.168.") || _discoveredBaseUrl!.contains("127.0.0.1") || _discoveredBaseUrl!.contains("10.0.2.2"))) {
+        final isAlive = await _probeCandidate(_discoveredBaseUrl!, timeoutMs: 700);
+        if (!isAlive) {
+          _discoveredBaseUrl = null;
+          await prefs.remove(_lastWorkingPrefKey);
+        }
+      }
+
       // Auto-discover in background if no custom base URL is explicitly forced
       if (_customBaseUrl == null || _customBaseUrl!.isEmpty) {
         autoDiscoverServer();
@@ -295,7 +311,11 @@ class ApiService {
         }
       } catch (e) {
         if (attempt == 0) {
-          // Auto-discover backend on the new network and retry immediately
+          if (baseUrl != productionServerUrl) {
+            _customBaseUrl = null;
+            _discoveredBaseUrl = productionServerUrl;
+            continue;
+          }
           final discovered = await autoDiscoverServer();
           if (discovered != null) {
             continue;
@@ -341,6 +361,11 @@ class ApiService {
         }
       } catch (e) {
         if (attempt == 0) {
+          if (baseUrl != productionServerUrl) {
+            _customBaseUrl = null;
+            _discoveredBaseUrl = productionServerUrl;
+            continue;
+          }
           final discovered = await autoDiscoverServer();
           if (discovered != null) {
             continue;
