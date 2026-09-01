@@ -135,6 +135,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
     _initialize();
     _startPresencePolling();
+    CallService.startIncomingCallWatcher(context);
   }
 
   @override

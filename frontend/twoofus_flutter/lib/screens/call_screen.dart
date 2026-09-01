@@ -5,6 +5,7 @@ import '../models/call_session.dart';
 import '../services/api_service.dart';
 import '../services/call_service.dart';
 import '../theme/theme_controller.dart';
+import '../utils/session.dart';
 
 class CallScreen extends StatefulWidget {
   final CallSessionModel session;
@@ -66,6 +67,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _statusCheckTimer?.cancel();
     _pulseController.dispose();
     _waveController.dispose();
+    CallService.activeCallNotifier.value = null;
     super.dispose();
   }
 
@@ -75,6 +77,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     if (_isExiting) return;
     _isExiting = true;
     _statusCheckTimer?.cancel();
+    CallService.activeCallNotifier.value = null;
     if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
@@ -82,13 +85,16 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   void _startStatusChecker() {
     _statusCheckTimer?.cancel();
-    _statusCheckTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+    _statusCheckTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) async {
       if (_isExiting || !mounted) return;
-      final updated = await ApiService.getActiveCall(widget.session.callerId);
+      final myId = await Session.getUserId();
+      if (myId == null || _isExiting || !mounted) return;
+
+      final updated = await ApiService.getActiveCall(myId);
       if (_isExiting || !mounted) return;
 
       if (updated == null) {
-        // Call was ended remotely
+        // Call was ended or rejected remotely
         HapticFeedback.mediumImpact();
         _safeExit();
         return;

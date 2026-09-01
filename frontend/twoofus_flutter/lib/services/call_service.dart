@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/call_session.dart';
 import '../utils/session.dart';
 import 'api_service.dart';
@@ -26,14 +27,14 @@ class CallService {
     if (_isPolling) return;
     _isPolling = true;
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+    _pollingTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) async {
       final myId = await Session.getUserId();
       if (myId == null) {
         stopIncomingCallWatcher();
         return;
       }
 
-      // Don't poll if already in active call
+      // Don't poll if already in active call screen
       if (activeCallNotifier.value != null) return;
 
       final data = await ApiService.getActiveCall(myId);
@@ -42,20 +43,31 @@ class CallService {
         if (session.status == 'ringing' && session.receiverId == myId) {
           if (activeCallNotifier.value?.id != session.id) {
             activeCallNotifier.value = session;
-            final navContext = navigatorKey.currentContext ?? context;
-            if (navContext != null && navContext.mounted) {
-              Navigator.push(
-                navContext,
-                MaterialPageRoute(
-                  builder: (_) => CallScreen(
-                    session: session,
-                    partnerId: session.callerId,
-                    partnerName: "Partner",
-                    isIncoming: true,
-                  ),
-                ),
-              );
+
+            // Trigger ringing haptics
+            HapticFeedback.heavyImpact();
+            Future.delayed(const Duration(milliseconds: 250), () => HapticFeedback.heavyImpact());
+
+            String partnerName = await Session.getCachedPartnerName() ?? "Partner";
+            if (partnerName == "Partner" || partnerName.isEmpty) {
+              try {
+                final prof = await ApiService.getProfile(session.callerId);
+                if (prof != null && prof["username"] != null) {
+                  partnerName = prof["username"].toString();
+                }
+              } catch (_) {}
             }
+
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (_) => CallScreen(
+                  session: session,
+                  partnerId: session.callerId,
+                  partnerName: partnerName,
+                  isIncoming: true,
+                ),
+              ),
+            );
           }
         }
       }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../services/security_service.dart';
+import '../services/call_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/session.dart';
@@ -112,6 +113,8 @@ class _SplashScreenState extends State<SplashScreen>
       _navigate(const LoginScreen());
       return;
     }
+
+    CallService.startIncomingCallWatcher();
 
     final token = (await Session.getToken())!;
     final userId = (await Session.getUserId())!;

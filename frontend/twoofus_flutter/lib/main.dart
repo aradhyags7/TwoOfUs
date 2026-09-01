@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/security_service.dart';
+import 'services/call_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 
@@ -29,6 +30,7 @@ class _TwoOfUsAppState extends State<TwoOfUsApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     SecurityService.refreshPasscodeState();
     SecurityService.resetInactivityTimer();
+    CallService.startIncomingCallWatcher();
   }
 
   @override

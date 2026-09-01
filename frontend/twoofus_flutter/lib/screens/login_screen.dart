@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../services/call_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/session.dart';
@@ -60,6 +61,8 @@ class _LoginScreenState extends State<LoginScreen>
       username: authData["username"],
       email: authData["email"],
     );
+
+    CallService.startIncomingCallWatcher();
 
     if (!mounted) return;
 

@@ -13,6 +13,7 @@ import 'profile_screen.dart';
 import 'partner_profile_screen.dart';
 import 'theme_selection_screen.dart';
 import 'security_screen.dart';
+import '../services/call_service.dart';
 import 'media_gallery_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     _startPairingPolling();
+    CallService.startIncomingCallWatcher(context);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadAllData();
