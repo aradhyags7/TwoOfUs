@@ -1,6 +1,8 @@
+import json
 import os
 import smtplib
 import threading
+import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -18,8 +20,132 @@ def _safe_print(text: str):
             pass
 
 
+def _send_via_resend(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
+    """Delivers email via Resend HTTPS API (Port 443, never blocked by cloud hosts)."""
+    api_key = (settings.RESEND_API_KEY or "").strip()
+    if not api_key:
+        return False
+    try:
+        from_email = (settings.SMTP_FROM_EMAIL or "TwoOfUs <onboarding@resend.dev>").strip()
+        data = {
+            "from": from_email,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+            "text": text_content,
+        }
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(data).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "TwoOfUs-App/1.0",
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=12) as response:
+            if response.status in (200, 201):
+                _safe_print(f"[RESEND EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} via Resend HTTPS API")
+                return True
+            else:
+                _safe_print(f"[RESEND FAILED] Status code: {response.status}")
+                return False
+    except Exception as e:
+        _safe_print(f"[RESEND API ERROR] {e}")
+        return False
+
+
+def _send_via_brevo(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
+    """Delivers email via Brevo HTTPS API (Port 443, free 300 emails/day)."""
+    api_key = (settings.BREVO_API_KEY or "").strip()
+    if not api_key:
+        return False
+    try:
+        sender_email = (settings.SMTP_USER or "twoofus.app@gmail.com").strip()
+        data = {
+            "sender": {"name": "TwoOfUs", "email": sender_email},
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "htmlContent": html_content,
+            "textContent": text_content
+        }
+        req = urllib.request.Request(
+            "https://api.brevo.com/v3/smtp/email",
+            data=json.dumps(data).encode("utf-8"),
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json",
+                "User-Agent": "TwoOfUs-App/1.0",
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=12) as response:
+            if response.status in (200, 201):
+                _safe_print(f"[BREVO EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} via Brevo HTTPS API")
+                return True
+            else:
+                _safe_print(f"[BREVO FAILED] Status code: {response.status}")
+                return False
+    except Exception as e:
+        _safe_print(f"[BREVO API ERROR] {e}")
+        return False
+
+
+def _send_via_sendgrid(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
+    """Delivers email via SendGrid HTTPS API (Port 443)."""
+    api_key = (settings.SENDGRID_API_KEY or "").strip()
+    if not api_key:
+        return False
+    try:
+        sender_email = (settings.SMTP_USER or "twoofus.app@gmail.com").strip()
+        data = {
+            "personalizations": [{"to": [{"email": to_email}]}],
+            "from": {"email": sender_email, "name": "TwoOfUs"},
+            "subject": subject,
+            "content": [
+                {"type": "text/plain", "value": text_content},
+                {"type": "text/html", "value": html_content}
+            ]
+        }
+        req = urllib.request.Request(
+            "https://api.sendgrid.com/v3/mail/send",
+            data=json.dumps(data).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "TwoOfUs-App/1.0",
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=12) as response:
+            if response.status in (200, 202):
+                _safe_print(f"[SENDGRID EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} via SendGrid HTTPS API")
+                return True
+            else:
+                _safe_print(f"[SENDGRID FAILED] Status code: {response.status}")
+                return False
+    except Exception as e:
+        _safe_print(f"[SENDGRID API ERROR] {e}")
+        return False
+
+
 def _send_smtp_message(to_email: str, subject: str, html_content: str, text_content: str) -> bool:
-    """Internal SMTP delivery worker with automatic dual-port TLS/SSL fallback."""
+    """Internal delivery dispatcher: tries HTTPS APIs (Resend, Brevo, SendGrid) first, then SMTP."""
+    # 1. Try cloud HTTPS APIs first (these work on Render where outbound SMTP is blocked)
+    if settings.RESEND_API_KEY:
+        if _send_via_resend(to_email, subject, html_content, text_content):
+            return True
+
+    if settings.BREVO_API_KEY:
+        if _send_via_brevo(to_email, subject, html_content, text_content):
+            return True
+
+    if settings.SENDGRID_API_KEY:
+        if _send_via_sendgrid(to_email, subject, html_content, text_content):
+            return True
+
+    # 2. Try SMTP
     smtp_host = settings.SMTP_HOST
     smtp_port = settings.SMTP_PORT
     smtp_user = settings.SMTP_USER
@@ -35,16 +161,14 @@ def _send_smtp_message(to_email: str, subject: str, html_content: str, text_cont
         _safe_print("-" * 55)
         _safe_print(text_content.strip())
         _safe_print("=" * 55)
-        _safe_print(" Tip: To deliver to real inboxes, configure SMTP_HOST,")
-        _safe_print("   SMTP_PORT, SMTP_USER, & SMTP_PASSWORD in backend/.env")
+        _safe_print(" Tip: On Render/Cloud hosts, outbound SMTP is blocked.")
+        _safe_print(" Set RESEND_API_KEY or BREVO_API_KEY in Render Environment Variables.")
         _safe_print("=" * 55 + "\n")
         return True
 
-    # Try configured port/mode first, then fallback to alternate port/mode if needed
     modes_to_try = []
     is_ssl = settings.SMTP_USE_SSL or smtp_port == 465
     modes_to_try.append((smtp_port, is_ssl))
-    # Add alternate mode fallback
     alt_port = 465 if smtp_port == 587 else 587
     alt_ssl = (alt_port == 465)
     modes_to_try.append((alt_port, alt_ssl))
@@ -62,9 +186,9 @@ def _send_smtp_message(to_email: str, subject: str, html_content: str, text_cont
             msg.attach(part2)
 
             if use_ssl:
-                server = smtplib.SMTP_SSL(smtp_host, port, timeout=15)
+                server = smtplib.SMTP_SSL(smtp_host, port, timeout=12)
             else:
-                server = smtplib.SMTP(smtp_host, port, timeout=15)
+                server = smtplib.SMTP(smtp_host, port, timeout=12)
                 server.starttls()
 
             if smtp_user and smtp_password:
@@ -72,12 +196,12 @@ def _send_smtp_message(to_email: str, subject: str, html_content: str, text_cont
 
             server.sendmail(from_email, [to_email], msg.as_string())
             server.quit()
-            _safe_print(f"[EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} (port {port})")
+            _safe_print(f"[EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} (SMTP port {port})")
             return True
         except Exception as e:
             _safe_print(f"[EMAIL ATTEMPT FAILED] (port {port}): {e}")
 
-    _safe_print(f"[EMAIL DELIVERY FAILED] Could not send email to {to_email} on all ports.")
+    _safe_print(f"[EMAIL DELIVERY FAILED] Could not send email to {to_email} via SMTP (outbound ports blocked on cloud host).")
     _safe_print("\n" + "-" * 55)
     _safe_print(f" [FALLBACK CODE LOG] To: {to_email} | Subject: {subject}")
     _safe_print(text_content.strip())

@@ -37,5 +37,10 @@ class Settings:
     SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes")
     SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() in ("true", "1", "yes")
 
+    # Cloud HTTP Email APIs (Works on Render, Heroku, AWS where outbound SMTP ports 25/465/587 are blocked)
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+    BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
+
 
 settings = Settings()
