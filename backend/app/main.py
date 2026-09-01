@@ -303,7 +303,7 @@ def login(
             detail="Invalid email or password"
         )
 
-    if existing_user.is_2fa_enabled and existing_user.totp_secret:
+    if existing_user.is_2fa_enabled:
         temp_token = create_access_token(
             data={
                 "sub": str(existing_user.id),
@@ -313,6 +313,7 @@ def login(
         )
         return {
             "requires_2fa": True,
+            "two_factor_method": existing_user.two_factor_method or "totp",
             "temp_token": temp_token,
             "user_id": existing_user.id
         }

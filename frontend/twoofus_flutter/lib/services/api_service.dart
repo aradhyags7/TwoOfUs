@@ -57,12 +57,25 @@ class ApiService {
       if (target.endsWith("/")) {
         target = target.substring(0, target.length - 1);
       }
-      final res = await http.get(Uri.parse("$target/health")).timeout(const Duration(milliseconds: 1500));
+      final res = await http.get(Uri.parse("$target/health")).timeout(const Duration(milliseconds: 2000));
       if (res.statusCode == 200) {
-        return true;
+        try {
+          final body = jsonDecode(res.body);
+          if (body is Map && (body["app"] == "TwoOfUs" || body["status"] == "ok")) {
+            return true;
+          }
+        } catch (_) {}
       }
-      final fallbackRes = await http.get(Uri.parse(target)).timeout(const Duration(milliseconds: 1500));
-      return fallbackRes.statusCode >= 200 && fallbackRes.statusCode < 500;
+      final pingRes = await http.get(Uri.parse("$target/ping")).timeout(const Duration(milliseconds: 2000));
+      if (pingRes.statusCode == 200) {
+        try {
+          final body = jsonDecode(pingRes.body);
+          if (body is Map && (body["app"] == "TwoOfUs" || body["status"] == "ok")) {
+            return true;
+          }
+        } catch (_) {}
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -195,10 +208,22 @@ class ApiService {
     try {
       final res = await http.get(Uri.parse("$url/health")).timeout(Duration(milliseconds: timeoutMs));
       if (res.statusCode == 200) {
-        return true;
+        try {
+          final body = jsonDecode(res.body);
+          if (body is Map && (body["app"] == "TwoOfUs" || body["status"] == "ok")) {
+            return true;
+          }
+        } catch (_) {}
       }
-      final fallback = await http.get(Uri.parse(url)).timeout(Duration(milliseconds: timeoutMs));
-      return fallback.statusCode >= 200 && fallback.statusCode < 500;
+      final pingRes = await http.get(Uri.parse("$url/ping")).timeout(Duration(milliseconds: timeoutMs));
+      if (pingRes.statusCode == 200) {
+        try {
+          final body = jsonDecode(pingRes.body);
+          if (body is Map && (body["app"] == "TwoOfUs" || body["status"] == "ok")) {
+            return true;
+          }
+        } catch (_) {}
+      }
     } catch (_) {}
     return false;
   }
