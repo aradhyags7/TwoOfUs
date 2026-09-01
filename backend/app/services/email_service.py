@@ -26,33 +26,30 @@ def _send_via_resend(to_email: str, subject: str, html_content: str, text_conten
     if not api_key:
         return False
     try:
+        import httpx
         from_email = (settings.SMTP_FROM_EMAIL or "TwoOfUs <onboarding@resend.dev>").strip()
-        data = {
+        payload = {
             "from": from_email,
             "to": [to_email],
             "subject": subject,
             "html": html_content,
             "text": text_content,
         }
-        req = urllib.request.Request(
-            "https://api.resend.com/emails",
-            data=json.dumps(data).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "TwoOfUs-App/1.0",
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=12) as response:
-            if response.status in (200, 201):
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "resend-python/2.0.0",
+        }
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.post("https://api.resend.com/emails", json=payload, headers=headers)
+            if resp.status_code in (200, 201):
                 _safe_print(f"[RESEND EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} via Resend HTTPS API")
                 return True
             else:
-                _safe_print(f"[RESEND FAILED] Status code: {response.status}")
+                _safe_print(f"[RESEND API ERROR] Status {resp.status_code}: {resp.text}")
                 return False
     except Exception as e:
-        _safe_print(f"[RESEND API ERROR] {e}")
+        _safe_print(f"[RESEND API EXCEPTION] {e}")
         return False
 
 
@@ -62,33 +59,30 @@ def _send_via_brevo(to_email: str, subject: str, html_content: str, text_content
     if not api_key:
         return False
     try:
+        import httpx
         sender_email = (settings.SMTP_USER or "twoofus.app@gmail.com").strip()
-        data = {
+        payload = {
             "sender": {"name": "TwoOfUs", "email": sender_email},
             "to": [{"email": to_email}],
             "subject": subject,
             "htmlContent": html_content,
             "textContent": text_content
         }
-        req = urllib.request.Request(
-            "https://api.brevo.com/v3/smtp/email",
-            data=json.dumps(data).encode("utf-8"),
-            headers={
-                "api-key": api_key,
-                "Content-Type": "application/json",
-                "User-Agent": "TwoOfUs-App/1.0",
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=12) as response:
-            if response.status in (200, 201):
+        headers = {
+            "api-key": api_key,
+            "Content-Type": "application/json",
+            "User-Agent": "TwoOfUs-App/1.0",
+        }
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers)
+            if resp.status_code in (200, 201):
                 _safe_print(f"[BREVO EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} via Brevo HTTPS API")
                 return True
             else:
-                _safe_print(f"[BREVO FAILED] Status code: {response.status}")
+                _safe_print(f"[BREVO API ERROR] Status {resp.status_code}: {resp.text}")
                 return False
     except Exception as e:
-        _safe_print(f"[BREVO API ERROR] {e}")
+        _safe_print(f"[BREVO API EXCEPTION] {e}")
         return False
 
 
@@ -98,8 +92,9 @@ def _send_via_sendgrid(to_email: str, subject: str, html_content: str, text_cont
     if not api_key:
         return False
     try:
+        import httpx
         sender_email = (settings.SMTP_USER or "twoofus.app@gmail.com").strip()
-        data = {
+        payload = {
             "personalizations": [{"to": [{"email": to_email}]}],
             "from": {"email": sender_email, "name": "TwoOfUs"},
             "subject": subject,
@@ -108,25 +103,21 @@ def _send_via_sendgrid(to_email: str, subject: str, html_content: str, text_cont
                 {"type": "text/html", "value": html_content}
             ]
         }
-        req = urllib.request.Request(
-            "https://api.sendgrid.com/v3/mail/send",
-            data=json.dumps(data).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "TwoOfUs-App/1.0",
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=12) as response:
-            if response.status in (200, 202):
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "TwoOfUs-App/1.0",
+        }
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.post("https://api.sendgrid.com/v3/mail/send", json=payload, headers=headers)
+            if resp.status_code in (200, 202):
                 _safe_print(f"[SENDGRID EMAIL DELIVERED] Successfully sent '{subject}' to {to_email} via SendGrid HTTPS API")
                 return True
             else:
-                _safe_print(f"[SENDGRID FAILED] Status code: {response.status}")
+                _safe_print(f"[SENDGRID API ERROR] Status {resp.status_code}: {resp.text}")
                 return False
     except Exception as e:
-        _safe_print(f"[SENDGRID API ERROR] {e}")
+        _safe_print(f"[SENDGRID API EXCEPTION] {e}")
         return False
 
 
