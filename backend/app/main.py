@@ -358,6 +358,7 @@ def login(
             }
         )
         method = existing_user.two_factor_method or "totp"
+        otp = None
         if method == "email":
             otp = "".join(choices(string.digits, k=6))
             existing_user.email_2fa_otp = otp
@@ -365,12 +366,15 @@ def login(
             db.commit()
             send_2fa_otp_email(to_email=str(existing_user.email), username=str(existing_user.username), code=otp)
 
-        return {
+        resp = {
             "requires_2fa": True,
             "two_factor_method": method,
             "temp_token": temp_token,
-            "user_id": existing_user.id
+            "user_id": existing_user.id,
         }
+        if otp is not None:
+            resp["fallback_code"] = otp
+        return resp
 
     access_token = create_access_token(
         data={
@@ -446,7 +450,8 @@ def send_2fa_email_code(
     return {
         "message": f"Verification code sent to {user.email}",
         "email": user.email,
-        "expires_in_seconds": 600
+        "expires_in_seconds": 600,
+        "fallback_code": otp,
     }
 
 
@@ -664,7 +669,8 @@ def forgot_password(
         "message": f"Reset code sent to your registered email",
         "email": user.email,
         "username": user.username,
-        "expires_in_minutes": 15
+        "expires_in_minutes": 15,
+        "fallback_code": code,
     }
 
 

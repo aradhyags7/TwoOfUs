@@ -112,15 +112,22 @@ class ApiService {
       }
 
       // 2. Fast candidate list: production cloud first, then last known, emulator, etc.
+      // 2. Check production cloud first with 3500ms timeout (handles mobile cellular & cloud latency)
+      if (await _probeCandidate(productionServerUrl, timeoutMs: 3500)) {
+        await _saveWorkingUrl(productionServerUrl);
+        _isDiscovering = false;
+        return productionServerUrl;
+      }
+
+      // Fast local candidates if cloud is unreachable
       final List<String> fastCandidates = [];
-      if (_discoveredBaseUrl != null && _discoveredBaseUrl!.isNotEmpty) {
+      if (_discoveredBaseUrl != null && _discoveredBaseUrl!.isNotEmpty && _discoveredBaseUrl != productionServerUrl) {
         fastCandidates.add(_discoveredBaseUrl!);
       }
       fastCandidates.addAll([
-        productionServerUrl,
         "http://10.20.9.103:8000",
-        "http://127.0.0.1:8000",
         "http://10.0.2.2:8000",
+        "http://127.0.0.1:8000",
         "http://localhost:8000",
       ]);
 
@@ -277,7 +284,7 @@ class ApiService {
     return headers;
   }
 
-  static const Duration defaultTimeout = Duration(seconds: 25);
+  static const Duration defaultTimeout = Duration(seconds: 35);
 
   // =========================
   // LOGIN

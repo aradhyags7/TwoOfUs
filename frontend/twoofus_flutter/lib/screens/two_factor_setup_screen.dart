@@ -103,13 +103,25 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
 
     if (res != null && !res.containsKey("error")) {
       _startCooldownTimer();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("6-digit code sent to ${_userEmail ?? 'your email'}! 📬"),
-          backgroundColor: const Color(0xFF200F35),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      final fallback = res["fallback_code"]?.toString();
+      if (fallback != null && fallback.isNotEmpty) {
+        _codeController.text = fallback;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("📬 Code [$fallback] loaded automatically!"),
+            backgroundColor: const Color(0xFF200F35),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("6-digit code sent to ${_userEmail ?? 'your email'}! 📬"),
+            backgroundColor: const Color(0xFF200F35),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

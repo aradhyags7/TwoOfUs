@@ -128,12 +128,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     setState(() => _isLoading = false);
 
     if (res != null && !res.containsKey("error")) {
+      final fallback = res["fallback_code"]?.toString();
       setState(() {
         _targetEmail = res["email"]?.toString() ?? query;
         _currentStep = 2;
+        if (fallback != null && fallback.isNotEmpty) {
+          _codeCtrl.text = fallback;
+        }
       });
       _startResendTimer();
-      _toast("Password reset email sent to ${_targetEmail ?? 'your email'}! 📬");
+      if (fallback != null && fallback.isNotEmpty) {
+        _toast("📬 Code [$fallback] loaded automatically!");
+      } else {
+        _toast("Password reset email sent to ${_targetEmail ?? 'your email'}! 📬");
+      }
     } else {
       final err = res?["error"]?.toString() ?? "Could not find an account with those details";
       _toast(err, isError: true);

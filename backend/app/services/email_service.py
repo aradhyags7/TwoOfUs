@@ -224,7 +224,7 @@ Your 6-digit verification code is: {code}
 This code will expire in 15 minutes. If you did not make this request, you can safely ignore this email — your account remains secure.
 
 Warmly,
-The TwoOfUs Team ❤️
+The TwoOfUs Team 
 """
 
     html_content = f"""<!DOCTYPE html>
@@ -284,7 +284,7 @@ The TwoOfUs Team ❤️
           <tr>
             <td style="padding: 20px 36px 30px 36px; text-align: center; background-color: rgba(0, 0, 0, 0.2);">
               <p style="margin: 0; font-size: 12px; color: #7e57c2;">
-                Sent with ❤️ from TwoOfUs &bull; Your private shared world
+                Sent from TwoOfUs &bull; Your private shared world
               </p>
             </td>
           </tr>
@@ -315,7 +315,7 @@ Your TwoOfUs Two-Factor Authentication (2FA) verification code is: {code}
 This code is valid for 10 minutes. If you did not initiate this login attempt, please change your password immediately.
 
 Warmly,
-The TwoOfUs Team ❤️
+The TwoOfUs Team 
 """
 
     html_content = f"""<!DOCTYPE html>
@@ -375,7 +375,7 @@ The TwoOfUs Team ❤️
           <tr>
             <td style="padding: 20px 36px 30px 36px; text-align: center; background-color: rgba(0, 0, 0, 0.2);">
               <p style="margin: 0; font-size: 12px; color: #7e57c2;">
-                Sent with 🛡️ from TwoOfUs &bull; Your private shared world
+                Sent from TwoOfUs &bull; Your private shared world
               </p>
             </td>
           </tr>
