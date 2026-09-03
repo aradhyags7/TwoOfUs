@@ -50,8 +50,15 @@ class E2EEService {
   // ── Initialize Keypair & Register Public Key ─────────────────────────────
   static Future<void> initialize() async {
     try {
-      final storedPrivBytesStr = await _storage.read(key: _privKeyStorageKey);
-      final storedPubBytesStr = await _storage.read(key: _pubKeyStorageKey);
+      final prefs = await SharedPreferences.getInstance();
+      var storedPrivBytesStr = await _storage.read(key: _privKeyStorageKey);
+      var storedPubBytesStr = await _storage.read(key: _pubKeyStorageKey);
+
+      // Fallback: Restore from persistent SharedPreferences backup if Android KeyStore lost it
+      if (storedPrivBytesStr == null || storedPubBytesStr == null) {
+        storedPrivBytesStr ??= prefs.getString(_privKeyStorageKey);
+        storedPubBytesStr ??= prefs.getString(_pubKeyStorageKey);
+      }
 
       if (storedPrivBytesStr != null && storedPubBytesStr != null) {
         final privBytes = base64Decode(storedPrivBytesStr);
@@ -63,17 +70,28 @@ class E2EEService {
           type: KeyPairType.x25519,
         );
         _myPublicKeyHex = base64Encode(pubBytes);
+
+        // Ensure both storage engines are in sync
+        await _storage.write(key: _privKeyStorageKey, value: storedPrivBytesStr);
+        await _storage.write(key: _pubKeyStorageKey, value: storedPubBytesStr);
+        await prefs.setString(_privKeyStorageKey, storedPrivBytesStr);
+        await prefs.setString(_pubKeyStorageKey, storedPubBytesStr);
       } else {
         final newKeyPair = await _keyExchangeAlgorithm.newKeyPair();
         final pubKey = await newKeyPair.extractPublicKey();
         final privBytes = await newKeyPair.extractPrivateKeyBytes();
         final pubBytes = pubKey.bytes;
 
-        await _storage.write(key: _privKeyStorageKey, value: base64Encode(privBytes));
-        await _storage.write(key: _pubKeyStorageKey, value: base64Encode(pubBytes));
+        final privB64 = base64Encode(privBytes);
+        final pubB64 = base64Encode(pubBytes);
+
+        await _storage.write(key: _privKeyStorageKey, value: privB64);
+        await _storage.write(key: _pubKeyStorageKey, value: pubB64);
+        await prefs.setString(_privKeyStorageKey, privB64);
+        await prefs.setString(_pubKeyStorageKey, pubB64);
 
         _myKeyPair = newKeyPair;
-        _myPublicKeyHex = base64Encode(pubBytes);
+        _myPublicKeyHex = pubB64;
       }
 
       // Publish public key to server

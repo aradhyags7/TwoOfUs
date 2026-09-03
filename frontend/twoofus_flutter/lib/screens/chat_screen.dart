@@ -304,13 +304,28 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     Future<void> _loadMessages() async {
     if (_myId == null) return;
     try {
+      final prefs = await SharedPreferences.getInstance();
       final result = await ApiService.getMessages(_myId!, widget.partnerId);
       final rawMessages = result.map<Message>((e) => Message.fromJson(e)).toList();
 
       List<Message> decryptedMessages = [];
       for (var m in rawMessages) {
         if (m.isEncrypted && m.nonce != null && m.nonce!.isNotEmpty) {
-          if (_decryptedCache.containsKey(m.id) && !m.isEdited) {
+          final cachedMsg = prefs.getString('cached_msg_body_${m.id}');
+          if (cachedMsg != null && cachedMsg.isNotEmpty && !cachedMsg.startsWith("🔒")) {
+            _decryptedCache[m.id] = cachedMsg;
+            decryptedMessages.add(Message(
+              id: m.id,
+              senderId: m.senderId,
+              receiverId: m.receiverId,
+              content: cachedMsg,
+              nonce: m.nonce,
+              isEncrypted: true,
+              isEdited: m.isEdited,
+              createdAt: m.createdAt,
+              mediaAttachments: m.mediaAttachments,
+            ));
+          } else if (_decryptedCache.containsKey(m.id) && !_decryptedCache[m.id]!.startsWith("🔒") && !m.isEdited) {
             decryptedMessages.add(Message(
               id: m.id,
               senderId: m.senderId,
@@ -333,6 +348,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 remotePublicKeyBase64: _partnerPubKey!,
               );
               _decryptedCache[m.id] = decryptedContent;
+              if (!decryptedContent.startsWith("🔒")) {
+                await prefs.setString('cached_msg_body_${m.id}', decryptedContent);
+              }
               decryptedMessages.add(Message(
                 id: m.id,
                 senderId: m.senderId,
@@ -394,10 +412,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
 
       if (!hasChanges) return;
 
+      final prefs = await SharedPreferences.getInstance();
       List<Message> decryptedMessages = [];
       for (var m in rawMessages) {
         if (m.isEncrypted && m.nonce != null && m.nonce!.isNotEmpty) {
-          if (_decryptedCache.containsKey(m.id) && !m.isEdited) {
+          final cachedMsg = prefs.getString('cached_msg_body_${m.id}');
+          if (cachedMsg != null && cachedMsg.isNotEmpty && !cachedMsg.startsWith("🔒")) {
+            _decryptedCache[m.id] = cachedMsg;
+            decryptedMessages.add(Message(
+              id: m.id,
+              senderId: m.senderId,
+              receiverId: m.receiverId,
+              content: cachedMsg,
+              nonce: m.nonce,
+              isEncrypted: true,
+              isEdited: m.isEdited,
+              createdAt: m.createdAt,
+              mediaAttachments: m.mediaAttachments,
+            ));
+          } else if (_decryptedCache.containsKey(m.id) && !_decryptedCache[m.id]!.startsWith("🔒") && !m.isEdited) {
             decryptedMessages.add(Message(
               id: m.id,
               senderId: m.senderId,
@@ -420,6 +453,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 remotePublicKeyBase64: _partnerPubKey!,
               );
               _decryptedCache[m.id] = decryptedContent;
+              if (!decryptedContent.startsWith("🔒")) {
+                await prefs.setString('cached_msg_body_${m.id}', decryptedContent);
+              }
               decryptedMessages.add(Message(
                 id: m.id,
                 senderId: m.senderId,
@@ -866,6 +902,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       });
       _scrollToBottom();
 
+      if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+        _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
+      }
       if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
         final payload = await E2EEService.encryptText(text, _partnerPubKey!);
         if (payload != null) {
