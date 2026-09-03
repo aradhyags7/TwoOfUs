@@ -27,10 +27,20 @@ def _send_via_resend(to_email: str, subject: str, html_content: str, text_conten
         return False
     try:
         import httpx
-        from_email = (settings.SMTP_FROM_EMAIL or "TwoOfUs <onboarding@resend.dev>").strip()
+        configured_from = (settings.SMTP_FROM_EMAIL or "").strip()
+        # Resend requires onboarding@resend.dev unless a custom domain is verified on resend.com
+        # If SMTP_FROM_EMAIL is a gmail.com address or not set, use onboarding@resend.dev with reply_to
+        if not configured_from or "@gmail.com" in configured_from.lower() or "resend.dev" in configured_from.lower():
+            from_email = "TwoOfUs <onboarding@resend.dev>"
+        else:
+            from_email = configured_from
+
+        reply_to = (settings.SMTP_USER or "twoofus.app@gmail.com").strip()
+
         payload = {
             "from": from_email,
             "to": [to_email],
+            "reply_to": reply_to,
             "subject": subject,
             "html": html_content,
             "text": text_content,
@@ -47,6 +57,13 @@ def _send_via_resend(to_email: str, subject: str, html_content: str, text_conten
                 return True
             else:
                 _safe_print(f"[RESEND API ERROR] Status {resp.status_code}: {resp.text}")
+                # Auto-fallback to onboarding@resend.dev if unverified domain was rejected
+                if resp.status_code == 403 and from_email != "TwoOfUs <onboarding@resend.dev>":
+                    payload["from"] = "TwoOfUs <onboarding@resend.dev>"
+                    retry_resp = client.post("https://api.resend.com/emails", json=payload, headers=headers)
+                    if retry_resp.status_code in (200, 201):
+                        _safe_print(f"[RESEND EMAIL DELIVERED (Fallback Sender)] Successfully sent '{subject}' to {to_email}")
+                        return True
                 return False
     except Exception as e:
         _safe_print(f"[RESEND API EXCEPTION] {e}")
