@@ -322,26 +322,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               createdAt: m.createdAt,
               mediaAttachments: m.mediaAttachments,
             ));
-          } else if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
-            final decryptedContent = await E2EEService.decryptText(
-              ciphertextBase64: m.content,
-              nonceBase64: m.nonce!,
-              remotePublicKeyBase64: _partnerPubKey!,
-            );
-            _decryptedCache[m.id] = decryptedContent;
-            decryptedMessages.add(Message(
-              id: m.id,
-              senderId: m.senderId,
-              receiverId: m.receiverId,
-              content: decryptedContent,
-              nonce: m.nonce,
-              isEncrypted: true,
-              isEdited: m.isEdited,
-              createdAt: m.createdAt,
-              mediaAttachments: m.mediaAttachments,
-            ));
           } else {
-            decryptedMessages.add(m);
+            if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+              _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
+            }
+            if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
+              final decryptedContent = await E2EEService.decryptText(
+                ciphertextBase64: m.content,
+                nonceBase64: m.nonce!,
+                remotePublicKeyBase64: _partnerPubKey!,
+              );
+              _decryptedCache[m.id] = decryptedContent;
+              decryptedMessages.add(Message(
+                id: m.id,
+                senderId: m.senderId,
+                receiverId: m.receiverId,
+                content: decryptedContent,
+                nonce: m.nonce,
+                isEncrypted: true,
+                isEdited: m.isEdited,
+                createdAt: m.createdAt,
+                mediaAttachments: m.mediaAttachments,
+              ));
+            } else {
+              decryptedMessages.add(Message(
+                id: m.id,
+                senderId: m.senderId,
+                receiverId: m.receiverId,
+                content: "🔒 Encrypted with previous security key",
+                nonce: m.nonce,
+                isEncrypted: true,
+                isEdited: m.isEdited,
+                createdAt: m.createdAt,
+                mediaAttachments: m.mediaAttachments,
+              ));
+            }
           }
         } else {
           decryptedMessages.add(m);
@@ -394,26 +409,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               createdAt: m.createdAt,
               mediaAttachments: m.mediaAttachments,
             ));
-          } else if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
-            final decryptedContent = await E2EEService.decryptText(
-              ciphertextBase64: m.content,
-              nonceBase64: m.nonce!,
-              remotePublicKeyBase64: _partnerPubKey!,
-            );
-            _decryptedCache[m.id] = decryptedContent;
-            decryptedMessages.add(Message(
-              id: m.id,
-              senderId: m.senderId,
-              receiverId: m.receiverId,
-              content: decryptedContent,
-              nonce: m.nonce,
-              isEncrypted: true,
-              isEdited: m.isEdited,
-              createdAt: m.createdAt,
-              mediaAttachments: m.mediaAttachments,
-            ));
           } else {
-            decryptedMessages.add(m);
+            if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+              _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
+            }
+            if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
+              final decryptedContent = await E2EEService.decryptText(
+                ciphertextBase64: m.content,
+                nonceBase64: m.nonce!,
+                remotePublicKeyBase64: _partnerPubKey!,
+              );
+              _decryptedCache[m.id] = decryptedContent;
+              decryptedMessages.add(Message(
+                id: m.id,
+                senderId: m.senderId,
+                receiverId: m.receiverId,
+                content: decryptedContent,
+                nonce: m.nonce,
+                isEncrypted: true,
+                isEdited: m.isEdited,
+                createdAt: m.createdAt,
+                mediaAttachments: m.mediaAttachments,
+              ));
+            } else {
+              decryptedMessages.add(Message(
+                id: m.id,
+                senderId: m.senderId,
+                receiverId: m.receiverId,
+                content: "🔒 Encrypted with previous security key",
+                nonce: m.nonce,
+                isEncrypted: true,
+                isEdited: m.isEdited,
+                createdAt: m.createdAt,
+                mediaAttachments: m.mediaAttachments,
+              ));
+            }
           }
         } else {
           decryptedMessages.add(m);
@@ -1534,8 +1564,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                         msg.content,
                         _searchQuery,
                         TextStyle(
-                          color: isMe ? Colors.white : _text,
-                          fontSize: 15, height: 1.4,
+                          color: msg.content.startsWith("🔒")
+                              ? (isMe ? Colors.white70 : _sub)
+                              : (isMe ? Colors.white : _text),
+                          fontSize: msg.content.startsWith("🔒") ? 13 : 15,
+                          fontStyle: msg.content.startsWith("🔒") ? FontStyle.italic : FontStyle.normal,
+                          height: 1.4,
                         ),
                       ),
                     const SizedBox(height: 3),

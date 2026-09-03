@@ -199,7 +199,7 @@ class E2EEService {
       return utf8.decode(decryptedBytes);
     } catch (e) {
       debugPrint("E2EE TEXT DECRYPT ERROR: $e");
-      return ciphertextBase64; // Fallback to raw content if decryption fails
+      return "🔒 Encrypted with previous security key";
     }
   }
 
