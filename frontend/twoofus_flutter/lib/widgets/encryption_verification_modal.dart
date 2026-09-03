@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../services/e2ee_service.dart';
 import '../utils/session.dart';
+import 'qr_scanner_dialog.dart';
 
 class EncryptionVerificationModal extends StatefulWidget {
   final int partnerId;
@@ -138,6 +139,18 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
           duration: const Duration(milliseconds: 2200),
         ),
       );
+    }
+  }
+
+  Future<void> _openCameraScanner() async {
+    final scannedData = await QRScannerDialog.scan(
+      context,
+      partnerName: widget.partnerName,
+    );
+    if (scannedData != null && scannedData.isNotEmpty && mounted) {
+      _compareCtrl.text = scannedData;
+      setState(() => _qrSubMode = 1);
+      _verifyScannedOrPastedCode(scannedData);
     }
   }
 
@@ -727,6 +740,19 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5),
             ),
+            const SizedBox(height: 14),
+            ElevatedButton.icon(
+              onPressed: _openCameraScanner,
+              icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+              label: Text("Scan ${widget.partnerName}'s QR Code 📷"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF2A6D),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 3,
+              ),
+            ),
           ] else ...[
             // Partner Code Verifier / Matcher Card
             Container(
@@ -739,6 +765,33 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _openCameraScanner,
+                      icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                      label: const Text("Open Camera Scanner 📷", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF2A6D),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.15))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text("OR ENTER MANUALLY", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      ),
+                      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.15))),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   const Text(
                     "Compare Partner's Code",
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
