@@ -99,15 +99,13 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  void _show2FALoginSheet(String tempToken, {String? fallbackCode}) {
-    final codeCtrl = TextEditingController(text: fallbackCode ?? '');
+  void _show2FALoginSheet(String tempToken) {
+    final codeCtrl = TextEditingController();
     bool isVerifying = false;
     bool isSendingEmail = false;
     int emailCooldown = 0;
     String? errorText;
-    String? successText = (fallbackCode != null && fallbackCode.isNotEmpty)
-        ? "📬 Code [$fallbackCode] loaded automatically!"
-        : null;
+    String? successText;
 
     showModalBottomSheet(
       context: context,
@@ -260,13 +258,7 @@ class _LoginScreenState extends State<LoginScreen>
                           if (res != null && !res.containsKey("error")) {
                             setSheetState(() {
                               emailCooldown = 60;
-                              final fallback = res["fallback_code"]?.toString();
-                              if (fallback != null && fallback.isNotEmpty) {
-                                codeCtrl.text = fallback;
-                                successText = "📬 Code [$fallback] loaded automatically!";
-                              } else {
-                                successText = "📬 Code sent to ${res['email'] ?? 'your email'}!";
-                              }
+                              successText = "📬 Code sent to ${res['email'] ?? 'your email'}!";
                             });
                           } else {
                             setSheetState(() {
@@ -310,8 +302,7 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (result != null && result["requires_2fa"] == true) {
         final tempToken = result["temp_token"] as String;
-        final fallbackCode = result["fallback_code"]?.toString();
-        _show2FALoginSheet(tempToken, fallbackCode: fallbackCode);
+        _show2FALoginSheet(tempToken);
       } else if (result != null && result.containsKey("access_token")) {
         await _handleSuccessfulAuth(result);
       } else {
