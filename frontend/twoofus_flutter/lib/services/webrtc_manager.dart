@@ -12,6 +12,8 @@ class WebRTCManager {
 
   final ValueNotifier<RTCPeerConnectionState> connectionStateNotifier =
       ValueNotifier<RTCPeerConnectionState>(RTCPeerConnectionState.RTCPeerConnectionStateNew);
+  final ValueNotifier<RTCIceConnectionState> iceConnectionStateNotifier =
+      ValueNotifier<RTCIceConnectionState>(RTCIceConnectionState.RTCIceConnectionStateNew);
 
   final List<RTCIceCandidate> _pendingIceCandidates = [];
   bool _hasRemoteDescription = false;
@@ -19,6 +21,8 @@ class WebRTCManager {
   Function(RTCIceCandidate candidate)? onLocalIceCandidate;
   Function(MediaStream remoteStream)? onRemoteStreamReady;
   Function(RTCPeerConnectionState state)? onConnectionStateChanged;
+  Function(RTCIceConnectionState state)? onIceConnectionStateChanged;
+  Function()? onIceRestartNeeded;
 
   MediaStream? get localStream => _localStream;
   MediaStream? get remoteStream => _remoteStream;
@@ -107,6 +111,18 @@ class WebRTCManager {
       }
     };
 
+    _peerConnection!.onIceConnectionState = (RTCIceConnectionState state) {
+      iceConnectionStateNotifier.value = state;
+      onIceConnectionStateChanged?.call(state);
+      if (kDebugMode) {
+        print("[WebRTCManager] ICE Connection State: $state");
+      }
+      if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
+          state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+        onIceRestartNeeded?.call();
+      }
+    };
+
     // 4. Capture local audio (and video if enabled)
     final mediaConstraints = <String, dynamic>{
       'audio': {
@@ -141,6 +157,23 @@ class WebRTCManager {
     final offerConstraints = <String, dynamic>{
       'offerToReceiveAudio': 1,
       'offerToReceiveVideo': isVideo ? 1 : 0,
+    };
+
+    final offer = await _peerConnection!.createOffer(offerConstraints);
+    await _peerConnection!.setLocalDescription(offer);
+    return offer;
+  }
+
+  /// Triggers an ICE restart offer during network switches or transient dropouts
+  Future<RTCSessionDescription> restartIce({bool isVideo = false}) async {
+    if (_peerConnection == null) {
+      throw Exception("PeerConnection not initialized");
+    }
+
+    final offerConstraints = <String, dynamic>{
+      'offerToReceiveAudio': 1,
+      'offerToReceiveVideo': isVideo ? 1 : 0,
+      'IceRestart': true,
     };
 
     final offer = await _peerConnection!.createOffer(offerConstraints);
@@ -263,5 +296,6 @@ class WebRTCManager {
     }
 
     connectionStateNotifier.value = RTCPeerConnectionState.RTCPeerConnectionStateClosed;
+    iceConnectionStateNotifier.value = RTCIceConnectionState.RTCIceConnectionStateClosed;
   }
 }

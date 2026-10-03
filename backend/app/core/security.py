@@ -9,24 +9,23 @@ from jose import jwt
 from .config import settings
 
 
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
-)
-
+import bcrypt
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    pwd_bytes = password.encode('utf-8')[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
 
 def verify_password(
     password: str,
     hashed_password: str | Any
 ) -> bool:
-    return bool(pwd_context.verify(
-        password,
-        str(hashed_password)
-    ))
+    pwd_bytes = password.encode('utf-8')[:72]
+    try:
+        return bcrypt.checkpw(pwd_bytes, str(hashed_password).encode('utf-8'))
+    except Exception:
+        return False
 
 
 def decode_access_token(token: str):

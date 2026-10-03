@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import os
@@ -171,13 +172,14 @@ def get_turn_credentials(
     expiry_timestamp = int(time.time()) + ttl
     username = f"{expiry_timestamp}:{user_id}"
 
-    # HMAC-SHA1 signature of username using shared turn_secret
-    hashed = hmac.new(turn_secret.encode(), username.encode(), hashlib.sha1)
-    password = hashlib.sha1(hashed.digest()).hexdigest()
+    # HMAC-SHA1 signature of username using shared turn_secret (Coturn REST standard)
+    hashed = hmac.new(turn_secret.encode('utf-8'), username.encode('utf-8'), hashlib.sha1)
+    password = base64.b64encode(hashed.digest()).decode('utf-8')
 
     uris = [
         "stun:stun.l.google.com:19302",
         "stun:stun1.l.google.com:19302",
+        "stun:stun.cloudflare.com:3478",
         f"turn:{turn_host}:{turn_port}?transport=udp",
         f"turn:{turn_host}:{turn_port}?transport=tcp",
         f"turns:{turn_host}:{turn_tls_port}?transport=tcp",

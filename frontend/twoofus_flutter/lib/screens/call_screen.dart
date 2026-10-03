@@ -115,6 +115,38 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       }
     };
 
+    _webrtcManager.onIceConnectionStateChanged = (RTCIceConnectionState state) {
+      if (mounted) {
+        if (state == RTCIceConnectionState.RTCIceConnectionStateChecking) {
+          _statusMessage = "Connecting (NAT Traversal)...";
+        } else if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
+            state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
+          _statusMessage = "Connected (DTLS-SRTP P2P)";
+        } else if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+          _statusMessage = "Reconnecting...";
+        } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
+          _statusMessage = "Connection dropped. Retrying...";
+        }
+        setState(() {});
+      }
+    };
+
+    _webrtcManager.onIceRestartNeeded = () async {
+      if (!_isIncoming && _currentSession.status == 'ongoing' && mounted) {
+        try {
+          final isVideo = _currentSession.callType == 'video';
+          final restartOffer = await _webrtcManager.restartIce(isVideo: isVideo);
+          CallSignalingClient.instance.sendWebRtcOffer(
+            callId: _currentSession.id,
+            sdp: restartOffer.sdp ?? '',
+            type: restartOffer.type ?? 'offer',
+          );
+        } catch (e) {
+          if (kDebugMode) print("[ICE Restart error]: $e");
+        }
+      }
+    };
+
     // 2. Real-time Signaling Dispatcher
     _signalingSubscription = CallSignalingClient.instance.messageStream.listen((msg) async {
       if (_isExiting || !mounted) return;
