@@ -1,20 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 class QRScannerDialog extends StatefulWidget {
   final String partnerName;
+  final String title;
+  final String? subtitle;
 
   const QRScannerDialog({
     super.key,
     required this.partnerName,
+    this.title = "Scan QR Code",
+    this.subtitle,
   });
 
-  static Future<String?> scan(BuildContext context, {required String partnerName}) {
+  static Future<String?> scan(
+    BuildContext context, {
+    required String partnerName,
+    String title = "Scan QR Code",
+    String? subtitle,
+  }) {
     return Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => QRScannerDialog(partnerName: partnerName),
+        builder: (_) => QRScannerDialog(
+          partnerName: partnerName,
+          title: title,
+          subtitle: subtitle,
+        ),
         fullscreenDialog: true,
       ),
     );
@@ -31,6 +45,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
   late Animation<double> _laserAnim;
   bool _hasScanned = false;
   bool _isTorchOn = false;
+  bool _isAnalyzing = false;
 
   @override
   void initState() {
@@ -62,12 +77,58 @@ class _QRScannerDialogState extends State<QRScannerDialog>
     if (_hasScanned) return;
     for (final barcode in capture.barcodes) {
       final value = barcode.rawValue;
-      if (value != null && value.isNotEmpty) {
+      if (value != null && value.trim().isNotEmpty) {
         _hasScanned = true;
         HapticFeedback.heavyImpact();
-        Navigator.pop(context, value);
+        Navigator.pop(context, value.trim());
         break;
       }
+    }
+  }
+
+  Future<void> _pickAndAnalyzeFromGallery() async {
+    if (_isAnalyzing) return;
+    setState(() => _isAnalyzing = true);
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery);
+      if (picked == null) {
+        setState(() => _isAnalyzing = false);
+        return;
+      }
+
+      final barcodes = await _controller.analyzeImage(picked.path);
+      if (barcodes != null && barcodes.barcodes.isNotEmpty) {
+        final val = barcodes.barcodes.first.rawValue;
+        if (val != null && val.trim().isNotEmpty) {
+          _hasScanned = true;
+          HapticFeedback.heavyImpact();
+          if (mounted) Navigator.pop(context, val.trim());
+          return;
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text("No QR code detected in the selected image. Please try another."),
+            backgroundColor: const Color(0xFF4A0E17),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error reading image: $e"),
+            backgroundColor: const Color(0xFF4A0E17),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAnalyzing = false);
     }
   }
 
@@ -190,14 +251,14 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white24),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.qr_code_scanner_rounded, color: Color(0xFFFF2A6D), size: 18),
-                        SizedBox(width: 8),
+                        const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFFFF2A6D), size: 18),
+                        const SizedBox(width: 8),
                         Text(
-                          "Scan Safety QR",
-                          style: TextStyle(
+                          widget.title,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -207,19 +268,39 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                     ),
                   ),
 
-                  // Torch Toggle
-                  CircleAvatar(
-                    backgroundColor: _isTorchOn ? const Color(0xFFFF2A6D) : Colors.black54,
-                    child: IconButton(
-                      icon: Icon(
-                        _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                        color: Colors.white,
+                  // Actions: Gallery & Torch
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Colors.black54,
+                        child: IconButton(
+                          icon: _isAnalyzing
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.photo_library_rounded, color: Colors.white, size: 20),
+                          tooltip: "Upload from Gallery",
+                          onPressed: _pickAndAnalyzeFromGallery,
+                        ),
                       ),
-                      onPressed: () async {
-                        await _controller.toggleTorch();
-                        setState(() => _isTorchOn = !_isTorchOn);
-                      },
-                    ),
+                      const SizedBox(width: 8),
+                      CircleAvatar(
+                        backgroundColor: _isTorchOn ? const Color(0xFFFF2A6D) : Colors.black54,
+                        child: IconButton(
+                          icon: Icon(
+                            _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                            color: Colors.white,
+                          ),
+                          onPressed: () async {
+                            await _controller.toggleTorch();
+                            setState(() => _isTorchOn = !_isTorchOn);
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -234,7 +315,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                 margin: const EdgeInsets.all(24),
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF161324).withValues(alpha: 0.9),
+                  color: const Color(0xFF161324).withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                   boxShadow: [
@@ -249,7 +330,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      "Scan ${widget.partnerName}'s QR Code",
+                      widget.title,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -258,12 +339,27 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      "Point your camera at the QR code shown on ${widget.partnerName}'s phone under 'My Safety QR'.",
+                      widget.subtitle ??
+                          "Point camera at your partner's QR code on their screen, or upload a saved QR screenshot.",
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.65),
+                        color: Colors.white.withValues(alpha: 0.70),
                         fontSize: 12,
                         height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _pickAndAnalyzeFromGallery,
+                      icon: const Icon(Icons.image_search_rounded, size: 18, color: Colors.white),
+                      label: Text(
+                        _isAnalyzing ? "Reading image..." : "Upload QR from Gallery",
+                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       ),
                     ),
                   ],

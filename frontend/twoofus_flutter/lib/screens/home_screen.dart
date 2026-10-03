@@ -15,6 +15,7 @@ import 'theme_selection_screen.dart';
 import 'security_screen.dart';
 import '../services/call_service.dart';
 import 'media_gallery_screen.dart';
+import '../widgets/qr_scanner_dialog.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TwoOfUs — HomeScreen
@@ -322,8 +323,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Future<void> _connectWithPin() async {
-    final pin = _pinController.text.trim().toUpperCase();
+  Future<void> _connectWithPin([String? explicitPin]) async {
+    final rawInput = (explicitPin ?? _pinController.text).trim().toUpperCase();
+    final pin = rawInput.replaceAll(RegExp(r'[^A-Z0-9]'), '');
     if (pin.length != 8) {
       _toast("Please enter your partner's 8-digit PIN", isError: true);
       return;
@@ -368,6 +370,49 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     } else {
       _toast("Invalid PIN or connection failed. Please check and try again.", isError: true);
     }
+  }
+
+  Future<void> _scanPartnerQR() async {
+    HapticFeedback.lightImpact();
+    final scannedCode = await QRScannerDialog.scan(
+      context,
+      partnerName: "Partner",
+      title: "Scan Partner QR",
+      subtitle: "Point camera at your partner's QR code on their screen, or upload a saved QR screenshot.",
+    );
+
+    if (scannedCode == null || scannedCode.trim().isEmpty || !mounted) return;
+
+    await _processScannedPairData(scannedCode.trim());
+  }
+
+  Future<void> _processScannedPairData(String rawCode) async {
+    String pin = rawCode.trim();
+
+    // 1. Try URI query parameter (twoofus://pair?pin=QOTP-2BSL or https://...pin=...)
+    if (pin.contains("pin=")) {
+      final uri = Uri.tryParse(pin);
+      if (uri != null && uri.queryParameters.containsKey("pin")) {
+        pin = uri.queryParameters["pin"]!;
+      } else {
+        final match = RegExp(r'pin=([A-Za-z0-9\-]+)').firstMatch(pin);
+        if (match != null) {
+          pin = match.group(1)!;
+        }
+      }
+    }
+
+    // 2. Normalize and strip non-alphanumeric chars
+    final cleanPin = pin.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+
+    if (cleanPin.length != 8) {
+      _toast("Scanned QR does not contain a valid 8-character PIN", isError: true);
+      return;
+    }
+
+    _pinController.text = cleanPin;
+    _toast("QR Scanned: $cleanPin! Connecting...", isError: false);
+    await _connectWithPin(cleanPin);
   }
 
   void _toast(String msg, {bool isError = false}) {
@@ -1906,51 +1951,60 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           key: const ValueKey('qr'),
           child: Column(
             children: [
-              Container(
-                width: double.infinity,
-                height: 180,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: LinearGradient(
-                    colors: [
-                      _violet.withValues(alpha: 0.18),
-                      _rose.withValues(alpha: 0.10),
-                    ],
-                  ),
-                  border: Border.all(color: _rose.withValues(alpha: 0.32)),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ..._cornerBrackets(),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ShaderMask(
-                          shaderCallback: (b) =>
-                              LinearGradient(colors: [_rose, _violet]).createShader(b),
-                          blendMode: BlendMode.srcIn,
-                          child: const Icon(
-                            Icons.qr_code_scanner_rounded,
-                            size: 48,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          "Scan Partner's QR Code",
-                          style: TextStyle(color: _text, fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
+              GestureDetector(
+                onTap: _isConnecting ? null : _scanPartnerQR,
+                child: Container(
+                  width: double.infinity,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    gradient: LinearGradient(
+                      colors: [
+                        _violet.withValues(alpha: 0.18),
+                        _rose.withValues(alpha: 0.10),
                       ],
                     ),
-                  ],
+                    border: Border.all(color: _rose.withValues(alpha: 0.32)),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      ..._cornerBrackets(),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ShaderMask(
+                            shaderCallback: (b) =>
+                                LinearGradient(colors: [_rose, _violet]).createShader(b),
+                            blendMode: BlendMode.srcIn,
+                            child: const Icon(
+                              Icons.qr_code_scanner_rounded,
+                              size: 48,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            "Scan Partner's QR Code",
+                            style: TextStyle(color: _text, fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Tap to open camera or upload QR image",
+                            style: TextStyle(color: _sub, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 14),
               _buildGradientBtn(
-                label: "Scan Partner QR",
+                label: _isConnecting ? "Connecting…" : "Scan Partner QR",
                 icon: Icons.camera_alt_rounded,
-                onTap: () => _toast("Please use PIN connection for instant pairing ❤️"),
+                isLoading: _isConnecting,
+                onTap: _isConnecting ? () {} : _scanPartnerQR,
               ),
             ],
           ),
