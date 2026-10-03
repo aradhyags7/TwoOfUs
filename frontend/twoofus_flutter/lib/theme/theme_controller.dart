@@ -44,6 +44,7 @@ class ThemeController {
         primary: theme.primary,
         secondary: theme.secondary,
         onSurface: theme.textPrimary,
+        outline: theme.border,
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -61,23 +62,69 @@ class ThemeController {
         elevation: 4,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: theme.border, width: 1),
         ),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: theme.surface,
+        backgroundColor: theme.surfaceElevated,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
+          side: BorderSide(color: theme.border, width: 1),
+        ),
+        titleTextStyle: TextStyle(
+          color: theme.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+        contentTextStyle: TextStyle(
+          color: theme.textMuted,
+          fontSize: 14,
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: theme.surface,
+        backgroundColor: theme.surfaceElevated,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: theme.surfaceElevated,
+        contentTextStyle: TextStyle(color: theme.textPrimary),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: theme.border),
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: theme.primary,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          shadowColor: theme.glow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: theme.primary,
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: theme.border,
+        thickness: 1,
+      ),
+      iconTheme: IconThemeData(
+        color: theme.textPrimary,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: theme.surface,
+        hintStyle: TextStyle(color: theme.textMuted),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide(color: theme.border),
@@ -94,3 +141,8 @@ class ThemeController {
     );
   }
 }
+
+extension AppThemeContext on BuildContext {
+  AppTheme get appTheme => ThemeController.currentTheme.value;
+}
+

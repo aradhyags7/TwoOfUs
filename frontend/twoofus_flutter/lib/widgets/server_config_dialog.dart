@@ -28,12 +28,8 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
   Color get _surf => ThemeController.currentTheme.value.surface;
   Color get _rose => ThemeController.currentTheme.value.primary;
   Color get _violet => ThemeController.currentTheme.value.secondary;
-  bool get _isDark => ThemeController.currentTheme.value.textPrimary == Colors.white;
-
-  Color get _text => _isDark ? Colors.white : const Color(0xFF1A0A2E);
-  Color get _sub => _isDark
-      ? Colors.white.withValues(alpha: 0.6)
-      : Colors.black.withValues(alpha: 0.55);
+  Color get _text => ThemeController.currentTheme.value.textPrimary;
+  Color get _sub => ThemeController.currentTheme.value.textMuted;
 
   @override
   void initState() {

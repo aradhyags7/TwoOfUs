@@ -114,20 +114,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   late Animation<double>   _pulseAnim;
 
   // ── Palette ───────────────────────────────────────────────────────────────
-  Color get _rose      => ThemeController.currentTheme.value.primary;
-  Color get _violet    => ThemeController.currentTheme.value.secondary;
-  Color get _lavender  => ThemeController.currentTheme.value.gradientEnd;
-  Color get _darkBg    => ThemeController.currentTheme.value.bg;
-  Color get _darkSurf  => ThemeController.currentTheme.value.surface;
-  static const _lightBg   = Color(0xFFF4F0FF);
-  static const _lightSurf = Color(0xFFFFFFFF);
+  AppTheme get _theme   => ThemeController.currentTheme.value;
+  Color get _rose       => _theme.primary;
+  Color get _violet     => _theme.secondary;
+  Color get _lavender   => _theme.gradientEnd;
+  Color get _darkBg     => _theme.bg;
+  Color get _darkSurf   => _theme.surface;
 
-  Color get _bg     => _isDark ? _darkBg    : _lightBg;
-  Color get _surf   => _isDark ? _darkSurf  : _lightSurf;
-  Color get _text   => _isDark ? Colors.white : const Color(0xFF1A0A2E);
-  Color get _sub    => _isDark ? Colors.white.withOpacity(0.42) : Colors.black.withOpacity(0.42);
-  Color get _border => _isDark ? ThemeController.currentTheme.value.border : Colors.black.withOpacity(0.07);
-  Color get _msgBg  => _isDark ? ThemeController.currentTheme.value.bubblePartner : const Color(0xFFEDE9FF);
+  Color get _bg         => _theme.bg;
+  Color get _surf       => _theme.surface;
+  Color get _text       => _theme.textPrimary;
+  Color get _sub        => _theme.textMuted;
+  Color get _border     => _theme.border;
+  Color get _msgBg      => _theme.bubblePartner;
+
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   @override

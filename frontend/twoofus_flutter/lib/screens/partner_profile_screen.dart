@@ -63,15 +63,11 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
   Color get _rose => ThemeController.currentTheme.value.primary;
   Color get _violet => ThemeController.currentTheme.value.secondary;
   Color get _lavender => ThemeController.currentTheme.value.gradientEnd;
-  bool get _isDark => ThemeController.currentTheme.value.textPrimary == Colors.white;
+  bool get _isDark => ThemeController.currentTheme.value.bg.computeLuminance() < 0.5;
 
-  Color get _text => _isDark ? Colors.white : const Color(0xFF1A0A2E);
-  Color get _sub => _isDark
-      ? Colors.white.withValues(alpha: 0.48)
-      : Colors.black.withValues(alpha: 0.45);
-  Color get _border => _isDark
-      ? ThemeController.currentTheme.value.border
-      : Colors.black.withValues(alpha: 0.08);
+  Color get _text => ThemeController.currentTheme.value.textPrimary;
+  Color get _sub => ThemeController.currentTheme.value.textMuted;
+  Color get _border => ThemeController.currentTheme.value.border;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override

@@ -41,12 +41,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   Color get _rose => ThemeController.currentTheme.value.primary;
   Color get _violet => ThemeController.currentTheme.value.secondary;
   Color get _lavender => ThemeController.currentTheme.value.gradientEnd;
-  bool get _isDark => ThemeController.currentTheme.value.textPrimary == Colors.white;
+  bool get _isDark => ThemeController.currentTheme.value.bg.computeLuminance() < 0.5;
 
-  Color get _text => _isDark ? Colors.white : const Color(0xFF1A0A2E);
-  Color get _sub => _isDark
-      ? Colors.white.withValues(alpha: 0.6)
-      : Colors.black.withValues(alpha: 0.55);
+  Color get _text => ThemeController.currentTheme.value.textPrimary;
+  Color get _sub => ThemeController.currentTheme.value.textMuted;
 
   @override
   void initState() {

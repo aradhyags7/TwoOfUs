@@ -2330,9 +2330,10 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
 
   @override
   Widget build(BuildContext context) {
-    const rose = Color(0xFFFF2D78);
-    const violet = Color(0xFF9C27B0);
-    const surface = Color(0xFF191128);
+    final theme = ThemeController.currentTheme.value;
+    final rose = theme.primary;
+    final violet = theme.secondary;
+    final surface = theme.surfaceElevated;
 
     return PopScope(
       canPop: false,
@@ -2396,7 +2397,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                               height: 86,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: const LinearGradient(
+                                gradient: LinearGradient(
                                   colors: [rose, violet],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
@@ -2490,7 +2491,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                         return LinearProgressIndicator(
                           value: _progressAnim.value,
                           backgroundColor: Colors.white12,
-                          valueColor: const AlwaysStoppedAnimation<Color>(rose),
+                          valueColor: AlwaysStoppedAnimation<Color>(rose),
                           minHeight: 4,
                         );
                       },
@@ -2506,7 +2507,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        gradient: const LinearGradient(
+                        gradient: LinearGradient(
                           colors: [rose, violet],
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
