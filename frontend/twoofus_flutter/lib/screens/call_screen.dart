@@ -11,6 +11,7 @@ import '../services/call_signaling_client.dart';
 import '../services/webrtc_manager.dart';
 import '../theme/theme_controller.dart';
 import '../utils/session.dart';
+import '../widgets/encryption_verification_modal.dart';
 
 class CallScreen extends StatefulWidget {
   final CallSessionModel session;
@@ -555,27 +556,39 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               child: SafeArea(
                 child: Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.lock_rounded, color: Colors.greenAccent, size: 14),
-                          SizedBox(width: 6),
-                          Text(
-                            "End-to-End Encrypted (DTLS-SRTP)",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        EncryptionVerificationModal.show(
+                          context,
+                          partnerId: widget.partnerId,
+                          partnerName: widget.partnerName,
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_rounded, color: Colors.greenAccent, size: 14),
+                            SizedBox(width: 6),
+                            Text(
+                              "End-to-End Encrypted (DTLS-SRTP)",
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
+                            SizedBox(width: 4),
+                            Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 14),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
