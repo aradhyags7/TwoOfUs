@@ -272,6 +272,14 @@ class ApiService {
     return productionServerUrl;
   }
 
+  /// Returns the corresponding WebSocket URL for real-time WebRTC call signaling
+  static String get wsCallUrl {
+    final base = baseUrl;
+    final wsScheme = base.startsWith("https://") ? "wss://" : "ws://";
+    final hostPath = base.replaceFirst(RegExp(r'^https?://'), '');
+    return "$wsScheme$hostPath/ws/call";
+  }
+
   static Future<Map<String, String>> _authHeaders({String? token, bool json = true}) async {
     final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
     final headers = <String, String>{};
@@ -1419,6 +1427,50 @@ class ApiService {
       return [];
     } catch (e) {
       return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getTurnCredentials({String? token}) async {
+    try {
+      final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
+      if (effectiveToken.isEmpty) return null;
+      final response = await http.get(
+        Uri.parse('$baseUrl/call/turn-credentials?token=$effectiveToken'),
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> registerDevicePushToken(String pushToken, {String platform = "android", String? token}) async {
+    try {
+      final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
+      if (effectiveToken.isEmpty) return false;
+      final response = await http.post(
+        Uri.parse('$baseUrl/call/device-token?token=$effectiveToken'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'token': pushToken, 'platform': platform}),
+      ).timeout(const Duration(seconds: 10));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> unregisterDevicePushToken(String pushToken, {String? token}) async {
+    try {
+      final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
+      if (effectiveToken.isEmpty) return false;
+      final response = await http.delete(
+        Uri.parse('$baseUrl/call/device-token?token=$pushToken&auth_token=$effectiveToken'),
+      ).timeout(const Duration(seconds: 10));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
     }
   }
 }

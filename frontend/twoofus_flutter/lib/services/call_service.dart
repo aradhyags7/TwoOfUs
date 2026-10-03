@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import '../models/call_session.dart';
 import '../utils/session.dart';
 import 'api_service.dart';
+import 'call_signaling_client.dart';
+import 'webrtc_manager.dart';
 import '../screens/call_screen.dart';
 import '../main.dart';
 
@@ -20,21 +22,67 @@ class CallService {
 
   static Timer? _callTimer;
   static Timer? _pollingTimer;
-  static bool _isPolling = false;
+  static StreamSubscription<Map<String, dynamic>>? _signalingSub;
+  static bool _isWatching = false;
 
-  /// Start background polling for incoming calls if WebSocket is idle
+  /// Starts real-time WebSocket signaling listener and background fallback polling
   static void startIncomingCallWatcher([BuildContext? context]) {
-    if (_isPolling) return;
-    _isPolling = true;
+    if (_isWatching) return;
+    _isWatching = true;
+
+    // 1. Connect WebSocket signaling channel
+    CallSignalingClient.instance.connect();
+
+    // 2. Listen to real-time WebSockets signaling events
+    _signalingSub?.cancel();
+    _signalingSub = CallSignalingClient.instance.messageStream.listen((msg) async {
+      final type = msg['type'];
+      if (type == 'incoming_call') {
+        final myId = await Session.getUserId();
+        if (myId == null) return;
+
+        final callId = msg['call_id'] as int;
+        final callerId = msg['caller_id'] as int;
+        final callerName = (msg['caller_name'] as String?) ?? 'Partner';
+
+        // If user is already on a call, reject as busy
+        if (activeCallNotifier.value != null) {
+          CallSignalingClient.instance.sendReject(callId: callId, reason: 'busy');
+          return;
+        }
+
+        final session = CallSessionModel.fromSignaling(msg, myId);
+        activeCallNotifier.value = session;
+
+        // Ringing feedback
+        HapticFeedback.heavyImpact();
+        Future.delayed(const Duration(milliseconds: 250), () => HapticFeedback.heavyImpact());
+
+        // Acknowledge ringing to caller
+        CallSignalingClient.instance.sendRinging(callId: callId, targetId: callerId);
+
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => CallScreen(
+              session: session,
+              partnerId: callerId,
+              partnerName: callerName,
+              isIncoming: true,
+            ),
+          ),
+        );
+      }
+    });
+
+    // 3. Low-frequency polling fallback in case WebSocket reconnects on flaky networks
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) async {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
       final myId = await Session.getUserId();
       if (myId == null) {
         stopIncomingCallWatcher();
         return;
       }
 
-      // Don't poll if already in active call screen
       if (activeCallNotifier.value != null) return;
 
       final data = await ApiService.getActiveCall(myId);
@@ -44,7 +92,6 @@ class CallService {
           if (activeCallNotifier.value?.id != session.id) {
             activeCallNotifier.value = session;
 
-            // Trigger ringing haptics
             HapticFeedback.heavyImpact();
             Future.delayed(const Duration(milliseconds: 250), () => HapticFeedback.heavyImpact());
 
@@ -75,9 +122,12 @@ class CallService {
   }
 
   static void stopIncomingCallWatcher() {
+    _signalingSub?.cancel();
+    _signalingSub = null;
     _pollingTimer?.cancel();
     _pollingTimer = null;
-    _isPolling = false;
+    _isWatching = false;
+    CallSignalingClient.instance.disconnect();
   }
 
   /// Initiates an outgoing call and opens the CallScreen
@@ -87,12 +137,35 @@ class CallService {
     required String partnerName,
     required String callType, // "voice" | "video"
   }) async {
+    // 1. Verify runtime microphone/camera permissions
+    final hasPermissions = await WebRTCManager.requestPermissions(
+      isVideo: callType == "video",
+    );
+    if (!hasPermissions) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Microphone permission is required to make calls."),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return false;
+    }
+
     isMutedNotifier.value = false;
     isSpeakerNotifier.value = (callType == "video");
     isVideoEnabledNotifier.value = (callType == "video");
     isFrontCameraNotifier.value = true;
     callDurationNotifier.value = 0;
 
+    // 2. Send invitation over WebSocket signaling
+    CallSignalingClient.instance.sendInvite(
+      targetId: partnerId,
+      callType: callType,
+    );
+
+    // 3. Initiate call session in database
     final res = await ApiService.initiateCall(partnerId, callType: callType);
     if (res == null) return false;
 
@@ -145,11 +218,16 @@ class CallService {
   }
 
   /// Ends current call and cleans up state
-  static Future<void> endCall(int callId) async {
+  static Future<void> endCall(int callId, [String reason = 'normal_hangup']) async {
     _callTimer?.cancel();
     _callTimer = null;
     activeCallNotifier.value = null;
     callDurationNotifier.value = 0;
+
+    // Send real-time termination signal
+    CallSignalingClient.instance.sendEnd(callId: callId, reason: reason);
+
+    // Persist session end in DB
     await ApiService.endCall(callId);
   }
 }

@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models/call_session.dart';
 import '../services/api_service.dart';
 import '../services/call_service.dart';
+import '../services/call_signaling_client.dart';
+import '../services/webrtc_manager.dart';
 import '../theme/theme_controller.dart';
 import '../utils/session.dart';
 
@@ -29,15 +33,21 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late AnimationController _waveController;
   Timer? _statusCheckTimer;
+  StreamSubscription<Map<String, dynamic>>? _signalingSubscription;
+
+  final WebRTCManager _webrtcManager = WebRTCManager();
+  final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
+  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
 
   late CallSessionModel _currentSession;
   late bool _isIncoming;
   bool _isConnecting = false;
+  String _statusMessage = "";
+  bool _isExiting = false;
 
   Color get _bg => ThemeController.currentTheme.value.bg;
   Color get _rose => ThemeController.currentTheme.value.primary;
   Color get _violet => ThemeController.currentTheme.value.secondary;
-  Color get _lavender => ThemeController.currentTheme.value.gradientEnd;
 
   @override
   void initState() {
@@ -55,28 +65,210 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
-    if (!_isIncoming && _currentSession.status == 'ongoing') {
-      CallService.startDurationTimer();
+    _initRenderers();
+    _setupSignalingListener();
+
+    if (!_isIncoming) {
+      _statusMessage = "Calling...";
+      if (_currentSession.status == 'ongoing') {
+        CallService.startDurationTimer();
+      }
+    } else {
+      _statusMessage = "Incoming ${widget.session.callType} call...";
     }
 
     _startStatusChecker();
   }
 
+  Future<void> _initRenderers() async {
+    final isVideo = _currentSession.callType == 'video';
+    if (isVideo) {
+      await _localRenderer.initialize();
+      await _remoteRenderer.initialize();
+    }
+  }
+
+  void _setupSignalingListener() {
+    // 1. WebRTC Callbacks
+    _webrtcManager.onLocalIceCandidate = (RTCIceCandidate candidate) {
+      CallSignalingClient.instance.sendWebRtcIceCandidate(
+        callId: _currentSession.id,
+        candidatePayload: {
+          'candidate': candidate.candidate,
+          'sdpMid': candidate.sdpMid,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+        },
+      );
+    };
+
+    _webrtcManager.onRemoteStreamReady = (MediaStream stream) {
+      if (mounted) {
+        setState(() {
+          _remoteRenderer.srcObject = stream;
+        });
+      }
+    };
+
+    _webrtcManager.onConnectionStateChanged = (RTCPeerConnectionState state) {
+      if (mounted) {
+        setState(() {});
+      }
+    };
+
+    // 2. Real-time Signaling Dispatcher
+    _signalingSubscription = CallSignalingClient.instance.messageStream.listen((msg) async {
+      if (_isExiting || !mounted) return;
+
+      final msgCallId = msg['call_id'];
+      if (msgCallId != null && msgCallId != _currentSession.id) return;
+
+      final type = msg['type'];
+      final isVideo = _currentSession.callType == 'video';
+
+      switch (type) {
+        case 'call_ringing':
+          if (!_isIncoming && mounted) {
+            setState(() {
+              _statusMessage = "Ringing...";
+            });
+          }
+          break;
+
+        case 'call_accepted':
+          // Partner accepted call
+          if (!_isIncoming && mounted) {
+            setState(() {
+              _statusMessage = "Connecting (Securing E2EE)...";
+              _currentSession = CallSessionModel(
+                id: _currentSession.id,
+                callerId: _currentSession.callerId,
+                receiverId: _currentSession.receiverId,
+                callType: _currentSession.callType,
+                status: 'ongoing',
+                createdAt: _currentSession.createdAt,
+              );
+            });
+            CallService.startDurationTimer();
+
+            // Caller initializes WebRTC and sends SDP Offer
+            try {
+              await _webrtcManager.initialize(isVideo: isVideo);
+              if (isVideo && _webrtcManager.localStream != null) {
+                _localRenderer.srcObject = _webrtcManager.localStream;
+              }
+              final offer = await _webrtcManager.createOffer(isVideo: isVideo);
+              CallSignalingClient.instance.sendWebRtcOffer(
+                callId: _currentSession.id,
+                sdp: offer.sdp ?? '',
+                type: offer.type ?? 'offer',
+              );
+            } catch (e) {
+              if (kDebugMode) print("[WebRTC Error creating offer]: $e");
+            }
+          }
+          break;
+
+        case 'webrtc_offer':
+          // Receiver receives caller's SDP Offer
+          if (_isIncoming || _currentSession.status == 'ongoing') {
+            try {
+              final payload = msg['payload'] as Map<String, dynamic>;
+              final sdp = (payload['sdp'] as String?) ?? '';
+              final sdpType = (payload['type'] as String?) ?? 'offer';
+
+              if (_webrtcManager.localStream == null) {
+                await _webrtcManager.initialize(isVideo: isVideo);
+                if (isVideo && _webrtcManager.localStream != null) {
+                  _localRenderer.srcObject = _webrtcManager.localStream;
+                }
+              }
+
+              final offerDesc = RTCSessionDescription(sdp, sdpType);
+              final answer = await _webrtcManager.createAnswer(offerDesc, isVideo: isVideo);
+
+              CallSignalingClient.instance.sendWebRtcAnswer(
+                callId: _currentSession.id,
+                sdp: answer.sdp ?? '',
+                type: answer.type ?? 'answer',
+              );
+
+              if (mounted) {
+                setState(() {
+                  _statusMessage = "Connected (DTLS-SRTP E2EE)";
+                });
+              }
+            } catch (e) {
+              if (kDebugMode) print("[WebRTC Error handling offer]: $e");
+            }
+          }
+          break;
+
+        case 'webrtc_answer':
+          // Caller receives partner's SDP Answer
+          try {
+            final payload = msg['payload'] as Map<String, dynamic>;
+            final sdp = (payload['sdp'] as String?) ?? '';
+            final sdpType = (payload['type'] as String?) ?? 'answer';
+            final answerDesc = RTCSessionDescription(sdp, sdpType);
+            await _webrtcManager.setRemoteAnswer(answerDesc);
+
+            if (mounted) {
+              setState(() {
+                _statusMessage = "Connected (DTLS-SRTP E2EE)";
+              });
+            }
+          } catch (e) {
+            if (kDebugMode) print("[WebRTC Error handling answer]: $e");
+          }
+          break;
+
+        case 'webrtc_ice_candidate':
+          // Either party receives remote ICE Candidate
+          try {
+            final payload = msg['payload'] as Map<String, dynamic>;
+            final candidateStr = payload['candidate'] as String?;
+            final sdpMid = payload['sdpMid'] as String?;
+            final sdpMLineIndex = payload['sdpMLineIndex'] as int?;
+
+            if (candidateStr != null && candidateStr.isNotEmpty) {
+              final candidate = RTCIceCandidate(candidateStr, sdpMid, sdpMLineIndex);
+              await _webrtcManager.addRemoteIceCandidate(candidate);
+            }
+          } catch (e) {
+            if (kDebugMode) print("[WebRTC Error adding candidate]: $e");
+          }
+          break;
+
+        case 'call_rejected':
+        case 'call_cancelled':
+        case 'call_ended':
+        case 'call_busy':
+          HapticFeedback.mediumImpact();
+          _safeExit();
+          break;
+      }
+    });
+  }
+
   @override
   void dispose() {
     _statusCheckTimer?.cancel();
+    _signalingSubscription?.cancel();
     _pulseController.dispose();
     _waveController.dispose();
+    _webrtcManager.dispose();
+    _localRenderer.dispose();
+    _remoteRenderer.dispose();
     CallService.activeCallNotifier.value = null;
     super.dispose();
   }
-
-  bool _isExiting = false;
 
   void _safeExit() {
     if (_isExiting) return;
     _isExiting = true;
     _statusCheckTimer?.cancel();
+    _signalingSubscription?.cancel();
+    _webrtcManager.dispose();
     CallService.activeCallNotifier.value = null;
     if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
@@ -85,7 +277,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   void _startStatusChecker() {
     _statusCheckTimer?.cancel();
-    _statusCheckTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) async {
+    _statusCheckTimer = Timer.periodic(const Duration(milliseconds: 3000), (_) async {
       if (_isExiting || !mounted) return;
       final myId = await Session.getUserId();
       if (myId == null || _isExiting || !mounted) return;
@@ -94,7 +286,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       if (_isExiting || !mounted) return;
 
       if (updated == null) {
-        // Call was ended or rejected remotely
+        // Call was terminated remotely
         HapticFeedback.mediumImpact();
         _safeExit();
         return;
@@ -113,7 +305,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
         if (newSession.status == 'ongoing') {
           CallService.startDurationTimer();
-        } else if (newSession.status == 'ended' || newSession.status == 'rejected' || newSession.status == 'missed') {
+        } else if (newSession.status == 'ended' ||
+            newSession.status == 'rejected' ||
+            newSession.status == 'missed') {
           HapticFeedback.mediumImpact();
           _safeExit();
         }
@@ -124,22 +318,49 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Future<void> _acceptCall() async {
     HapticFeedback.mediumImpact();
     setState(() => _isConnecting = true);
+
+    final isVideo = _currentSession.callType == 'video';
+
+    // 1. Initialize local media capture
+    try {
+      await _webrtcManager.initialize(isVideo: isVideo);
+      if (isVideo && _webrtcManager.localStream != null) {
+        _localRenderer.srcObject = _webrtcManager.localStream;
+      }
+    } catch (e) {
+      if (kDebugMode) print("[WebRTC Init Exception on Accept]: $e");
+    }
+
+    // 2. Send Accept over WebSocket signaling & REST
+    CallSignalingClient.instance.sendAccept(callId: _currentSession.id);
     final res = await ApiService.respondToCall(_currentSession.id, 'accept');
+
     if (!mounted) return;
     setState(() => _isConnecting = false);
 
-    if (res != null) {
-      setState(() {
-        _isIncoming = false;
+    setState(() {
+      _isIncoming = false;
+      _statusMessage = "Connecting (Securing E2EE)...";
+      if (res != null) {
         _currentSession = CallSessionModel.fromJson(res);
-      });
-      CallService.startDurationTimer();
-    }
+      } else {
+        _currentSession = CallSessionModel(
+          id: _currentSession.id,
+          callerId: _currentSession.callerId,
+          receiverId: _currentSession.receiverId,
+          callType: _currentSession.callType,
+          status: 'ongoing',
+          createdAt: _currentSession.createdAt,
+        );
+      }
+    });
+    CallService.startDurationTimer();
   }
 
   Future<void> _rejectCall() async {
     if (_isExiting) return;
     HapticFeedback.mediumImpact();
+    CallSignalingClient.instance.sendReject(callId: _currentSession.id);
     await ApiService.respondToCall(_currentSession.id, 'reject');
     _safeExit();
   }
@@ -147,8 +368,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Future<void> _endCall() async {
     if (_isExiting) return;
     HapticFeedback.heavyImpact();
-    await CallService.endCall(_currentSession.id);
-    _safeExit();
+    if (_isIncoming) {
+      await _rejectCall();
+    } else {
+      await CallService.endCall(_currentSession.id);
+      _safeExit();
+    }
   }
 
   String _formatDuration(int totalSeconds) {
@@ -166,8 +391,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       canPop: true,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
-          _statusCheckTimer?.cancel();
-          CallService.endCall(_currentSession.id);
+          _endCall();
         }
       },
       child: Scaffold(
@@ -210,14 +434,18 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                       ),
-                      child: Row(
+                      child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.lock_rounded, color: Colors.greenAccent, size: 14),
-                          const SizedBox(width: 6),
-                          const Text(
-                            "End-to-End Encrypted",
-                            style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                          Icon(Icons.lock_rounded, color: Colors.greenAccent, size: 14),
+                          SizedBox(width: 6),
+                          Text(
+                            "End-to-End Encrypted (DTLS-SRTP)",
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ],
                       ),
@@ -235,12 +463,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                     const SizedBox(height: 6),
                     ValueListenableBuilder<int>(
                       valueListenable: CallService.callDurationNotifier,
-                      builder: (_, seconds, __) {
+                      builder: (context, seconds, child) {
                         String statusText;
                         if (_isIncoming) {
                           statusText = "Incoming ${widget.session.callType} call...";
                         } else if (_currentSession.status == 'ringing') {
-                          statusText = "Ringing...";
+                          statusText = _statusMessage.isNotEmpty ? _statusMessage : "Ringing...";
                         } else if (_currentSession.status == 'ongoing') {
                           statusText = _formatDuration(seconds);
                         } else {
@@ -352,7 +580,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(7, (index) {
-                    final height = 12.0 + (index % 3 == 0 ? _waveController.value * 28 : (1 - _waveController.value) * 22);
+                    final height = 12.0 +
+                        (index % 3 == 0
+                            ? _waveController.value * 28
+                            : (1 - _waveController.value) * 22);
                     return Container(
                       width: 4,
                       height: height,
@@ -375,24 +606,32 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Widget _buildVideoSurface() {
     return Stack(
       children: [
-        // Fullscreen Remote Video placeholder/stream
-        Container(
-          width: double.infinity,
-          height: double.infinity,
-          color: const Color(0xFF12081E),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.videocam_rounded, color: _rose.withValues(alpha: 0.4), size: 72),
-                const SizedBox(height: 12),
-                Text(
-                  "${widget.partnerName}'s Video Stream",
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
+        // Fullscreen Remote Video Stream
+        Positioned.fill(
+          child: _remoteRenderer.srcObject != null
+              ? RTCVideoView(
+                  _remoteRenderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                )
+              : Container(
+                  color: const Color(0xFF12081E),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.videocam_rounded, color: _rose.withValues(alpha: 0.4), size: 72),
+                        const SizedBox(height: 12),
+                        Text(
+                          "Connecting to ${widget.partnerName}...",
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            ),
-          ),
         ),
 
         // Floating Local Picture-in-Picture (PiP)
@@ -401,7 +640,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           right: 20,
           child: ValueListenableBuilder<bool>(
             valueListenable: CallService.isVideoEnabledNotifier,
-            builder: (_, isVideoOn, __) {
+            builder: (context, isVideoOn, child) {
               return Container(
                 width: 110,
                 height: 160,
@@ -419,12 +658,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: isVideoOn
-                      ? Container(
-                          color: const Color(0xFF2E1242),
-                          child: Center(
-                            child: Icon(Icons.person_rounded, color: _rose, size: 40),
-                          ),
+                  child: isVideoOn && _localRenderer.srcObject != null
+                      ? RTCVideoView(
+                          _localRenderer,
+                          mirror: CallService.isFrontCameraNotifier.value,
+                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                         )
                       : Container(
                           color: Colors.black87,
@@ -471,7 +709,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 10),
-            const Text("Decline", style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+            const Text(
+              "Decline",
+              style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
           ],
         ),
 
@@ -497,12 +738,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   ],
                 ),
                 child: _isConnecting
-                    ? const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                      )
                     : const Icon(Icons.call_rounded, color: Colors.white, size: 32),
               ),
             ),
             const SizedBox(height: 10),
-            const Text("Accept", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+            const Text(
+              "Accept",
+              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
       ],
@@ -531,11 +777,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           // Mute Button
           ValueListenableBuilder<bool>(
             valueListenable: CallService.isMutedNotifier,
-            builder: (_, isMuted, __) {
+            builder: (context, isMuted, child) {
               return _controlButton(
                 icon: isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
                 isActive: isMuted,
-                onTap: CallService.toggleMute,
+                onTap: () {
+                  CallService.toggleMute();
+                  _webrtcManager.setMicrophoneMute(CallService.isMutedNotifier.value);
+                },
               );
             },
           ),
@@ -543,69 +792,35 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           // Speaker Button
           ValueListenableBuilder<bool>(
             valueListenable: CallService.isSpeakerNotifier,
-            builder: (_, isSpeaker, __) {
+            builder: (context, isSpeaker, child) {
               return _controlButton(
                 icon: isSpeaker ? Icons.volume_up_rounded : Icons.volume_down_rounded,
                 isActive: isSpeaker,
-                onTap: CallService.toggleSpeaker,
+                onTap: () {
+                  CallService.toggleSpeaker();
+                  _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
+                },
               );
             },
           ),
 
-          // Video / Flip Camera toggle
-          if (isVideo)
-            ValueListenableBuilder<bool>(
-              valueListenable: CallService.isVideoEnabledNotifier,
-              builder: (_, isVideoOn, __) {
-                return _controlButton(
-                  icon: isVideoOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
-                  isActive: !isVideoOn,
-                  onTap: CallService.toggleVideo,
-                );
-              },
-            )
-          else
-            _controlButton(
-              icon: Icons.videocam_rounded,
-              isActive: false,
-              onTap: () {
-                HapticFeedback.lightImpact();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Requesting video upgrade... 📹")),
-                );
-              },
-            ),
-
+          // Flip Camera (for video calls)
           if (isVideo)
             _controlButton(
               icon: Icons.flip_camera_ios_rounded,
               isActive: false,
               onTap: () {
                 CallService.flipCamera();
-                HapticFeedback.lightImpact();
+                _webrtcManager.switchCamera();
               },
             ),
 
-          // End Call Button
-          InkWell(
+          // Hang Up Button
+          _controlButton(
+            icon: Icons.call_end_rounded,
+            isActive: true,
+            isEndCall: true,
             onTap: _endCall,
-            borderRadius: BorderRadius.circular(25),
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFF1744),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0x66FF1744),
-                    blurRadius: 14,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.call_end_rounded, color: Colors.white, size: 24),
-            ),
           ),
         ],
       ),
@@ -615,26 +830,46 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Widget _controlButton({
     required IconData icon,
     required bool isActive,
+    bool isEndCall = false,
     required VoidCallback onTap,
   }) {
+    Color bg;
+    Color iconColor;
+
+    if (isEndCall) {
+      bg = const Color(0xFFFF1744);
+      iconColor = Colors.white;
+    } else if (isActive) {
+      bg = Colors.white;
+      iconColor = Colors.black87;
+    } else {
+      bg = Colors.white.withValues(alpha: 0.15);
+      iconColor = Colors.white;
+    }
+
     return InkWell(
       onTap: () {
-        HapticFeedback.lightImpact();
+        HapticFeedback.selectionClick();
         onTap();
       },
-      borderRadius: BorderRadius.circular(25),
+      borderRadius: BorderRadius.circular(28),
       child: Container(
-        width: 48,
-        height: 48,
+        width: 52,
+        height: 52,
         decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.1),
+          color: bg,
           shape: BoxShape.circle,
+          boxShadow: isEndCall
+              ? [
+                  const BoxShadow(
+                    color: Color(0x66FF1744),
+                    blurRadius: 14,
+                    offset: Offset(0, 4),
+                  ),
+                ]
+              : null,
         ),
-        child: Icon(
-          icon,
-          color: isActive ? Colors.black : Colors.white,
-          size: 22,
-        ),
+        child: Icon(icon, color: iconColor, size: 24),
       ),
     );
   }

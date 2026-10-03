@@ -37,6 +37,7 @@ class _TwoOfUsAppState extends State<TwoOfUsApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     SecurityService.cancelInactivityTimer();
+    CallService.stopIncomingCallWatcher();
     super.dispose();
   }
 

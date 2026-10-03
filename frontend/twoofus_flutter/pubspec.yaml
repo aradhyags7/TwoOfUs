@@ -100,3 +100,6 @@ dependencies:
   image: ^4.9.2
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.0
+  flutter_webrtc: ^1.6.2+hotfix.3
+  web_socket_channel: ^3.0.3
+  permission_handler: 11.3.1

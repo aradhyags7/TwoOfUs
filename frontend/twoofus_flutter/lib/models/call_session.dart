@@ -39,6 +39,19 @@ class CallSessionModel {
     );
   }
 
+  factory CallSessionModel.fromSignaling(Map<String, dynamic> json, int currentUserId) {
+    return CallSessionModel(
+      id: (json['call_id'] ?? json['id']) as int,
+      callerId: (json['caller_id'] ?? 0) as int,
+      receiverId: currentUserId,
+      callType: (json['call_type'] as String?) ?? 'voice',
+      status: 'ringing',
+      createdAt: json['created_at'] != null
+          ? DateTimeUtils.parseToLocal(json['created_at'])
+          : DateTime.now(),
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
