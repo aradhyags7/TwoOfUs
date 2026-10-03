@@ -11,3 +11,4 @@ cryptography==48.0.0
 pillow==12.3.0
 httpx==0.28.1
 psycopg2-binary==2.9.9
+websockets==17.0.1

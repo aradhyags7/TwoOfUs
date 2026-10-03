@@ -23,7 +23,9 @@ from .core.security import (
     hash_password,
     verify_password,
 )
-from .models import ConnectionPin, Message, Pair, User, Media, DiaryMemory, CallSession
+from .models import ConnectionPin, Message, Pair, User, Media, DiaryMemory, CallSession, DevicePushToken
+from .routes.call_signaling import router as call_signaling_router
+from .services.signaling_manager import secure_call_manager
 from .schemas.auth import ConnectByPin, UserCreate, UserLogin, PublicKeyUploadRequest
 from .schemas.call import (
     CallInitiateRequest,
@@ -123,6 +125,14 @@ try:
                 conn.execute(text("ALTER TABLE media ADD COLUMN encryption_nonce TEXT;"))
             if "ciphertext_hash" not in media_cols:
                 conn.execute(text("ALTER TABLE media ADD COLUMN ciphertext_hash TEXT;"))
+
+        # Call session columns
+        if inspector.has_table("call_sessions"):
+            call_cols = [c["name"] for c in inspector.get_columns("call_sessions")]
+            if "rejection_reason" not in call_cols:
+                conn.execute(text("ALTER TABLE call_sessions ADD COLUMN rejection_reason TEXT;"))
+            if "ended_reason" not in call_cols:
+                conn.execute(text("ALTER TABLE call_sessions ADD COLUMN ended_reason TEXT;"))
         conn.commit()
 except Exception as e:
     print("\n" + "=" * 60)
@@ -155,6 +165,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount call signaling router for WebSockets and TURN credentials
+app.include_router(call_signaling_router)
 
 os.makedirs("uploads/avatars", exist_ok=True)
 os.makedirs("uploads/memories", exist_ok=True)
@@ -2064,6 +2077,8 @@ class CallConnectionManager:
                 del self.active_connections[user_id]
 
     async def send_to_user(self, user_id: int, message: dict):
+        # Forward to secure WebSocket connections
+        await secure_call_manager.send_to_user(user_id, message)
         if user_id in self.active_connections:
             dead_sockets = []
             for ws in self.active_connections[user_id]:
@@ -2076,25 +2091,6 @@ class CallConnectionManager:
 
 call_manager = CallConnectionManager()
 
-
-@app.websocket("/ws/call/{user_id}")
-async def call_websocket_endpoint(websocket: WebSocket, user_id: int):
-    await call_manager.connect(user_id, websocket)
-    try:
-        while True:
-            data = await websocket.receive_json()
-            msg_type = data.get("type")
-            target_user_id = data.get("target_user_id")
-
-            if msg_type == "ping":
-                await websocket.send_json({"type": "pong"})
-            elif target_user_id:
-                # Forward WebRTC signaling (offer/answer/ice/status) to target partner
-                await call_manager.send_to_user(int(target_user_id), data)
-    except WebSocketDisconnect:
-        call_manager.disconnect(user_id, websocket)
-    except Exception:
-        call_manager.disconnect(user_id, websocket)
 
 
 @app.post("/call/initiate", response_model=CallSessionResponse)
