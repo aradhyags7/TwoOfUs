@@ -65,9 +65,9 @@ from .services.email_service import (
 
 from sqlalchemy import inspect
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Create tables and auto-migrate missing columns
 try:
+    Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     with engine.connect() as conn:
         # Message columns
@@ -125,7 +125,12 @@ try:
                 conn.execute(text("ALTER TABLE media ADD COLUMN ciphertext_hash TEXT;"))
         conn.commit()
 except Exception as e:
-    print("Migration exception:", e)
+    print("\n" + "=" * 60)
+    print(" [DATABASE INITIALIZATION NOTICE]")
+    print(f" Could not connect to database on startup: {e}")
+    print(" If running on Render, verify your PostgreSQL database is active")
+    print(" and DATABASE_URL is set to an active database.")
+    print("=" * 60 + "\n")
 
 
 def to_utc_iso(dt: Optional[datetime]) -> Optional[str]:
