@@ -268,6 +268,51 @@ class WebRTCManager {
     }
   }
 
+  /// Enables or disables local video track (camera mute/unmute)
+  void setVideoEnabled(bool enabled) {
+    if (_localStream != null) {
+      for (final track in _localStream!.getVideoTracks()) {
+        track.enabled = enabled;
+      }
+    }
+  }
+
+  /// Dynamically upgrades an active audio-only call to video
+  Future<bool> enableVideoInCall() async {
+    final hasCam = await Permission.camera.request();
+    if (!hasCam.isGranted) return false;
+
+    try {
+      final videoStream = await navigator.mediaDevices.getUserMedia({
+        'audio': false,
+        'video': {
+          'facingMode': 'user',
+          'width': {'ideal': 1280},
+          'height': {'ideal': 720},
+        },
+      });
+
+      if (videoStream.getVideoTracks().isEmpty) return false;
+      final videoTrack = videoStream.getVideoTracks().first;
+
+      if (_localStream != null) {
+        _localStream!.addTrack(videoTrack);
+      } else {
+        _localStream = videoStream;
+      }
+
+      if (_peerConnection != null) {
+        await _peerConnection!.addTrack(videoTrack, _localStream!);
+      }
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print("[WebRTCManager] Failed to upgrade to video: $e");
+      }
+      return false;
+    }
+  }
+
   /// Cleans up and releases all peer connection and media resources
   Future<void> dispose() async {
     _pendingIceCandidates.clear();

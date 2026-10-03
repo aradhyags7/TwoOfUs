@@ -44,6 +44,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   bool _isConnecting = false;
   String _statusMessage = "";
   bool _isExiting = false;
+  Offset _pipOffset = const Offset(20, 120);
+  bool _isSwappedVideo = false;
 
   Color get _bg => ThemeController.currentTheme.value.bg;
   Color get _rose => ThemeController.currentTheme.value.primary;
@@ -80,11 +82,62 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _startStatusChecker();
   }
 
+  bool _renderersInitialized = false;
+
   Future<void> _initRenderers() async {
-    final isVideo = _currentSession.callType == 'video';
-    if (isVideo) {
+    if (_renderersInitialized) return;
+    try {
       await _localRenderer.initialize();
       await _remoteRenderer.initialize();
+      _renderersInitialized = true;
+    } catch (e) {
+      if (kDebugMode) print("[Error initializing renderers]: $e");
+    }
+  }
+
+  Future<void> _upgradeToVideo() async {
+    final ok = await _webrtcManager.enableVideoInCall();
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Camera permission required to enable video"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    await _initRenderers();
+    if (_webrtcManager.localStream != null) {
+      _localRenderer.srcObject = _webrtcManager.localStream;
+    }
+
+    setState(() {
+      _currentSession = CallSessionModel(
+        id: _currentSession.id,
+        callerId: _currentSession.callerId,
+        receiverId: _currentSession.receiverId,
+        callType: 'video',
+        status: _currentSession.status,
+        createdAt: _currentSession.createdAt,
+      );
+    });
+
+    CallService.isVideoEnabledNotifier.value = true;
+    CallService.isSpeakerNotifier.value = true;
+    _webrtcManager.setSpeakerphone(true);
+
+    try {
+      final offer = await _webrtcManager.createOffer(isVideo: true);
+      CallSignalingClient.instance.sendWebRtcOffer(
+        callId: _currentSession.id,
+        sdp: offer.sdp ?? '',
+        type: offer.type ?? 'offer',
+      );
+    } catch (e) {
+      if (kDebugMode) print("[Upgrade to video error]: $e");
     }
   }
 
@@ -207,16 +260,34 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               final payload = msg['payload'] as Map<String, dynamic>;
               final sdp = (payload['sdp'] as String?) ?? '';
               final sdpType = (payload['type'] as String?) ?? 'offer';
+              final isOfferVideo = sdp.contains('m=video') || isVideo;
+
+              if (isOfferVideo && _currentSession.callType != 'video') {
+                await _initRenderers();
+                setState(() {
+                  _currentSession = CallSessionModel(
+                    id: _currentSession.id,
+                    callerId: _currentSession.callerId,
+                    receiverId: _currentSession.receiverId,
+                    callType: 'video',
+                    status: _currentSession.status,
+                    createdAt: _currentSession.createdAt,
+                  );
+                });
+                CallService.isVideoEnabledNotifier.value = true;
+                CallService.isSpeakerNotifier.value = true;
+                _webrtcManager.setSpeakerphone(true);
+              }
 
               if (_webrtcManager.localStream == null) {
-                await _webrtcManager.initialize(isVideo: isVideo);
-                if (isVideo && _webrtcManager.localStream != null) {
+                await _webrtcManager.initialize(isVideo: isOfferVideo);
+                if (isOfferVideo && _webrtcManager.localStream != null) {
                   _localRenderer.srcObject = _webrtcManager.localStream;
                 }
               }
 
               final offerDesc = RTCSessionDescription(sdp, sdpType);
-              final answer = await _webrtcManager.createAnswer(offerDesc, isVideo: isVideo);
+              final answer = await _webrtcManager.createAnswer(offerDesc, isVideo: isOfferVideo);
 
               CallSignalingClient.instance.sendWebRtcAnswer(
                 callId: _currentSession.id,
@@ -241,12 +312,31 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             final payload = msg['payload'] as Map<String, dynamic>;
             final sdp = (payload['sdp'] as String?) ?? '';
             final sdpType = (payload['type'] as String?) ?? 'answer';
+            final isAnswerVideo = sdp.contains('m=video');
+
+            if (isAnswerVideo && _currentSession.callType != 'video') {
+              await _initRenderers();
+              setState(() {
+                _currentSession = CallSessionModel(
+                  id: _currentSession.id,
+                  callerId: _currentSession.callerId,
+                  receiverId: _currentSession.receiverId,
+                  callType: 'video',
+                  status: _currentSession.status,
+                  createdAt: _currentSession.createdAt,
+                );
+              });
+              CallService.isVideoEnabledNotifier.value = true;
+              CallService.isSpeakerNotifier.value = true;
+              _webrtcManager.setSpeakerphone(true);
+            }
+
             final answerDesc = RTCSessionDescription(sdp, sdpType);
             await _webrtcManager.setRemoteAnswer(answerDesc);
 
             if (mounted) {
               setState(() {
-                _statusMessage = "Connected (DTLS-SRTP E2EE)";
+                _statusMessage = "Connected (DTLS-SRTP P2P)";
               });
             }
           } catch (e) {
@@ -289,6 +379,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _pulseController.dispose();
     _waveController.dispose();
     _webrtcManager.dispose();
+    _localRenderer.srcObject = null;
+    _remoteRenderer.srcObject = null;
     _localRenderer.dispose();
     _remoteRenderer.dispose();
     CallService.activeCallNotifier.value = null;
@@ -635,29 +727,69 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   // ── Video Surface with Remote Fullscreen & Floating Local PiP ────────────
+  // ── Video Surface with Remote Fullscreen & Floating Draggable PiP ────────
   Widget _buildVideoSurface() {
+    final isLocalSwapped = _isSwappedVideo;
+    final primaryRenderer = isLocalSwapped ? _localRenderer : _remoteRenderer;
+    final pipRenderer = isLocalSwapped ? _remoteRenderer : _localRenderer;
+    final isFrontCamera = CallService.isFrontCameraNotifier.value;
+    final isLocalVideoOn = CallService.isVideoEnabledNotifier.value;
+
     return Stack(
       children: [
-        // Fullscreen Remote Video Stream
+        // 1. Fullscreen Main Video Stream
         Positioned.fill(
-          child: _remoteRenderer.srcObject != null
+          child: primaryRenderer.srcObject != null &&
+                  (!isLocalSwapped || isLocalVideoOn)
               ? RTCVideoView(
-                  _remoteRenderer,
+                  primaryRenderer,
+                  mirror: isLocalSwapped && isFrontCamera,
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 )
               : Container(
-                  color: const Color(0xFF12081E),
+                  color: const Color(0xFF10071C),
                   child: Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.videocam_rounded, color: _rose.withValues(alpha: 0.4), size: 72),
-                        const SizedBox(height: 12),
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(colors: [_rose, _violet]),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _rose.withValues(alpha: 0.3),
+                                blurRadius: 24,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              isLocalSwapped
+                                  ? "You"
+                                  : (widget.partnerName.isNotEmpty
+                                      ? widget.partnerName[0].toUpperCase()
+                                      : "P"),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 40,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         Text(
-                          "Connecting to ${widget.partnerName}...",
+                          isLocalSwapped
+                              ? "Camera is off"
+                              : "${widget.partnerName}'s video paused",
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 14,
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
@@ -666,45 +798,115 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                 ),
         ),
 
-        // Floating Local Picture-in-Picture (PiP)
+        // 2. Interactive Draggable Floating Picture-in-Picture (PiP)
         Positioned(
-          top: 140,
-          right: 20,
-          child: ValueListenableBuilder<bool>(
-            valueListenable: CallService.isVideoEnabledNotifier,
-            builder: (context, isVideoOn, child) {
-              return Container(
-                width: 110,
-                height: 160,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF221133),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: isVideoOn && _localRenderer.srcObject != null
-                      ? RTCVideoView(
-                          _localRenderer,
-                          mirror: CallService.isFrontCameraNotifier.value,
-                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                        )
-                      : Container(
-                          color: Colors.black87,
-                          child: const Center(
-                            child: Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 30),
-                          ),
-                        ),
-                ),
-              );
+          left: _pipOffset.dx,
+          top: _pipOffset.dy,
+          child: GestureDetector(
+            onPanUpdate: (details) {
+              setState(() {
+                final size = MediaQuery.of(context).size;
+                final newX = (_pipOffset.dx + details.delta.dx).clamp(12.0, size.width - 132.0);
+                final newY = (_pipOffset.dy + details.delta.dy).clamp(70.0, size.height - 260.0);
+                _pipOffset = Offset(newX, newY);
+              });
             },
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _isSwappedVideo = !_isSwappedVideo;
+              });
+            },
+            child: Container(
+              width: 120,
+              height: 175,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E0E30),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: pipRenderer.srcObject != null &&
+                            (isLocalSwapped || isLocalVideoOn)
+                        ? RTCVideoView(
+                            pipRenderer,
+                            mirror: !isLocalSwapped && isFrontCamera,
+                            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                          )
+                        : Container(
+                            color: Colors.black87,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.videocam_off_rounded,
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    size: 28,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    isLocalSwapped ? widget.partnerName : "Camera off",
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.5),
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                  ),
+                  // Tap-to-Swap Badge Overlay
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.swap_horiz_rounded,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                  // Name Tag
+                  Positioned(
+                    bottom: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isLocalSwapped ? widget.partnerName : "You",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ],
@@ -806,7 +1008,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          // Mute Button
+          // Mute Microphone Button
           ValueListenableBuilder<bool>(
             valueListenable: CallService.isMutedNotifier,
             builder: (context, isMuted, child) {
@@ -821,7 +1023,42 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             },
           ),
 
-          // Speaker Button
+          // Camera On/Off Toggle Button (for video calls)
+          if (isVideo)
+            ValueListenableBuilder<bool>(
+              valueListenable: CallService.isVideoEnabledNotifier,
+              builder: (context, isVideoOn, child) {
+                return _controlButton(
+                  icon: isVideoOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                  isActive: !isVideoOn,
+                  onTap: () {
+                    CallService.toggleVideo();
+                    _webrtcManager.setVideoEnabled(CallService.isVideoEnabledNotifier.value);
+                  },
+                );
+              },
+            ),
+
+          // Flip Camera Button (Front / Back)
+          if (isVideo)
+            _controlButton(
+              icon: Icons.flip_camera_ios_rounded,
+              isActive: false,
+              onTap: () {
+                CallService.flipCamera();
+                _webrtcManager.switchCamera();
+              },
+            ),
+
+          // Upgrade voice call to video button
+          if (!isVideo)
+            _controlButton(
+              icon: Icons.videocam_rounded,
+              isActive: false,
+              onTap: _upgradeToVideo,
+            ),
+
+          // Speakerphone Button
           ValueListenableBuilder<bool>(
             valueListenable: CallService.isSpeakerNotifier,
             builder: (context, isSpeaker, child) {
@@ -835,17 +1072,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               );
             },
           ),
-
-          // Flip Camera (for video calls)
-          if (isVideo)
-            _controlButton(
-              icon: Icons.flip_camera_ios_rounded,
-              isActive: false,
-              onTap: () {
-                CallService.flipCamera();
-                _webrtcManager.switchCamera();
-              },
-            ),
 
           // Hang Up Button
           _controlButton(
