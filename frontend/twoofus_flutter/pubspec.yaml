@@ -103,3 +103,4 @@ dependencies:
   flutter_webrtc: ^1.6.2+hotfix.3
   web_socket_channel: ^3.0.3
   permission_handler: 11.3.1
+  flutter_local_notifications: ^22.3.1

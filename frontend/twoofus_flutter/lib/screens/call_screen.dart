@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models/call_session.dart';
 import '../services/api_service.dart';
+import '../services/call_notification_service.dart';
 import '../services/call_service.dart';
 import '../services/call_signaling_client.dart';
 import '../services/webrtc_manager.dart';
@@ -384,6 +385,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _localRenderer.dispose();
     _remoteRenderer.dispose();
     CallService.activeCallNotifier.value = null;
+    CallNotificationService.instance.cancelAll();
     super.dispose();
   }
 
@@ -394,6 +396,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _signalingSubscription?.cancel();
     _webrtcManager.dispose();
     CallService.activeCallNotifier.value = null;
+    CallNotificationService.instance.cancelAll();
     if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
@@ -456,6 +459,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     }
 
     // 2. Send Accept over WebSocket signaling & REST
+    CallNotificationService.instance.cancelIncoming();
     CallSignalingClient.instance.sendAccept(callId: _currentSession.id);
     final res = await ApiService.respondToCall(_currentSession.id, 'accept');
 

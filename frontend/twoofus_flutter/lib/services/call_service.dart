@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/call_session.dart';
 import '../utils/session.dart';
 import 'api_service.dart';
+import 'call_notification_service.dart';
 import 'call_signaling_client.dart';
 import 'webrtc_manager.dart';
 import '../screens/call_screen.dart';
@@ -30,10 +31,36 @@ class CallService {
     if (_isWatching) return;
     _isWatching = true;
 
-    // 1. Connect WebSocket signaling channel
+    // 1. Initialize native notification channels and response actions
+    CallNotificationService.instance.initialize();
+    CallNotificationService.instance.onNotificationAction = (action, callId) async {
+      if (action == 'decline') {
+        CallSignalingClient.instance.sendReject(callId: callId, reason: 'declined');
+        CallNotificationService.instance.cancelIncoming();
+        activeCallNotifier.value = null;
+      } else if (action == 'accept') {
+        CallNotificationService.instance.cancelIncoming();
+        final session = activeCallNotifier.value;
+        if (session != null && navigatorKey.currentState != null) {
+          String partnerName = await Session.getCachedPartnerName() ?? "Partner";
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (_) => CallScreen(
+                session: session,
+                partnerId: session.callerId,
+                partnerName: partnerName,
+                isIncoming: true,
+              ),
+            ),
+          );
+        }
+      }
+    };
+
+    // 2. Connect WebSocket signaling channel
     CallSignalingClient.instance.connect();
 
-    // 2. Listen to real-time WebSockets signaling events
+    // 3. Listen to real-time WebSockets signaling events
     _signalingSub?.cancel();
     _signalingSub = CallSignalingClient.instance.messageStream.listen((msg) async {
       final type = msg['type'];
@@ -54,6 +81,13 @@ class CallService {
         final session = CallSessionModel.fromSignaling(msg, myId);
         activeCallNotifier.value = session;
 
+        // Show native heads-up notification with Full-Screen Intent
+        CallNotificationService.instance.showIncomingCallNotification(
+          callId: callId,
+          callerName: callerName,
+          callType: session.callType,
+        );
+
         // Ringing feedback
         HapticFeedback.heavyImpact();
         Future.delayed(const Duration(milliseconds: 250), () => HapticFeedback.heavyImpact());
@@ -71,10 +105,15 @@ class CallService {
             ),
           ),
         );
+      } else if (type == 'call_cancelled' ||
+          type == 'call_ended' ||
+          type == 'call_rejected' ||
+          type == 'call_busy') {
+        CallNotificationService.instance.cancelIncoming();
       }
     });
 
-    // 3. Low-frequency polling fallback in case WebSocket reconnects on flaky networks
+    // 4. Low-frequency polling fallback in case WebSocket reconnects on flaky networks
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
       final myId = await Session.getUserId();
@@ -105,6 +144,13 @@ class CallService {
               } catch (_) {}
             }
 
+            // Show native heads-up notification with Full-Screen Intent
+            CallNotificationService.instance.showIncomingCallNotification(
+              callId: session.id,
+              callerName: partnerName,
+              callType: session.callType,
+            );
+
             navigatorKey.currentState?.push(
               MaterialPageRoute(
                 builder: (_) => CallScreen(
@@ -127,6 +173,7 @@ class CallService {
     _pollingTimer?.cancel();
     _pollingTimer = null;
     _isWatching = false;
+    CallNotificationService.instance.cancelAll();
     CallSignalingClient.instance.disconnect();
   }
 
@@ -223,6 +270,9 @@ class CallService {
     _callTimer = null;
     activeCallNotifier.value = null;
     callDurationNotifier.value = 0;
+
+    // Cancel all notifications
+    CallNotificationService.instance.cancelAll();
 
     // Send real-time termination signal
     CallSignalingClient.instance.sendEnd(callId: callId, reason: reason);
