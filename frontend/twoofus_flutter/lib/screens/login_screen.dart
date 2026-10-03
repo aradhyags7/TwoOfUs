@@ -8,9 +8,7 @@ import '../utils/session.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import 'home_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_screen.dart';
-import '../widgets/server_config_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -309,7 +307,6 @@ class _LoginScreenState extends State<LoginScreen>
         final errMsg = (result != null && result.containsKey("error"))
             ? result["error"].toString()
             : "Hmm, those credentials don't match";
-        final isConnError = errMsg.contains("Cannot connect") || errMsg.contains("backend connection");
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errMsg),
@@ -318,25 +315,14 @@ class _LoginScreenState extends State<LoginScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            action: isConnError
-                ? SnackBarAction(
-                    label: "Server IP ⚙️",
-                    textColor: Colors.amberAccent,
-                    onPressed: () => ServerConfigDialog.show(context),
-                  )
-                : null,
           ),
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Error: $e"),
-          action: SnackBarAction(
-            label: "Server IP ⚙️",
-            textColor: Colors.amberAccent,
-            onPressed: () => ServerConfigDialog.show(context),
-          ),
         ),
       );
     }
@@ -425,26 +411,6 @@ class _LoginScreenState extends State<LoginScreen>
             child: _Glow(color: _violet.withOpacity(0.11), size: 380),
           ),
 
-          // ── Server IP settings button ────────────────────────────────────
-          Positioned(
-            top: 44,
-            right: 18,
-            child: SafeArea(
-              child: IconButton(
-                icon: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.06),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
-                  ),
-                  child: const Icon(Icons.dns_rounded, color: Colors.white70, size: 18),
-                ),
-                tooltip: "Server Configuration",
-                onPressed: () => ServerConfigDialog.show(context),
-              ),
-            ),
-          ),
 
           // ── Main content ─────────────────────────────────────────────────
           SafeArea(
