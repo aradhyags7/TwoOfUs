@@ -676,8 +676,6 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 2),
-          const Icon(Icons.favorite_rounded, color: Colors.white70, size: 16),
         ],
       ),
     );
@@ -1031,7 +1029,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               color: _rose.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.favorite_rounded, color: _rose, size: 18),
+            child: Icon(Icons.bookmark_rounded, color: _rose, size: 18),
           ),
           title: Text(
             text,
@@ -1243,7 +1241,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text("Unpair / Block ${widget.partnerName}?", style: TextStyle(color: _text)),
         content: Text(
-          "This will disconnect your pair relationship with ${widget.partnerName}.",
+          "This will disconnect your connection with ${widget.partnerName}.",
           style: TextStyle(color: _sub),
         ),
         actions: [

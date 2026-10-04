@@ -686,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               shaderCallback: (b) =>
                   LinearGradient(colors: [_rose, _violet]).createShader(b),
               blendMode: BlendMode.srcIn,
-              child: const Icon(Icons.favorite_rounded, size: 28, color: Colors.white),
+              child: const Icon(Icons.all_inclusive_rounded, size: 28, color: Colors.white),
             ),
           ),
           const SizedBox(width: 10),
@@ -1170,7 +1170,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               ],
                             ),
                             child: const Icon(
-                              Icons.favorite_rounded,
+                              Icons.link_rounded,
                               color: Colors.white,
                               size: 22,
                             ),
@@ -1214,11 +1214,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   ),
                                 ],
                               ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.favorite,
-                                  color: Colors.white,
-                                  size: 30,
+                              child: Center(
+                                child: Text(
+                                  _partnerName.isNotEmpty ? _partnerName[0].toUpperCase() : "?",
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1323,8 +1326,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           children: [
             Expanded(
               child: _buildQuickActionTile(
-                icon: Icons.favorite_outline_rounded,
-                label: "Partner Profile",
+                icon: Icons.person_outline_rounded,
+                label: _partnerName.isNotEmpty ? _partnerName : "Profile",
                 onTap: _openPartnerProfile,
               ),
             ),
@@ -2407,7 +2410,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                                 ],
                               ),
                               child: const Icon(
-                                Icons.favorite_rounded,
+                                Icons.link_rounded,
                                 size: 46,
                                 color: Colors.white,
                               ),
@@ -2462,7 +2465,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                         height: 1.4,
                       ),
                       children: [
-                        const TextSpan(text: "Your private couple space with\n"),
+                        const TextSpan(text: "Your private space with\n"),
                         TextSpan(
                           text: widget.partnerName,
                           style: const TextStyle(
@@ -2522,9 +2525,9 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                           HapticFeedback.mediumImpact();
                           widget.onEnter();
                         },
-                        icon: const Icon(Icons.favorite, color: Colors.white, size: 20),
+                        icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
                         label: const Text(
-                          "Enter Our Space",
+                          "Enter Shared Space",
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 16,

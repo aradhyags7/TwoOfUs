@@ -243,7 +243,7 @@ class _SplashScreenState extends State<SplashScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Pulsing gradient heart
+                      // Pulsing gradient duo/infinity symbol
                       ScaleTransition(
                         scale: _heartScale,
                         child: ShaderMask(
@@ -254,7 +254,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ).createShader(b),
                           blendMode: BlendMode.srcIn,
                           child: const Icon(
-                            Icons.favorite_rounded,
+                            Icons.all_inclusive_rounded,
                             size: 92,
                             color: Colors.white,
                           ),

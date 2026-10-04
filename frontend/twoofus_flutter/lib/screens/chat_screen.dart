@@ -241,7 +241,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         ),
       );
     }
-    return const Icon(Icons.favorite_rounded, color: Colors.white, size: 18);
+    return const Icon(Icons.person_rounded, color: Colors.white, size: 18);
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -2382,7 +2382,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       });
 
       if (res != null) {
-        _toast("Saved to couple's diary for ${_fmtDateLabel(targetDate)}");
+        _toast("Saved to shared diary for ${_fmtDateLabel(targetDate)}");
         await _loadMemories();
       } else {
         _toast("Failed to save memory entry", isError: true);
@@ -2522,7 +2522,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Couple\'s Diary & Album',
+                        'Shared Diary & Album',
                         style: TextStyle(color: _text, fontSize: 16, fontWeight: FontWeight.w800),
                       ),
                       Text(
@@ -2847,7 +2847,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               ShaderMask(
                 shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
                 blendMode: BlendMode.srcIn,
-                child: const Icon(Icons.favorite_border_rounded, size: 40, color: Colors.white),
+                child: const Icon(Icons.auto_stories_rounded, size: 40, color: Colors.white),
               ),
               const SizedBox(height: 10),
               Text(
@@ -3417,8 +3417,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 physics: const BouncingScrollPhysics(),
                 children: [
-                  // ── COUPLE SPACE ──
-                  _drawerSectionHeader("COUPLE SPACE"),
+                  // ── SHARED SPACE ──
+                  _drawerSectionHeader("SHARED SPACE"),
                   _drawerPartnerCard(),
                   const SizedBox(height: 6),
                   _drawerTile(

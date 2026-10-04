@@ -340,13 +340,13 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.favorite_rounded,
+                        Icons.verified_rounded,
                         color: theme.primary,
                         size: 13,
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        "142 Days Together • 100% In Sync",
+                        "142 Days Connected • 100% In Sync",
                         style: TextStyle(
                           color: theme.textPrimary,
                           fontSize: 11,
