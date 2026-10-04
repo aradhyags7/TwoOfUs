@@ -97,8 +97,23 @@ class WebRTCManager {
     };
 
     _peerConnection!.onTrack = (RTCTrackEvent event) {
+      if (kDebugMode) {
+        print("[WebRTCManager] onTrack: kind=${event.track.kind}, id=${event.track.id}, streams=${event.streams.length}");
+      }
+
+      // Explicitly enable remote audio track and ensure platform speaker routing
+      if (event.track.kind == 'audio') {
+        event.track.enabled = true;
+        setSpeakerphone(_isSpeakerphoneOn);
+      }
+
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams[0];
+      }
+      if (_remoteStream != null) {
+        if (!_remoteStream!.getTracks().any((t) => t.id == event.track.id)) {
+          _remoteStream!.addTrack(event.track);
+        }
         onRemoteStreamReady?.call(_remoteStream!);
       }
     };
@@ -123,29 +138,71 @@ class WebRTCManager {
       }
     };
 
-    // 4. Capture local audio (and video if enabled)
+    // 4. Capture local audio (and video if enabled) with optimized mobile constraints
     final mediaConstraints = <String, dynamic>{
       'audio': {
         'echoCancellation': true,
         'noiseSuppression': true,
         'autoGainControl': true,
-        'highpassFilter': true,
       },
       'video': isVideo
           ? {
               'facingMode': 'user',
-              'width': {'ideal': 1280},
-              'height': {'ideal': 720},
+              'width': {'ideal': 640, 'max': 960},
+              'height': {'ideal': 480, 'max': 720},
+              'frameRate': {'ideal': 24, 'max': 30},
             }
           : false,
     };
 
-    _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    try {
+      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    } catch (e) {
+      if (kDebugMode) {
+        print("[WebRTCManager] getUserMedia with constraints failed: $e. Retrying with basic constraints...");
+      }
+      _localStream = await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': isVideo
+            ? {
+                'facingMode': 'user',
+                'width': {'ideal': 640},
+                'height': {'ideal': 480},
+              }
+            : false,
+      });
+    }
 
     // Add local tracks to peer connection
     for (final track in _localStream!.getTracks()) {
       await _peerConnection!.addTrack(track, _localStream!);
     }
+
+    // Ensure audio routing is active on the device loudspeaker by default
+    _isSpeakerphoneOn = true;
+    await setSpeakerphone(_isSpeakerphoneOn);
+  }
+
+  bool _isSpeakerphoneOn = true;
+  bool get isSpeakerphoneOn => _isSpeakerphoneOn;
+
+  /// Optimizes SDP for mobile networks with Opus Forward Error Correction and DTX
+  String _optimizeSdp(String sdp, {bool isVideo = false}) {
+    var modified = sdp;
+    if (modified.contains('opus/48000')) {
+      if (modified.contains('useinbandfec=1')) {
+        modified = modified.replaceAll(
+          'useinbandfec=1',
+          'useinbandfec=1;usedtx=1;minptime=10',
+        );
+      } else {
+        modified = modified.replaceAllMapped(
+          RegExp(r'(a=rtpmap:(\d+) opus/48000/2)'),
+          (m) => '${m[1]}\r\na=fmtp:${m[2]} useinbandfec=1;usedtx=1;minptime=10',
+        );
+      }
+    }
+    return modified;
   }
 
   /// Creates and sets local WebRTC SDP Offer (Caller side)
@@ -160,8 +217,10 @@ class WebRTCManager {
     };
 
     final offer = await _peerConnection!.createOffer(offerConstraints);
-    await _peerConnection!.setLocalDescription(offer);
-    return offer;
+    final optimizedSdp = _optimizeSdp(offer.sdp ?? '', isVideo: isVideo);
+    final optimizedOffer = RTCSessionDescription(optimizedSdp, offer.type);
+    await _peerConnection!.setLocalDescription(optimizedOffer);
+    return optimizedOffer;
   }
 
   /// Triggers an ICE restart offer during network switches or transient dropouts
@@ -177,8 +236,10 @@ class WebRTCManager {
     };
 
     final offer = await _peerConnection!.createOffer(offerConstraints);
-    await _peerConnection!.setLocalDescription(offer);
-    return offer;
+    final optimizedSdp = _optimizeSdp(offer.sdp ?? '', isVideo: isVideo);
+    final optimizedOffer = RTCSessionDescription(optimizedSdp, offer.type);
+    await _peerConnection!.setLocalDescription(optimizedOffer);
+    return optimizedOffer;
   }
 
   /// Sets remote WebRTC SDP Offer and creates local SDP Answer (Receiver side)
@@ -200,8 +261,10 @@ class WebRTCManager {
     };
 
     final answer = await _peerConnection!.createAnswer(answerConstraints);
-    await _peerConnection!.setLocalDescription(answer);
-    return answer;
+    final optimizedSdp = _optimizeSdp(answer.sdp ?? '', isVideo: isVideo);
+    final optimizedAnswer = RTCSessionDescription(optimizedSdp, answer.type);
+    await _peerConnection!.setLocalDescription(optimizedAnswer);
+    return optimizedAnswer;
   }
 
   /// Sets remote WebRTC SDP Answer (Caller side upon receiving answer from receiver)
@@ -244,18 +307,29 @@ class WebRTCManager {
   }
 
   /// Mutes or unmutes local microphone audio track
-  void setMicrophoneMute(bool muted) {
+  Future<void> setMicrophoneMute(bool muted) async {
     if (_localStream != null) {
       for (final track in _localStream!.getAudioTracks()) {
         track.enabled = !muted;
       }
     }
+    try {
+      await Helper.setMicrophoneMuted(muted);
+    } catch (_) {}
   }
 
-  /// Toggles device speakerphone
-  void setSpeakerphone(bool enableSpeaker) {
-    if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
-      _localStream!.getAudioTracks()[0].enableSpeakerphone(enableSpeaker);
+  /// Sets device speakerphone on or off using the official platform Helper API
+  Future<void> setSpeakerphone(bool enableSpeaker) async {
+    _isSpeakerphoneOn = enableSpeaker;
+    try {
+      await Helper.setSpeakerphoneOn(enableSpeaker);
+      if (kDebugMode) {
+        print("[WebRTCManager] Speakerphone successfully routed: $enableSpeaker");
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print("[WebRTCManager] Failed to set speakerphone: $e");
+      }
     }
   }
 
@@ -287,8 +361,9 @@ class WebRTCManager {
         'audio': false,
         'video': {
           'facingMode': 'user',
-          'width': {'ideal': 1280},
-          'height': {'ideal': 720},
+          'width': {'ideal': 640, 'max': 960},
+          'height': {'ideal': 480, 'max': 720},
+          'frameRate': {'ideal': 24, 'max': 30},
         },
       });
 
@@ -304,6 +379,9 @@ class WebRTCManager {
       if (_peerConnection != null) {
         await _peerConnection!.addTrack(videoTrack, _localStream!);
       }
+
+      // Ensure speakerphone is enabled for video mode
+      await setSpeakerphone(true);
       return true;
     } catch (e) {
       if (kDebugMode) {

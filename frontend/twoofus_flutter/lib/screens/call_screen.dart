@@ -240,6 +240,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             // Caller initializes WebRTC and sends SDP Offer
             try {
               await _webrtcManager.initialize(isVideo: isVideo);
+              await _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
               if (isVideo && _webrtcManager.localStream != null) {
                 _localRenderer.srcObject = _webrtcManager.localStream;
               }
@@ -283,6 +284,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
               if (_webrtcManager.localStream == null) {
                 await _webrtcManager.initialize(isVideo: isOfferVideo);
+                await _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
                 if (isOfferVideo && _webrtcManager.localStream != null) {
                   _localRenderer.srcObject = _webrtcManager.localStream;
                 }
@@ -407,6 +409,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _statusCheckTimer?.cancel();
     _statusCheckTimer = Timer.periodic(const Duration(milliseconds: 3000), (_) async {
       if (_isExiting || !mounted) return;
+      // Skip redundant HTTP polling while call is actively ongoing to prevent audio/video lag
+      if (_currentSession.status == 'ongoing') return;
       final myId = await Session.getUserId();
       if (myId == null || _isExiting || !mounted) return;
 
@@ -452,6 +456,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     // 1. Initialize local media capture
     try {
       await _webrtcManager.initialize(isVideo: isVideo);
+      await _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
       if (isVideo && _webrtcManager.localStream != null) {
         _localRenderer.srcObject = _webrtcManager.localStream;
       }
@@ -516,6 +521,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     final isVideo = _currentSession.callType == 'video';
     final isOngoing = _currentSession.status == 'ongoing';
 
+    // Optimize performance: pause pulsing animations when video is actively streaming
+    if (isVideo && isOngoing) {
+      if (_pulseController.isAnimating) _pulseController.stop();
+      if (_waveController.isAnimating) _waveController.stop();
+    } else {
+      if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
+      if (isOngoing && !_waveController.isAnimating) {
+        _waveController.repeat(reverse: true);
+      }
+    }
+
     return PopScope(
       canPop: true,
       onPopInvokedWithResult: (didPop, result) {
@@ -525,221 +541,287 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       },
       child: Scaffold(
         backgroundColor: _bg,
-        body: Stack(
-          children: [
-            // Background ambient romantic glow
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment.center,
-                    radius: 1.2,
-                    colors: [
-                      _violet.withValues(alpha: 0.2),
-                      _bg,
-                    ],
+        body: (isVideo && isOngoing)
+            ? Stack(
+                children: [
+                  // Fullscreen video surface with PiP
+                  Positioned.fill(child: _buildVideoSurface()),
+
+                  // Video Top Header (Overlay)
+                  Positioned(
+                    top: 20,
+                    left: 20,
+                    right: 20,
+                    child: SafeArea(
+                      child: _buildTopHeader(isOngoing: true),
+                    ),
                   ),
-                ),
-              ),
-            ),
 
-            if (isVideo && isOngoing)
-              _buildVideoSurface()
-            else
-              _buildVoiceSurface(),
-
-            // Top Header: Partner info & E2EE badge
-            Positioned(
-              top: 50,
-              left: 20,
-              right: 20,
-              child: SafeArea(
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        EncryptionVerificationModal.show(
-                          context,
-                          partnerId: widget.partnerId,
-                          partnerName: widget.partnerName,
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.lock_rounded, color: Colors.greenAccent, size: 14),
-                            SizedBox(width: 6),
-                            Text(
-                              "End-to-End Encrypted (DTLS-SRTP)",
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(width: 4),
-                            Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 14),
+                  // Bottom controls (Overlay)
+                  Positioned(
+                    bottom: 28,
+                    left: 20,
+                    right: 20,
+                    child: SafeArea(
+                      child: _buildActiveControls(true),
+                    ),
+                  ),
+                ],
+              )
+            : Stack(
+                children: [
+                  // Background ambient romantic glow
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.center,
+                          radius: 1.2,
+                          colors: [
+                            _violet.withValues(alpha: 0.25),
+                            _bg,
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      widget.partnerName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    ValueListenableBuilder<int>(
-                      valueListenable: CallService.callDurationNotifier,
-                      builder: (context, seconds, child) {
-                        String statusText;
-                        if (_isIncoming) {
-                          statusText = "Incoming ${widget.session.callType} call...";
-                        } else if (_currentSession.status == 'ringing') {
-                          statusText = _statusMessage.isNotEmpty ? _statusMessage : "Ringing...";
-                        } else if (_currentSession.status == 'ongoing') {
-                          statusText = _formatDuration(seconds);
-                        } else {
-                          statusText = "Call ${_currentSession.status}";
-                        }
-                        return Text(
-                          statusText,
-                          style: TextStyle(
-                            color: isOngoing ? Colors.pinkAccent : Colors.white60,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
 
-            // Bottom controls
-            Positioned(
-              bottom: 40,
-              left: 24,
-              right: 24,
-              child: SafeArea(
-                child: _isIncoming ? _buildIncomingControls() : _buildActiveControls(isVideo),
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 16),
+                        _buildTopHeader(isOngoing: isOngoing),
+                        Expanded(
+                          child: Center(
+                            child: _buildVoiceSurface(isOngoing),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          child: _isIncoming
+                              ? _buildIncomingControls()
+                              : _buildActiveControls(isVideo),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
+  // ── Top Header Widget ────────────────────────────────────────────────────
+  Widget _buildTopHeader({required bool isOngoing}) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            EncryptionVerificationModal.show(
+              context,
+              partnerId: widget.partnerId,
+              partnerName: widget.partnerName,
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_rounded, color: Colors.greenAccent, size: 14),
+                SizedBox(width: 6),
+                Text(
+                  "End-to-End Encrypted (DTLS-SRTP)",
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(width: 4),
+                Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 14),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          widget.partnerName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ValueListenableBuilder<int>(
+          valueListenable: CallService.callDurationNotifier,
+          builder: (context, seconds, child) {
+            String statusText;
+            if (_isIncoming) {
+              statusText = "Incoming ${widget.session.callType} call...";
+            } else if (_currentSession.status == 'ringing') {
+              statusText = _statusMessage.isNotEmpty ? _statusMessage : "Ringing...";
+            } else if (_currentSession.status == 'ongoing') {
+              statusText = _formatDuration(seconds);
+            } else {
+              statusText = "Call ${_currentSession.status}";
+            }
+            return Text(
+              statusText,
+              style: TextStyle(
+                color: isOngoing ? Colors.pinkAccent : Colors.white60,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   // ── Voice Surface with pulsating avatar rings ────────────────────────────
-  Widget _buildVoiceSurface() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+  Widget _buildVoiceSurface(bool isOngoing) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        AnimatedBuilder(
+          animation: _pulseController,
+          builder: (context, child) {
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                // Outer ripple ring
+                Container(
+                  width: 190 + (_pulseController.value * 40),
+                  height: 190 + (_pulseController.value * 40),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _rose.withValues(alpha: (1.0 - _pulseController.value) * 0.35),
+                      width: 2,
+                    ),
+                  ),
+                ),
+                // Middle ring
+                Container(
+                  width: 160 + (_pulseController.value * 24),
+                  height: 160 + (_pulseController.value * 24),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _violet.withValues(alpha: (1.0 - _pulseController.value) * 0.45),
+                      width: 2,
+                    ),
+                  ),
+                ),
+                // Avatar container
+                Container(
+                  width: 130,
+                  height: 130,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [_rose, _violet]),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _rose.withValues(alpha: 0.35),
+                        blurRadius: 28,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : "P",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 32),
+
+        // Animated Audio Waveform & Status pill
+        if (isOngoing) ...[
           AnimatedBuilder(
-            animation: _pulseController,
-            builder: (context, child) {
-              return Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Outer ripple ring
-                  Container(
-                    width: 200 + (_pulseController.value * 50),
-                    height: 200 + (_pulseController.value * 50),
+            animation: _waveController,
+            builder: (context, _) {
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(7, (index) {
+                  final height = 10.0 +
+                      (index % 3 == 0
+                          ? _waveController.value * 24
+                          : (1 - _waveController.value) * 18);
+                  return Container(
+                    width: 4,
+                    height: height,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: _rose.withValues(alpha: (1.0 - _pulseController.value) * 0.4),
-                        width: 2,
-                      ),
+                      color: Colors.pinkAccent,
+                      borderRadius: BorderRadius.circular(4),
                     ),
-                  ),
-                  // Middle ring
-                  Container(
-                    width: 170 + (_pulseController.value * 30),
-                    height: 170 + (_pulseController.value * 30),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: _violet.withValues(alpha: (1.0 - _pulseController.value) * 0.5),
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  // Avatar container
-                  Container(
-                    width: 140,
-                    height: 140,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [_rose, _violet]),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: _rose.withValues(alpha: 0.4),
-                          blurRadius: 30,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : "P",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 54,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                  );
+                }),
               );
             },
           ),
-          const SizedBox(height: 48),
-
-          // Animated Audio Waveform (when ongoing)
-          if (_currentSession.status == 'ongoing')
-            AnimatedBuilder(
-              animation: _waveController,
-              builder: (context, _) {
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(7, (index) {
-                    final height = 12.0 +
-                        (index % 3 == 0
-                            ? _waveController.value * 28
-                            : (1 - _waveController.value) * 22);
-                    return Container(
-                      width: 4,
-                      height: height,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.pinkAccent,
-                        borderRadius: BorderRadius.circular(4),
+          const SizedBox(height: 16),
+          ValueListenableBuilder<bool>(
+            valueListenable: CallService.isMutedNotifier,
+            builder: (context, isMuted, child) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isMuted
+                      ? Colors.redAccent.withValues(alpha: 0.2)
+                      : Colors.greenAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isMuted
+                        ? Colors.redAccent.withValues(alpha: 0.4)
+                        : Colors.greenAccent.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                      size: 14,
+                      color: isMuted ? Colors.redAccent : Colors.greenAccent,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isMuted ? "Your mic is muted" : "Audio connected",
+                      style: TextStyle(
+                        color: isMuted ? Colors.redAccent : Colors.greenAccent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
-                    );
-                  }),
-                );
-              },
-            ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
-      ),
+      ],
     );
   }
 
@@ -1009,14 +1091,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   // ── Active Ongoing Call Control Bar ──────────────────────────────────────
   Widget _buildActiveControls(bool isVideo) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E0E30).withValues(alpha: 0.88),
+        color: const Color(0xFF1E0E30).withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
+            color: Colors.black.withValues(alpha: 0.45),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -1031,6 +1113,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             builder: (context, isMuted, child) {
               return _controlButton(
                 icon: isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                label: isMuted ? "Unmute" : "Mute",
                 isActive: isMuted,
                 onTap: () {
                   CallService.toggleMute();
@@ -1047,6 +1130,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               builder: (context, isVideoOn, child) {
                 return _controlButton(
                   icon: isVideoOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                  label: isVideoOn ? "Stop Cam" : "Start Cam",
                   isActive: !isVideoOn,
                   onTap: () {
                     CallService.toggleVideo();
@@ -1060,6 +1144,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           if (isVideo)
             _controlButton(
               icon: Icons.flip_camera_ios_rounded,
+              label: "Flip",
               isActive: false,
               onTap: () {
                 CallService.flipCamera();
@@ -1071,6 +1156,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           if (!isVideo)
             _controlButton(
               icon: Icons.videocam_rounded,
+              label: "Video",
               isActive: false,
               onTap: _upgradeToVideo,
             ),
@@ -1081,6 +1167,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             builder: (context, isSpeaker, child) {
               return _controlButton(
                 icon: isSpeaker ? Icons.volume_up_rounded : Icons.volume_down_rounded,
+                label: isSpeaker ? "Speaker" : "Earpiece",
                 isActive: isSpeaker,
                 onTap: () {
                   CallService.toggleSpeaker();
@@ -1093,6 +1180,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           // Hang Up Button
           _controlButton(
             icon: Icons.call_end_rounded,
+            label: "End",
             isActive: true,
             isEndCall: true,
             onTap: _endCall,
@@ -1104,6 +1192,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   Widget _controlButton({
     required IconData icon,
+    required String label,
     required bool isActive,
     bool isEndCall = false,
     required VoidCallback onTap,
@@ -1128,23 +1217,40 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         onTap();
       },
       borderRadius: BorderRadius.circular(28),
-      child: Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(
-          color: bg,
-          shape: BoxShape.circle,
-          boxShadow: isEndCall
-              ? [
-                  const BoxShadow(
-                    color: Color(0x66FF1744),
-                    blurRadius: 14,
-                    offset: Offset(0, 4),
-                  ),
-                ]
-              : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: bg,
+                shape: BoxShape.circle,
+                boxShadow: isEndCall
+                    ? [
+                        const BoxShadow(
+                          color: Color(0x66FF1744),
+                          blurRadius: 14,
+                          offset: Offset(0, 4),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Icon(icon, color: iconColor, size: 24),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isEndCall ? const Color(0xFFFF5252) : Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
-        child: Icon(icon, color: iconColor, size: 24),
       ),
     );
   }

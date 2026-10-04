@@ -18,7 +18,7 @@ class CallService {
       ValueNotifier<CallSessionModel?>(null);
   static final ValueNotifier<int> callDurationNotifier = ValueNotifier<int>(0);
   static final ValueNotifier<bool> isMutedNotifier = ValueNotifier<bool>(false);
-  static final ValueNotifier<bool> isSpeakerNotifier = ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> isSpeakerNotifier = ValueNotifier<bool>(true);
   static final ValueNotifier<bool> isVideoEnabledNotifier = ValueNotifier<bool>(true);
   static final ValueNotifier<bool> isFrontCameraNotifier = ValueNotifier<bool>(true);
 
@@ -201,7 +201,7 @@ class CallService {
     }
 
     isMutedNotifier.value = false;
-    isSpeakerNotifier.value = (callType == "video");
+    isSpeakerNotifier.value = true;
     isVideoEnabledNotifier.value = (callType == "video");
     isFrontCameraNotifier.value = true;
     callDurationNotifier.value = 0;
