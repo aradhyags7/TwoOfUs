@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 
 class ServerConfigDialog extends StatefulWidget {
   const ServerConfigDialog({super.key});
@@ -99,25 +100,10 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
     HapticFeedback.mediumImpact();
     if (!mounted) return;
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.pinkAccent, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                "Server updated: ${ApiService.baseUrl}",
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF200F35),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.all(16),
-      ),
+    AppFeedback.showSuccess(
+      context,
+      "Connected to ${ApiService.baseUrl}",
+      title: "Server Updated",
     );
   }
 

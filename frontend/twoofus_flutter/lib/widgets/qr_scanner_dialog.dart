@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../utils/app_feedback.dart';
 
 class QRScannerDialog extends StatefulWidget {
   final String partnerName;
@@ -109,22 +110,18 @@ class _QRScannerDialogState extends State<QRScannerDialog>
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("No QR code detected in the selected image. Please try another."),
-            backgroundColor: const Color(0xFF4A0E17),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
+        AppFeedback.showError(
+          context,
+          "No QR code detected in the selected image. Please try another.",
+          title: "Scan Unsuccessful",
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error reading image: $e"),
-            backgroundColor: const Color(0xFF4A0E17),
-          ),
+        AppFeedback.showError(
+          context,
+          "Error reading image: $e",
+          title: "Image Error",
         );
       }
     } finally {

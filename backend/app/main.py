@@ -274,7 +274,7 @@ def generate_pin():
 @app.get("/")
 def root():
     return {
-        "message": "TwoOfUs Backend Running ❤️"
+        "message": "TwoOfUs Backend Running"
     }
 
 
@@ -857,7 +857,7 @@ def connect_by_pin(
     db.refresh(new_pair)
 
     return {
-        "message": "Connected successfully ❤️",
+        "message": "Connected successfully",
         "pair_id": new_pair.id,
         "user1_id": new_pair.user1_id,
         "user2_id": new_pair.user2_id

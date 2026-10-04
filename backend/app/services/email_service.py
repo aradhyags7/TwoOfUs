@@ -260,7 +260,7 @@ The TwoOfUs Team
           <!-- Header -->
           <tr>
             <td style="padding: 36px 36px 20px 36px; text-align: center;">
-              <div style="font-size: 40px; line-height: 1; margin-bottom: 8px;">❤️</div>
+              <div style="font-size: 38px; line-height: 1; margin-bottom: 8px;">♾️</div>
               <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">TwoOfUs</h1>
               <p style="margin: 6px 0 0 0; font-size: 13px; color: #ff80ab; font-weight: 500;">Private • Secure • End-to-End Encrypted</p>
             </td>

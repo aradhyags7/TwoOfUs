@@ -276,7 +276,7 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            "My Love ❤️",
+                            "Partner",
                             style: TextStyle(
                               color: theme.textPrimary,
                               fontSize: 14,
