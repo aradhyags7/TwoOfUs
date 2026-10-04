@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../services/api_service.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 
 class TwoFactorSetupScreen extends StatefulWidget {
   const TwoFactorSetupScreen({super.key});
@@ -103,20 +104,16 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
 
     if (res != null && !res.containsKey("error")) {
       _startCooldownTimer();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("6-digit code sent to ${_userEmail ?? 'your email'}! 📬"),
-          backgroundColor: const Color(0xFF200F35),
-          behavior: SnackBarBehavior.floating,
-        ),
+      AppFeedback.showSuccess(
+        context,
+        "6-digit code sent to ${_userEmail ?? 'your email'}",
+        title: "Code Sent",
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res?["error"] ?? "Failed to send email verification code."),
-          backgroundColor: Colors.redAccent.shade700,
-          behavior: SnackBarBehavior.floating,
-        ),
+      AppFeedback.showError(
+        context,
+        res?["error"] ?? "Failed to send email verification code",
+        title: "Delivery Failed",
       );
     }
   }
@@ -124,12 +121,10 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
   Future<void> _submitVerification() async {
     final code = _codeController.text.trim();
     if (code.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text("Please enter the complete 6-digit code"),
-          backgroundColor: Colors.redAccent.shade700,
-          behavior: SnackBarBehavior.floating,
-        ),
+      AppFeedback.showError(
+        context,
+        "Please enter the complete 6-digit verification code",
+        title: "Incomplete Code",
       );
       return;
     }
@@ -154,13 +149,10 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
         _currentStep = 1; // Show backup recovery codes
       });
     } else {
-      HapticFeedback.vibrate();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res?["error"] ?? "Invalid verification code. Try again."),
-          backgroundColor: Colors.redAccent.shade700,
-          behavior: SnackBarBehavior.floating,
-        ),
+      AppFeedback.showError(
+        context,
+        res?["error"] ?? "Invalid verification code. Please check and try again.",
+        title: "Verification Failed",
       );
     }
   }
@@ -168,14 +160,10 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
   void _copySecret() {
     if (_secret == null) return;
     Clipboard.setData(ClipboardData(text: _secret!));
-    HapticFeedback.selectionClick();
     setState(() => _copiedSecret = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Secret key copied to clipboard!"),
-        duration: Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppFeedback.showSuccess(
+      context,
+      "Secret key copied to clipboard",
     );
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _copiedSecret = false);
@@ -186,14 +174,10 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
     if (_backupCodes.isEmpty) return;
     final all = _backupCodes.join("\n");
     Clipboard.setData(ClipboardData(text: all));
-    HapticFeedback.selectionClick();
     setState(() => _copiedBackupCodes = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("All 8 backup recovery codes copied! Keep them secure."),
-        duration: Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppFeedback.showSuccess(
+      context,
+      "Backup recovery codes copied to clipboard",
     );
   }
 
