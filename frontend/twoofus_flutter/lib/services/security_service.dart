@@ -278,7 +278,7 @@ class SecurityService {
   }
 
   static Future<bool> authenticateWithBiometrics({
-    String reason = "Authenticate to unlock TwoOfUs ❤️",
+    String reason = "Authenticate to unlock TwoOfUs",
   }) async {
     try {
       final bool supported = await isBiometricSupported();
