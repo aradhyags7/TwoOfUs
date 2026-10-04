@@ -30,6 +30,7 @@ import '../widgets/encryption_verification_modal.dart';
 import '../services/call_service.dart';
 import '../utils/date_time_utils.dart';
 import 'media_gallery_screen.dart';
+import '../utils/app_feedback.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TwoOfUs — ChatScreen
@@ -861,7 +862,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         isEncrypted: isEncrypted,
       );
       if (success) {
-        _toast("Message updated ❤️");
+        _toast("Message updated");
         _msgCtrl.clear();
         _removeSelectedMedia();
         setState(() {
@@ -969,41 +970,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   String _fmtDateLabel(DateTime dt) => DateTimeUtils.formatDateLabel(dt);
 
   void _toast(String msg, {bool isError = false}) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final topPadding = MediaQuery.of(context).padding.top;
-    final topMargin = screenHeight - topPadding - 110;
-
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(
-        children: [
-          Icon(
-            isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
-            color: isError ? Colors.redAccent : Colors.pinkAccent,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              msg,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-      backgroundColor: isError ? const Color(0xFF2E0916) : const Color(0xFF1D1826),
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(milliseconds: 2200),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: isError ? Colors.redAccent.withOpacity(0.4) : _rose.withOpacity(0.4)),
-      ),
-      margin: EdgeInsets.only(
-        bottom: topMargin > 100 ? topMargin : 100,
-        left: 20,
-        right: 20,
-      ),
-    ));
+    if (!mounted) return;
+    if (isError) {
+      AppFeedback.showError(context, msg);
+    } else {
+      AppFeedback.showSuccess(context, msg);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1471,7 +1443,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               child: const Icon(Icons.chat_bubble_outline_rounded, size: 48, color: Colors.white),
             ),
             const SizedBox(height: 12),
-            Text('Send the first message ❤️', style: TextStyle(color: _sub, fontSize: 14)),
+            Text('Send the first message', style: TextStyle(color: _sub, fontSize: 14)),
           ],
         ),
       );
@@ -2383,7 +2355,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   Future<void> _saveDiaryMemory() async {
     final text = _memoryCtrl.text.trim();
     if (text.isEmpty && _memorySelectedPhoto == null) {
-      _toast("Write a note or attach a photo first ❤️", isError: true);
+      _toast("Write a note or attach a photo first", isError: true);
       return;
     }
 
@@ -2410,7 +2382,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       });
 
       if (res != null) {
-        _toast("Saved to couple's diary for ${_fmtDateLabel(targetDate)} ❤️");
+        _toast("Saved to couple's diary for ${_fmtDateLabel(targetDate)}");
         await _loadMemories();
       } else {
         _toast("Failed to save memory entry", isError: true);
@@ -2554,7 +2526,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                         style: TextStyle(color: _text, fontSize: 16, fontWeight: FontWeight.w800),
                       ),
                       Text(
-                        'Shared memories & dates ❤️',
+                        'Shared memories & dates',
                         style: TextStyle(color: _sub, fontSize: 11),
                       ),
                     ],
@@ -2881,7 +2853,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               Text(
                 _selDate != null
                     ? 'No entries for ${_fmtDateLabel(_selDate!)}'
-                    : 'No diary entries yet ❤️',
+                    : 'No diary entries yet',
                 style: TextStyle(color: _text, fontSize: 14, fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
@@ -3657,7 +3629,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${widget.partnerName} ❤️',
+                    widget.partnerName,
                     style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.bold),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
