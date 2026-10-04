@@ -195,6 +195,10 @@ class WebRTCManager {
         'echoCancellation': true,
         'noiseSuppression': true,
         'autoGainControl': true,
+        'googEchoCancellation': true,
+        'googAutoGainControl': true,
+        'googNoiseSuppression': true,
+        'googHighpassFilter': true,
       },
       'video': isVideo
           ? {
@@ -222,6 +226,11 @@ class WebRTCManager {
               }
             : false,
       });
+    }
+
+    // Ensure all local audio tracks are explicitly enabled for transmission
+    for (final track in _localStream!.getAudioTracks()) {
+      track.enabled = true;
     }
 
     // Add local tracks to peer connection
