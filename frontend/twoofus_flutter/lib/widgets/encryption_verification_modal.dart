@@ -134,6 +134,8 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
     final scannedData = await QRScannerDialog.scan(
       context,
       partnerName: widget.partnerName,
+      title: "Scan Security QR",
+      subtitle: "Align ${widget.partnerName}'s safety QR code within the frame, or upload a screenshot from your gallery.",
     );
     if (scannedData != null && scannedData.isNotEmpty && mounted) {
       _compareCtrl.text = scannedData;
