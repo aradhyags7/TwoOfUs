@@ -12,6 +12,7 @@ import '../services/webrtc_manager.dart';
 import '../theme/theme_controller.dart';
 import '../utils/session.dart';
 import '../widgets/encryption_verification_modal.dart';
+import '../utils/app_feedback.dart';
 
 class CallScreen extends StatefulWidget {
   final CallSessionModel session;
@@ -101,11 +102,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     final ok = await _webrtcManager.enableVideoInCall();
     if (!ok) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Camera permission required to enable video"),
-            backgroundColor: Colors.redAccent,
-          ),
+        AppFeedback.showError(
+          context,
+          "Camera permission is required to enable video.",
+          title: "Permission Required",
         );
       }
       return;

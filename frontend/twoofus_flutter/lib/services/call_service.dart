@@ -9,6 +9,7 @@ import 'call_signaling_client.dart';
 import 'webrtc_manager.dart';
 import '../screens/call_screen.dart';
 import '../main.dart';
+import '../utils/app_feedback.dart';
 
 class CallService {
   CallService._();
@@ -190,11 +191,10 @@ class CallService {
     );
     if (!hasPermissions) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Microphone permission is required to make calls."),
-            backgroundColor: Colors.redAccent,
-          ),
+        AppFeedback.showError(
+          context,
+          "Microphone and camera permissions are required to place calls.",
+          title: "Permission Required",
         );
       }
       return false;
