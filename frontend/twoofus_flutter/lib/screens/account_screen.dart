@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 import '../utils/session.dart';
 import '../widgets/passcode_lock_button.dart';
 import 'change_password_screen.dart';
@@ -165,19 +166,17 @@ class _AccountScreenState extends State<AccountScreen> {
 
   void _onTapFingerprintTile() async {
     if (!passcodeEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please enable a Local Passcode first ❤️"),
-        ),
+      AppFeedback.showInfo(
+        context,
+        "Please enable a local passcode first",
       );
       return;
     }
 
     if (!biometricsSupported) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Biometric authentication is not supported on this device"),
-        ),
+      AppFeedback.showInfo(
+        context,
+        "Biometric authentication is not supported on this device",
       );
       return;
     }
@@ -187,17 +186,16 @@ class _AccountScreenState extends State<AccountScreen> {
       _loadAccountData();
     } else {
       final authenticated = await SecurityService.authenticateWithBiometrics(
-        reason: "Authenticate to enable Fingerprint / Face unlock ❤️",
+        reason: "Authenticate to enable Fingerprint / Face unlock",
       );
       if (authenticated) {
         await SecurityService.enableFingerprint(true);
         _loadAccountData();
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Biometric authentication failed"),
-            ),
+          AppFeedback.showError(
+            context,
+            "Biometric authentication failed",
           );
         }
       }

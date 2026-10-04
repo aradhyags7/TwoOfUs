@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 
 enum PasscodeMode { setup, unlock, change, disable }
 
@@ -52,7 +53,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
 
     if (bioEnabled && bioSupported) {
       final authenticated = await SecurityService.authenticateWithBiometrics(
-        reason: "Unlock TwoOfUs with Biometrics ❤️",
+        reason: "Unlock TwoOfUs with Biometrics",
       );
       if (authenticated && mounted) {
         _handleUnlockSuccess();
@@ -77,7 +78,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
       case PasscodeMode.setup:
         return step == 0 ? "Create Passcode" : "Confirm Passcode";
       case PasscodeMode.unlock:
-        return "Welcome Back ❤️";
+        return "Welcome Back";
       case PasscodeMode.change:
         if (step == 0) return "Current Passcode";
         if (step == 1) return "New Passcode";
@@ -321,9 +322,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
           if (code == tempPasscode) {
             await SecurityService.savePasscode(code);
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Passcode Created ❤️")),
-              );
+              AppFeedback.showSuccess(context, "Passcode created successfully");
               Navigator.pop(context, true);
             }
           } else {
@@ -370,9 +369,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
           if (code == tempPasscode) {
             await SecurityService.savePasscode(code);
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Passcode Changed ❤️")),
-              );
+              AppFeedback.showSuccess(context, "Passcode updated successfully");
               Navigator.pop(context, true);
             }
           } else {
@@ -390,9 +387,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
         if (isValid) {
           await SecurityService.deletePasscode();
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Passcode Removed")),
-            );
+            AppFeedback.showInfo(context, "Passcode removed");
             Navigator.pop(context, true);
           }
         } else {
