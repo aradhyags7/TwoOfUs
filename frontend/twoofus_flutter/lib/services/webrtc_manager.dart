@@ -518,6 +518,13 @@ class WebRTCManager {
       _peerConnection = null;
     }
 
+    try {
+      await Helper.setMicrophoneMuted(false);
+    } catch (_) {}
+    try {
+      await Helper.setSpeakerphoneOn(false);
+    } catch (_) {}
+
     connectionStateNotifier.value = RTCPeerConnectionState.RTCPeerConnectionStateClosed;
     iceConnectionStateNotifier.value = RTCIceConnectionState.RTCIceConnectionStateClosed;
   }

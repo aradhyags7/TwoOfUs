@@ -274,6 +274,12 @@ class CallService {
     // Cancel all notifications
     CallNotificationService.instance.cancelAll();
 
+    // Reset audio and video hardware notifiers
+    isMutedNotifier.value = false;
+    isSpeakerNotifier.value = true;
+    isVideoEnabledNotifier.value = false;
+    isFrontCameraNotifier.value = true;
+
     // Send real-time termination signal
     CallSignalingClient.instance.sendEnd(callId: callId, reason: reason);
 
