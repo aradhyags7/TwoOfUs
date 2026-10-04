@@ -3,6 +3,7 @@ import '../services/api_service.dart';
 import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 import '../widgets/passcode_lock_button.dart';
 import 'passcode_setup_screen.dart';
 import 'two_factor_setup_screen.dart';
@@ -242,27 +243,13 @@ class _SecurityScreenState extends State<SecurityScreen> {
                       if (!mounted) return;
                       if (res != null && !res.containsKey("error")) {
                         if (dlgCtx.mounted) Navigator.pop(dlgCtx);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Two-Factor Authentication disabled."),
-                              backgroundColor: Color(0xFF200F35),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                          _loadSecuritySettings();
-                        }
+                        if (!mounted) return;
+                        AppFeedback.showSuccess(context, "Two-Factor Authentication disabled.");
+                        _loadSecuritySettings();
                       } else {
                         setDlgState(() => isDisabling = false);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(res?["error"] ?? "Invalid password."),
-                              backgroundColor: Colors.redAccent.shade700,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
+                        if (!mounted) return;
+                        AppFeedback.showError(context, res?["error"] ?? "Invalid password.");
                       }
                     },
               style: ElevatedButton.styleFrom(
@@ -374,19 +361,17 @@ class _SecurityScreenState extends State<SecurityScreen> {
 
   void _onTapFingerprintTile() async {
     if (!passcodeEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please enable a Local Passcode first ❤️"),
-        ),
+      AppFeedback.showInfo(
+        context,
+        "Please enable a local passcode first",
       );
       return;
     }
 
     if (!biometricsSupported) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Biometric authentication is not supported on this device"),
-        ),
+      AppFeedback.showInfo(
+        context,
+        "Biometric authentication is not supported on this device",
       );
       return;
     }
@@ -396,17 +381,16 @@ class _SecurityScreenState extends State<SecurityScreen> {
       _loadSecuritySettings();
     } else {
       final authenticated = await SecurityService.authenticateWithBiometrics(
-        reason: "Authenticate to enable Fingerprint / Face unlock ❤️",
+        reason: "Authenticate to enable Fingerprint / Face unlock",
       );
       if (authenticated) {
         await SecurityService.enableFingerprint(true);
         _loadSecuritySettings();
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Biometric authentication failed"),
-            ),
+          AppFeedback.showError(
+            context,
+            "Biometric authentication failed",
           );
         }
       }
@@ -532,7 +516,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 const Text(
-                  "Protect your private memories ❤️",
+                  "Protect your private space & memories",
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 15,
