@@ -4,14 +4,20 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
+import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
 import '../utils/session.dart';
+import '../widgets/encryption_verification_modal.dart';
 import '../widgets/passcode_lock_button.dart';
+import 'partner_profile_screen.dart';
+import 'passcode_setup_screen.dart';
+import 'theme_selection_screen.dart';
+import 'two_factor_setup_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TwoOfUs — ProfileScreen
+// TwoOfUs — Professional ProfileScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ProfileScreen extends StatefulWidget {
@@ -23,29 +29,44 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   // ── Controllers ────────────────────────────────────────────────────────────
-  final _usernameCtrl  = TextEditingController();
-  final _bioCtrl       = TextEditingController();
-  final _birthdayCtrl  = TextEditingController();
+  final _usernameCtrl = TextEditingController();
+  final _bioCtrl = TextEditingController();
+  final _birthdayCtrl = TextEditingController();
 
-  // ── Focus nodes ────────────────────────────────────────────────────────────
+  // ── Focus Nodes ────────────────────────────────────────────────────────────
   final _usernameFocus = FocusNode();
-  final _bioFocus      = FocusNode();
+  final _bioFocus = FocusNode();
+
+  // ── Initial Snapshot (for change tracking) ─────────────────────────────────
+  String _initialUsername = "";
+  String _initialBio = "";
+  String _initialBirthday = "";
 
   // ── State ──────────────────────────────────────────────────────────────────
-  int?    _userId;
+  int? _userId;
+  String? _userEmail;
   String? _avatarUrl;
-  File?   _localAvatarFile;
-  bool    _uploadingAvatar = false;
-  bool    _loading = true;
-  bool    _saving  = false;
-  int     _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
+  File? _localAvatarFile;
+  bool _uploadingAvatar = false;
+  bool _loading = true;
+  bool _saving = false;
+  int _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
 
-  // ── Palette ────────────────────────────────────────────────────────────────
-  Color get _bg       => ThemeController.currentTheme.value.bg;
-  Color get _surface  => ThemeController.currentTheme.value.surface;
-  Color get _rose     => ThemeController.currentTheme.value.primary;
-  Color get _violet   => ThemeController.currentTheme.value.secondary;
+  int? _partnerId;
+  String? _partnerName;
+  bool _hasPasscode = false;
+
+  // ── Palette (Reacts to Active Theme) ───────────────────────────────────────
+  Color get _bg => ThemeController.currentTheme.value.bg;
+  Color get _surface => ThemeController.currentTheme.value.surface;
+  Color get _rose => ThemeController.currentTheme.value.primary;
+  Color get _violet => ThemeController.currentTheme.value.secondary;
   Color get _lavender => ThemeController.currentTheme.value.gradientEnd;
+
+  bool get _hasChanges =>
+      _usernameCtrl.text.trim() != _initialUsername ||
+      _bioCtrl.text.trim() != _initialBio ||
+      _birthdayCtrl.text != _initialBirthday;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
@@ -57,8 +78,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     _usernameCtrl.addListener(() => setState(() {}));
     _bioCtrl.addListener(() => setState(() {}));
+    _birthdayCtrl.addListener(() => setState(() {}));
 
-    _loadProfile();
+    _loadProfileData();
   }
 
   @override
@@ -71,9 +93,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  // ── Data ───────────────────────────────────────────────────────────────────
-  Future<void> _loadProfile() async {
+  // ── Data Loading ───────────────────────────────────────────────────────────
+  Future<void> _loadProfileData() async {
     _userId = await Session.getUserId();
+    _userEmail = await Session.getEmail();
+    _partnerId = await Session.getCachedPartnerId();
+    _partnerName = await Session.getCachedPartnerName();
+    _hasPasscode = await SecurityService.hasPasscode();
 
     if (_userId == null) {
       if (mounted) setState(() => _loading = false);
@@ -85,15 +111,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     if (profile != null) {
-      _usernameCtrl.text = profile["username"] ?? "";
-      _bioCtrl.text      = profile["bio"]      ?? "";
-      _birthdayCtrl.text = profile["birthday"] ?? "";
-      _avatarUrl         = profile["avatar_url"];
+      _initialUsername = profile["username"] ?? "";
+      _initialBio = profile["bio"] ?? "";
+      _initialBirthday = profile["birthday"] ?? "";
+      _avatarUrl = profile["avatar_url"];
+
+      _usernameCtrl.text = _initialUsername;
+      _bioCtrl.text = _initialBio;
+      _birthdayCtrl.text = _initialBirthday;
+      if (profile["email"] != null && (profile["email"] as String).isNotEmpty) {
+        _userEmail = profile["email"];
+      }
     }
 
     setState(() => _loading = false);
   }
 
+  // ── Avatar Handling ────────────────────────────────────────────────────────
   Future<void> _pickAndUploadAvatar(ImageSource source) async {
     HapticFeedback.lightImpact();
     Navigator.pop(context);
@@ -124,19 +158,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
               _uploadingAvatar = false;
             });
-            _showSnack("Profile picture updated");
+            AppFeedback.showSuccess(context, "Profile picture updated successfully.", title: "Photo Updated");
           }
         } else {
           if (mounted) {
             setState(() => _uploadingAvatar = false);
-            _showSnack("Failed to save picture to server", isError: true);
+            AppFeedback.showError(context, "Failed to upload avatar to server.", title: "Upload Failed");
           }
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _uploadingAvatar = false);
-        _showSnack("Error selecting photo: $e", isError: true);
+        AppFeedback.showError(context, "Error selecting photo: $e", title: "Photo Error");
       }
     }
   }
@@ -156,9 +190,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle bar
             Container(
-              width: 40,
+              width: 36,
               height: 4,
               decoration: BoxDecoration(
                 color: Colors.white24,
@@ -166,26 +199,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 18),
-
-            ShaderMask(
-              shaderCallback: (b) => LinearGradient(
-                colors: [_rose, _lavender],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ).createShader(b),
-              blendMode: BlendMode.srcIn,
-              child: const Text(
-                "Change Profile Photo",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+            const Text(
+              "Profile Photo",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
-            const SizedBox(height: 20),
-
-            // Take Photo Tile
+            const SizedBox(height: 18),
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(10),
@@ -193,22 +215,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: _rose.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.camera_alt_rounded, color: _rose, size: 22),
+                child: Icon(Icons.camera_alt_rounded, color: _rose, size: 20),
               ),
               title: const Text(
                 "Take Photo",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
               ),
-              subtitle: Text(
-                "Use camera to capture new picture",
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+              subtitle: const Text(
+                "Use device camera",
+                style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               onTap: () => _pickAndUploadAvatar(ImageSource.camera),
             ),
-            const SizedBox(height: 8),
-
-            // Choose from Gallery Tile
+            const SizedBox(height: 6),
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(10),
@@ -216,15 +236,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: _violet.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.photo_library_rounded, color: _violet, size: 22),
+                child: Icon(Icons.photo_library_rounded, color: _violet, size: 20),
               ),
               title: const Text(
                 "Choose from Gallery",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
               ),
-              subtitle: Text(
-                "Select existing photo from device",
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+              subtitle: const Text(
+                "Select existing photo",
+                style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               onTap: () => _pickAndUploadAvatar(ImageSource.gallery),
@@ -235,36 +255,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showSnack(String message, {bool isError = false}) {
-    if (isError) {
-      AppFeedback.showError(context, message);
-    } else {
-      AppFeedback.showSuccess(context, message);
-    }
-  }
-
+  // ── Save Profile ───────────────────────────────────────────────────────────
   Future<void> _saveProfile() async {
-    if (_userId == null) return;
-    HapticFeedback.lightImpact();
+    if (_userId == null || _saving) return;
+    HapticFeedback.mediumImpact();
+
+    final newUsername = _usernameCtrl.text.trim();
+    if (newUsername.isEmpty) {
+      AppFeedback.showError(context, "Username cannot be empty.", title: "Validation Error");
+      return;
+    }
 
     setState(() => _saving = true);
 
     final success = await ApiService.updateProfile(
       _userId!,
-      _usernameCtrl.text.trim(),
+      newUsername,
       _bioCtrl.text.trim(),
       _birthdayCtrl.text.trim(),
     );
 
     if (!mounted) return;
 
-    setState(() => _saving = false);
-    _showSnack(success ? "Profile updated" : "Update failed — try again", isError: !success);
+    if (success) {
+      _initialUsername = newUsername;
+      _initialBio = _bioCtrl.text.trim();
+      _initialBirthday = _birthdayCtrl.text.trim();
+
+      // Propagate locally across the app session
+      final token = await Session.getToken();
+      if (token != null) {
+        await Session.saveLogin(
+          token: token,
+          userId: _userId!,
+          username: newUsername,
+          email: _userEmail ?? "",
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => _saving = false);
+      AppFeedback.showSuccess(context, "Profile changes saved successfully.", title: "Saved");
+    } else {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      AppFeedback.showError(context, "Failed to save profile. Please try again.", title: "Save Failed");
+    }
+  }
+
+  void _discardChanges() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _usernameCtrl.text = _initialUsername;
+      _bioCtrl.text = _initialBio;
+      _birthdayCtrl.text = _initialBirthday;
+    });
+    AppFeedback.showInfo(context, "Unsaved changes discarded.");
   }
 
   Future<void> _pickBirthday() async {
     HapticFeedback.selectionClick();
-    DateTime initial = DateTime(2000);
+    DateTime initial = DateTime(2000, 1, 1);
     if (_birthdayCtrl.text.isNotEmpty) {
       try {
         initial = DateTime.parse(_birthdayCtrl.text);
@@ -274,7 +325,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime(1950),
+      firstDate: DateTime(1940),
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
         data: ThemeData.dark().copyWith(
@@ -301,14 +352,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  String _formatBirthday(String raw) {
-    if (raw.isEmpty) return "Not set";
+  String _formatBirthdayDisplay(String raw) {
+    if (raw.trim().isEmpty) return "Not specified";
     try {
       final dt = DateTime.parse(raw);
-      const m = ['Jan','Feb','Mar','Apr','May','Jun',
-                  'Jul','Aug','Sep','Oct','Nov','Dec'];
-      return '${m[dt.month - 1]} ${dt.day}';
+      const months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      final now = DateTime.now();
+      var age = now.year - dt.year;
+      if (now.month < dt.month || (now.month == dt.month && now.day < dt.day)) {
+        age--;
+      }
+      return "${months[dt.month - 1]} ${dt.day}, ${dt.year} ($age yrs)";
     } catch (_) {
       return raw;
     }
@@ -329,126 +386,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           initial,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 48,
-            fontWeight: FontWeight.w700,
+            fontSize: 44,
+            fontWeight: FontWeight.bold,
           ),
         ),
       ),
     );
   }
 
-  // ── Widgets ────────────────────────────────────────────────────────────────
-  Widget _buildField({
-    required TextEditingController controller,
-    required FocusNode? focusNode,
-    required String hint,
-    required IconData icon,
-    int maxLines = 1,
-    bool readOnly = false,
-    VoidCallback? onTap,
-  }) {
-    final focused = focusNode?.hasFocus ?? false;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: _surface,
-        border: Border.all(
-          color: focused ? _rose.withValues(alpha: 0.8) : Colors.white.withValues(alpha: 0.07),
-          width: focused ? 1.5 : 1,
-        ),
-        boxShadow: focused
-            ? [
-                BoxShadow(
-                  color: _rose.withValues(alpha: 0.12),
-                  blurRadius: 14,
-                  spreadRadius: 1,
-                )
-              ]
-            : [],
-      ),
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        maxLines: maxLines,
-        readOnly: readOnly,
-        onTap: onTap,
-        style: const TextStyle(color: Colors.white, fontSize: 15),
-        cursorColor: _rose,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(
-            color: Colors.white.withValues(alpha: 0.28),
-            fontSize: 15,
-          ),
-          prefixIcon: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: Icon(
-              icon,
-              key: ValueKey(focused),
-              color: focused ? _rose : Colors.white.withValues(alpha: 0.28),
-              size: 20,
-            ),
-          ),
-          suffixIcon: readOnly
-              ? Icon(Icons.edit_calendar_rounded,
-                  color: Colors.white.withValues(alpha: 0.28), size: 18)
-              : null,
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(
-            vertical: maxLines > 1 ? 14 : 18,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCard({required Widget child, EdgeInsets? padding}) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: double.infinity,
-      padding: padding ?? const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _stat(String emoji, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 26)),
-          const SizedBox(height: 7),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.65),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statDivider() => Container(
-        width: 1,
-        height: 40,
-        color: Colors.white.withValues(alpha: 0.08),
-      );
-
-  // ── Build ──────────────────────────────────────────────────────────────────
+  // ── Build Main ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final initial = _usernameCtrl.text.isNotEmpty
@@ -462,351 +408,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
           backgroundColor: activeTheme.bg,
           body: Stack(
             children: [
-              // ── Ambient corner glows ─────────────────────────────────────────
+              // Ambient soft gradient orbs
               Positioned(
-                top: -80, right: -60,
-                child: _Glow(color: _violet.withValues(alpha: 0.12), size: 320),
+                top: -80,
+                right: -60,
+                child: _Glow(color: _violet.withValues(alpha: 0.15), size: 300),
               ),
               Positioned(
-                bottom: -100, left: -80,
-                child: _Glow(color: _rose.withValues(alpha: 0.10), size: 360),
+                bottom: 80,
+                left: -60,
+                child: _Glow(color: _rose.withValues(alpha: 0.12), size: 320),
               ),
 
               SafeArea(
                 child: Column(
                   children: [
-                    // ── App bar ─────────────────────────────────────────────────
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 10, 20, 0),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                          const SizedBox(width: 2),
-                          ShaderMask(
-                            shaderCallback: (b) => LinearGradient(
-                              colors: [_rose, _lavender],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ).createShader(b),
-                            blendMode: BlendMode.srcIn,
-                            child: const Text(
-                              "My Profile",
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          const PasscodeLockButton(),
-                        ],
-                      ),
-                    ),
+                    // ── Professional Top Navigation Bar ──────────────────────
+                    _buildTopAppBar(),
 
-                    // ── Body ────────────────────────────────────────────────────
+                    // ── Scrollable Body Content ──────────────────────────────
                     Expanded(
                       child: _loading
                           ? Center(child: CircularProgressIndicator(color: _rose))
                           : SingleChildScrollView(
-                              padding: const EdgeInsets.fromLTRB(24, 28, 24, 40),
+                              padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
                               child: Column(
                                 children: [
-                                  // ── Avatar with Interactive Picture Button ──
-                                  GestureDetector(
-                                    onTap: _showAvatarOptionsSheet,
-                                    child: Stack(
-                                      clipBehavior: Clip.none,
-                                      alignment: Alignment.bottomRight,
-                                      children: [
-                                        Container(
-                                          width: 120,
-                                          height: 120,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: _rose.withValues(alpha: 0.35),
-                                                blurRadius: 28,
-                                                spreadRadius: 2,
-                                              ),
-                                            ],
-                                          ),
-                                          child: ClipOval(
-                                            child: Stack(
-                                              fit: StackFit.expand,
-                                              children: [
-                                                if (_localAvatarFile != null)
-                                                  Image.file(
-                                                    _localAvatarFile!,
-                                                    fit: BoxFit.cover,
-                                                  )
-                                                else if (_avatarUrl != null && _avatarUrl!.isNotEmpty)
-                                                  Image.network(
-                                                    _avatarUrl!.startsWith('http')
-                                                        ? "${_avatarUrl!}?v=$_avatarCacheKey"
-                                                        : "${ApiService.baseUrl}/${_avatarUrl!.startsWith('/') ? _avatarUrl!.substring(1) : _avatarUrl!}?v=$_avatarCacheKey",
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, __, ___) => _avatarFallback(initial),
-                                                  )
-                                                else
-                                                  _avatarFallback(initial),
-
-                                                if (_uploadingAvatar)
-                                                  Container(
-                                                    color: Colors.black54,
-                                                    child: const Center(
-                                                      child: CircularProgressIndicator(
-                                                        color: Colors.white,
-                                                        strokeWidth: 2.5,
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-
-                                        // Camera Badge Picture Button
-                                        Positioned(
-                                          bottom: 0,
-                                          right: 0,
-                                          child: Container(
-                                            width: 38,
-                                            height: 38,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              gradient: LinearGradient(
-                                                colors: [_rose, _violet],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
-                                              ),
-                                              border: Border.all(
-                                                color: _bg,
-                                                width: 3.0,
-                                              ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: _rose.withValues(alpha: 0.4),
-                                                  blurRadius: 10,
-                                                  offset: const Offset(0, 3),
-                                                ),
-                                              ],
-                                            ),
-                                            child: const Icon(
-                                              Icons.camera_alt_rounded,
-                                              color: Colors.white,
-                                              size: 18,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 18),
-
-                                  // Live display name
-                                  ShaderMask(
-                                    shaderCallback: (b) => LinearGradient(
-                                      colors: [_rose, _lavender],
-                                      begin: Alignment.centerLeft,
-                                      end: Alignment.centerRight,
-                                    ).createShader(b),
-                                    blendMode: BlendMode.srcIn,
-                                    child: Text(
-                                      _usernameCtrl.text.isEmpty
-                                          ? "Your Name"
-                                          : _usernameCtrl.text,
-                                      style: const TextStyle(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.white,
-                                        letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 4),
-
-                                  Text(
-                                    "@${_usernameCtrl.text.isEmpty ? "username" : _usernameCtrl.text}",
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.38),
-                                      fontSize: 14,
-                                    ),
-                                  ),
-
+                                  // ── Hero Profile Card ──────────────────────
+                                  _buildHeroHeader(initial),
                                   const SizedBox(height: 24),
 
-                                  // ── About Me card ────────────────────────────
-                                  _buildCard(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            ShaderMask(
-                                              shaderCallback: (b) => LinearGradient(
-                                                colors: [_rose, _violet],
-                                              ).createShader(b),
-                                              blendMode: BlendMode.srcIn,
-                                              child: const Icon(
-                                                Icons.favorite_rounded,
-                                                size: 15,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            const Text(
-                                              "About Me",
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          _bioCtrl.text.isEmpty
-                                              ? "Tell your partner about yourself…"
-                                              : _bioCtrl.text,
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: _bioCtrl.text.isEmpty ? 0.28 : 0.65,
-                                            ),
-                                            fontSize: 14,
-                                            height: 1.55,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 14),
-
-                                  // ── Stats row ────────────────────────────────
-                                  _buildCard(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 16),
-                                    child: Row(
-                                      children: [
-                                        _stat("✨", "Connected"),
-                                        _statDivider(),
-                                        _stat(
-                                          "🎂",
-                                          _birthdayCtrl.text.isEmpty
-                                              ? "Birthday"
-                                              : _formatBirthday(_birthdayCtrl.text),
-                                        ),
-                                        _statDivider(),
-                                        _stat("📅", "Memories"),
-                                      ],
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 28),
-
-                                  // ── Edit fields ──────────────────────────────
-                                  // Username
-                                  _buildField(
-                                    controller: _usernameCtrl,
-                                    focusNode: _usernameFocus,
-                                    hint: "Username",
+                                  // ── Section 1: Profile Details ─────────────
+                                  _buildSectionHeader(
+                                    title: "PROFILE DETAILS",
                                     icon: Icons.person_outline_rounded,
                                   ),
+                                  const SizedBox(height: 10),
+                                  _buildPersonalDetailsGroup(),
+                                  const SizedBox(height: 24),
 
-                                  const SizedBox(height: 14),
-
-                                  // Bio (multiline)
-                                  _buildField(
-                                    controller: _bioCtrl,
-                                    focusNode: _bioFocus,
-                                    hint: "Tell your partner about yourself…",
-                                    icon: Icons.edit_outlined,
-                                    maxLines: 4,
+                                  // ── Section 2: Relationship & Security ──────
+                                  _buildSectionHeader(
+                                    title: "RELATIONSHIP & PRIVACY",
+                                    icon: Icons.shield_outlined,
                                   ),
+                                  const SizedBox(height: 10),
+                                  _buildRelationshipAndSecurityGroup(),
+                                  const SizedBox(height: 24),
 
-                                  const SizedBox(height: 14),
-
-                                  // Birthday — read-only, opens date picker
-                                  _buildField(
-                                    controller: _birthdayCtrl,
-                                    focusNode: null,
-                                    hint: "Birthday",
-                                    icon: Icons.cake_outlined,
-                                    readOnly: true,
-                                    onTap: _pickBirthday,
+                                  // ── Section 3: App Preferences ─────────────
+                                  _buildSectionHeader(
+                                    title: "PREFERENCES",
+                                    icon: Icons.tune_rounded,
                                   ),
-
-                                  const SizedBox(height: 32),
-
-                                  // ── Save button ──────────────────────────────
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: 56,
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        gradient: _saving
-                                            ? null
-                                            : LinearGradient(
-                                                colors: [_rose, _violet],
-                                                begin: Alignment.centerLeft,
-                                                end: Alignment.centerRight,
-                                              ),
-                                        color: _saving ? _surface : null,
-                                        borderRadius: BorderRadius.circular(16),
-                                        boxShadow: _saving
-                                            ? []
-                                            : [
-                                                BoxShadow(
-                                                  color: _rose.withValues(alpha: 0.38),
-                                                  blurRadius: 22,
-                                                  offset: const Offset(0, 7),
-                                                ),
-                                              ],
-                                      ),
-                                      child: ElevatedButton(
-                                        onPressed: _saving ? null : _saveProfile,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.transparent,
-                                          shadowColor: Colors.transparent,
-                                          disabledBackgroundColor: Colors.transparent,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(16),
-                                          ),
-                                        ),
-                                        child: _saving
-                                            ? const SizedBox(
-                                                width: 22,
-                                                height: 22,
-                                                child: CircularProgressIndicator(
-                                                  color: Colors.white,
-                                                  strokeWidth: 2,
-                                                ),
-                                              )
-                                            : const Text(
-                                                "Save Changes",
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 17,
-                                                  letterSpacing: 0.3,
-                                                ),
-                                              ),
-                                      ),
-                                    ),
-                                  ),
+                                  const SizedBox(height: 10),
+                                  _buildPreferencesGroup(),
                                 ],
                               ),
                             ),
@@ -814,15 +470,902 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
               ),
+
+              // ── Floating Action Save Bar (Appears on Edit) ─────────────────
+              if (_hasChanges && !_loading)
+                Positioned(
+                  bottom: 24,
+                  left: 20,
+                  right: 20,
+                  child: _buildFloatingSaveDock(),
+                ),
             ],
           ),
         );
       },
     );
   }
+
+  // ── Top Navigation Bar ─────────────────────────────────────────────────────
+  Widget _buildTopAppBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          // Back Button
+          InkWell(
+            onTap: () => Navigator.pop(context),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _surface.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Text(
+            "My Profile",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const Spacer(),
+          // Quick Save in header if changes exist
+          if (_hasChanges)
+            TextButton(
+              onPressed: _saving ? null : _saveProfile,
+              style: TextButton.styleFrom(
+                backgroundColor: _rose.withValues(alpha: 0.2),
+                foregroundColor: _rose,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
+              child: _saving
+                  ? SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: _rose),
+                    )
+                  : const Text("Save", style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          const SizedBox(width: 6),
+          const PasscodeLockButton(),
+        ],
+      ),
+    );
+  }
+
+  // ── Hero Profile Header ────────────────────────────────────────────────────
+  Widget _buildHeroHeader(String initial) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+      decoration: BoxDecoration(
+        color: _surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Avatar with Edit Button
+          GestureDetector(
+            onTap: _showAvatarOptionsSheet,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.bottomRight,
+              children: [
+                Container(
+                  width: 104,
+                  height: 104,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _rose.withValues(alpha: 0.3),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (_localAvatarFile != null)
+                          Image.file(
+                            _localAvatarFile!,
+                            fit: BoxFit.cover,
+                          )
+                        else if (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                          Image.network(
+                            _avatarUrl!.startsWith('http')
+                                ? "${_avatarUrl!}?v=$_avatarCacheKey"
+                                : "${ApiService.baseUrl}/${_avatarUrl!.startsWith('/') ? _avatarUrl!.substring(1) : _avatarUrl!}?v=$_avatarCacheKey",
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => _avatarFallback(initial),
+                          )
+                        else
+                          _avatarFallback(initial),
+
+                        if (_uploadingAvatar)
+                          Container(
+                            color: Colors.black54,
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Camera Action Pill
+                Positioned(
+                  bottom: -2,
+                  right: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [_rose, _violet],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      border: Border.all(color: _bg, width: 2.5),
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      color: Colors.white,
+                      size: 15,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // User Display Name
+          Text(
+            _usernameCtrl.text.isEmpty ? "Your Name" : _usernameCtrl.text,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+
+          // Copyable Username / ID Tag
+          GestureDetector(
+            onTap: () {
+              final idStr = _userId != null ? "#$_userId" : "@${_usernameCtrl.text}";
+              Clipboard.setData(ClipboardData(text: idStr));
+              HapticFeedback.lightImpact();
+              AppFeedback.showSuccess(context, "Copied $idStr to clipboard", title: "Copied");
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "@${_usernameCtrl.text.isEmpty ? "username" : _usernameCtrl.text}",
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (_userId != null) ...[
+                    Text(
+                      "  •  ID #$_userId",
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 5),
+                  Icon(
+                    Icons.copy_rounded,
+                    color: Colors.white.withValues(alpha: 0.4),
+                    size: 11,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Relationship Connection Status Pill
+          GestureDetector(
+            onTap: () {
+              if (_partnerId != null && _partnerName != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PartnerProfileScreen(
+                      partnerId: _partnerId!,
+                      partnerName: _partnerName!,
+                    ),
+                  ),
+                );
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _partnerId != null
+                    ? Colors.greenAccent.withValues(alpha: 0.12)
+                    : Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _partnerId != null
+                      ? Colors.greenAccent.withValues(alpha: 0.3)
+                      : Colors.white.withValues(alpha: 0.1),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _partnerId != null ? Colors.greenAccent : Colors.white38,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _partnerId != null
+                        ? "Coupled with $_partnerName  •  E2EE Active"
+                        : "Solo Channel  •  Pair with Partner",
+                    style: TextStyle(
+                      color: _partnerId != null ? Colors.greenAccent : Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (_partnerId != null) ...[
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Colors.greenAccent,
+                      size: 14,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Section 1: Personal Details Group ──────────────────────────────────────
+  Widget _buildPersonalDetailsGroup() {
+    final isUsernameFocused = _usernameFocus.hasFocus;
+    final isBioFocused = _bioFocus.hasFocus;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _surface.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        children: [
+          // Display Name
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isUsernameFocused ? _rose.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.badge_outlined,
+                    color: isUsernameFocused ? _rose : Colors.white60,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Display Name",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      TextField(
+                        controller: _usernameCtrl,
+                        focusNode: _usernameFocus,
+                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
+                        cursorColor: _rose,
+                        decoration: InputDecoration(
+                          hintText: "Enter your display name",
+                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 15),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _divider(),
+
+          // About You (Bio)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: isBioFocused ? _violet.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.edit_note_rounded,
+                    color: isBioFocused ? _violet : Colors.white60,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "About You",
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            "${_bioCtrl.text.length}/160",
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.35),
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                      TextField(
+                        controller: _bioCtrl,
+                        focusNode: _bioFocus,
+                        maxLength: 160,
+                        maxLines: 3,
+                        minLines: 1,
+                        style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                        cursorColor: _violet,
+                        decoration: InputDecoration(
+                          hintText: "Write a short bio, quote, or note for your partner…",
+                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 13),
+                          isDense: true,
+                          counterText: "",
+                          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _divider(),
+
+          // Birthday Tile
+          InkWell(
+            onTap: _pickBirthday,
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.cake_outlined, color: Colors.amber, size: 18),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Birthday",
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.45),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _formatBirthdayDisplay(_birthdayCtrl.text),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.edit_calendar_rounded,
+                    color: Colors.white.withValues(alpha: 0.35),
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _divider(),
+
+          // Account Email Tile (Read Only)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.alternate_email_rounded, color: Colors.blueAccent, size: 18),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Registered Email",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _userEmail ?? "Not available",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.greenAccent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    "Verified",
+                    style: TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Section 2: Relationship & Security Group ───────────────────────────────
+  Widget _buildRelationshipAndSecurityGroup() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _surface.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        children: [
+          // Partner Profile Tile
+          if (_partnerId != null && _partnerName != null) ...[
+            _buildNavigationTile(
+              icon: Icons.favorite_rounded,
+              iconColor: _rose,
+              title: "$_partnerName's Profile",
+              subtitle: "View partner details, shared media & memories",
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PartnerProfileScreen(
+                      partnerId: _partnerId!,
+                      partnerName: _partnerName!,
+                    ),
+                  ),
+                );
+              },
+            ),
+            _divider(),
+          ],
+
+          // End-to-End Encryption
+          _buildNavigationTile(
+            icon: Icons.lock_rounded,
+            iconColor: Colors.greenAccent,
+            title: "End-to-End Encryption (E2EE)",
+            subtitle: "DTLS-SRTP & Double Ratchet safety code",
+            onTap: () {
+              if (_partnerId != null && _partnerName != null) {
+                EncryptionVerificationModal.show(
+                  context,
+                  partnerId: _partnerId!,
+                  partnerName: _partnerName!,
+                );
+              } else {
+                AppFeedback.showInfo(context, "Pair with a partner first to view your E2EE safety code.");
+              }
+            },
+          ),
+          _divider(),
+
+          // Two-Factor Authentication (2FA)
+          _buildNavigationTile(
+            icon: Icons.security_rounded,
+            iconColor: const Color(0xFF00E5FF),
+            title: "Two-Factor Authentication",
+            subtitle: "Authenticator app (TOTP) & backup security codes",
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TwoFactorSetupScreen()),
+              );
+            },
+          ),
+          _divider(),
+
+          // Passcode & Biometrics
+          _buildNavigationTile(
+            icon: Icons.fingerprint_rounded,
+            iconColor: _violet,
+            title: "App Lock & Biometrics",
+            subtitle: _hasPasscode ? "Passcode lock is active" : "Protect app with PIN or fingerprint",
+            trailingText: _hasPasscode ? "Active" : "Set up",
+            trailingTextColor: _hasPasscode ? Colors.greenAccent : _rose,
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PasscodeSetupScreen(
+                    mode: _hasPasscode ? PasscodeMode.change : PasscodeMode.setup,
+                  ),
+                ),
+              );
+              final updated = await SecurityService.hasPasscode();
+              if (mounted) setState(() => _hasPasscode = updated);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Section 3: Preferences Group ───────────────────────────────────────────
+  Widget _buildPreferencesGroup() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _surface.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        children: [
+          // Theme & Appearance
+          _buildNavigationTile(
+            icon: Icons.palette_outlined,
+            iconColor: _lavender,
+            title: "Theme & Palette",
+            subtitle: "Personalize your couples space",
+            trailingText: ThemeController.currentTheme.value.name,
+            trailingTextColor: _rose,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ThemeSelectionScreen()),
+              );
+            },
+          ),
+          _divider(),
+
+          // App Version & About
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.info_outline_rounded, color: Colors.white60, size: 18),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "TwoOfUs Private Space",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        "Version 1.0.0 (Build 43)  •  DTLS-SRTP E2EE",
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Floating Action Save Bar ───────────────────────────────────────────────
+  Widget _buildFloatingSaveDock() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B1626).withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _rose.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _rose,
+              boxShadow: [
+                BoxShadow(
+                  color: _rose.withValues(alpha: 0.8),
+                  blurRadius: 6,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              "Unsaved profile edits",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _discardChanges,
+            child: const Text(
+              "Discard",
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 6),
+          ElevatedButton(
+            onPressed: _saving ? null : _saveProfile,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _rose,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              elevation: 2,
+            ),
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                : const Text(
+                    "Save",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Helper Sub-Widgets ─────────────────────────────────────────────────────
+  Widget _buildSectionHeader({required String title, required IconData icon}) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: _rose.withValues(alpha: 0.8)),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavigationTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    String? trailingText,
+    Color? trailingTextColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 18),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailingText != null) ...[
+              Text(
+                trailingText,
+                style: TextStyle(
+                  color: trailingTextColor ?? Colors.white54,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.25),
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _divider() => Container(
+        height: 1,
+        color: Colors.white.withValues(alpha: 0.06),
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+      );
 }
 
-// ── Radial glow blob ──────────────────────────────────────────────────────────
+// ── Soft Ambient Radial Glow Orb ─────────────────────────────────────────────
 class _Glow extends StatelessWidget {
   final Color color;
   final double size;
