@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -52,16 +53,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showSnack(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? const Color(0xFF2A1040) : _rose,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
+    if (isError) {
+      AppFeedback.showError(context, message);
+    } else {
+      AppFeedback.showSuccess(context, message);
+    }
   }
 
   Future<void> register() async {
@@ -92,7 +88,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
 
       if (result != null && result.containsKey("user_id")) {
-        _showSnack("Your space is ready ❤️");
+        _showSnack("Account created successfully!");
         Navigator.pop(context);
       } else if (result != null && result.containsKey("error")) {
         _showSnack(result["error"].toString(), isError: true);
