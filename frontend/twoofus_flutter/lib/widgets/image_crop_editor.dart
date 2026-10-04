@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+import '../utils/app_feedback.dart';
 
 enum EditorTab {
   crop,
@@ -449,8 +450,10 @@ class _ImageCropEditorState extends State<ImageCropEditor> with SingleTickerProv
     } catch (e) {
       if (mounted) {
         setState(() => _isProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error saving edited image: $e")),
+        AppFeedback.showError(
+          context,
+          "Error saving edited image: $e",
+          title: "Image Edit Failed",
         );
       }
     }
