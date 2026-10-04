@@ -56,6 +56,41 @@ class WebRTCManager {
     _pendingIceCandidates.clear();
     _hasRemoteDescription = false;
 
+    // 0. Configure native platform audio session for voice/video communication
+    if (WebRTC.platformIsAndroid) {
+      try {
+        await Helper.setAndroidAudioConfiguration(
+          AndroidAudioConfiguration(
+            manageAudioFocus: true,
+            androidAudioMode: AndroidAudioMode.inCommunication,
+            androidAudioFocusMode: AndroidAudioFocusMode.gain,
+            androidAudioStreamType: AndroidAudioStreamType.voiceCall,
+            androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
+            androidAudioAttributesContentType: AndroidAudioAttributesContentType.speech,
+          ),
+        );
+      } catch (e) {
+        if (kDebugMode) print("[WebRTCManager] Failed setting Android audio configuration: $e");
+      }
+    } else if (WebRTC.platformIsIOS) {
+      try {
+        await Helper.setAppleAudioConfiguration(
+          AppleAudioConfiguration(
+            appleAudioCategory: AppleAudioCategory.playAndRecord,
+            appleAudioCategoryOptions: {
+              AppleAudioCategoryOption.defaultToSpeaker,
+              AppleAudioCategoryOption.allowBluetooth,
+              AppleAudioCategoryOption.allowBluetoothA2DP,
+            },
+            appleAudioMode: AppleAudioMode.voiceChat,
+          ),
+        );
+        await Helper.ensureAudioSession();
+      } catch (e) {
+        if (kDebugMode) print("[WebRTCManager] Failed setting Apple audio configuration: $e");
+      }
+    }
+
     // 1. Fetch dynamic STUN & TURN credentials from backend
     final turnData = await ApiService.getTurnCredentials();
     final iceServers = <Map<String, dynamic>>[
