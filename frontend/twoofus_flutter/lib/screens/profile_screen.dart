@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 import '../utils/session.dart';
 import '../widgets/passcode_lock_button.dart';
 
@@ -123,7 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
               _uploadingAvatar = false;
             });
-            _showSnack("Profile picture updated ❤️");
+            _showSnack("Profile picture updated");
           }
         } else {
           if (mounted) {
@@ -235,15 +236,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showSnack(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: const TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: isError ? const Color(0xFF3D0017) : _violet,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      ),
-    );
+    if (isError) {
+      AppFeedback.showError(context, message);
+    } else {
+      AppFeedback.showSuccess(context, message);
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -262,7 +259,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     setState(() => _saving = false);
-    _showSnack(success ? "Profile updated ❤️" : "Update failed — try again", isError: !success);
+    _showSnack(success ? "Profile updated" : "Update failed — try again", isError: !success);
   }
 
   Future<void> _pickBirthday() async {
@@ -704,7 +701,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         horizontal: 12, vertical: 16),
                                     child: Row(
                                       children: [
-                                        _stat("❤️", "Connected"),
+                                        _stat("✨", "Connected"),
                                         _statDivider(),
                                         _stat(
                                           "🎂",

@@ -5,6 +5,7 @@ import '../models/message.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 import '../utils/session.dart';
 import '../widgets/chat_media_bubble.dart';
 import '../widgets/encryption_verification_modal.dart';
@@ -157,16 +158,11 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
   }
 
   void _toast(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: isError ? const Color(0xFF3D0017) : _violet,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      ),
-    );
+    if (isError) {
+      AppFeedback.showError(context, msg);
+    } else {
+      AppFeedback.showSuccess(context, msg);
+    }
   }
 
   void _openMediaVaultFull() {
@@ -233,7 +229,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                     onPressed: () {
                       _fetchPartnerProfile();
                       _fetchMediaGallery();
-                      _toast("Refreshed partner info & media ❤️");
+                      _toast("Refreshed partner profile & media");
                     },
                   ),
                   IconButton(
@@ -492,7 +488,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                           icon: Icons.notes_rounded,
                           title: _loading
                               ? "Loading profile info..."
-                              : (bio.isNotEmpty ? bio : "No bio added yet ❤️"),
+                              : (bio.isNotEmpty ? bio : "No bio added yet"),
                           subtitle: "Bio",
                         ),
 
@@ -795,7 +791,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
     if (allVisualMedia.isEmpty) {
       return _emptyTabState(
         icon: Icons.photo_library_outlined,
-        message: "No shared photos or videos yet ❤️",
+        message: "No shared photos or videos yet",
       );
     }
 
@@ -1013,8 +1009,8 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
   Widget _buildMemoriesTab() {
     if (widget.memories.isEmpty) {
       return _emptyTabState(
-        icon: Icons.favorite_border_rounded,
-        message: "No special memories saved yet ❤️",
+        icon: Icons.auto_awesome_outlined,
+        message: "No special memories saved yet",
       );
     }
 
