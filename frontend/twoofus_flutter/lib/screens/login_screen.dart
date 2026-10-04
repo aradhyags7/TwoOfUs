@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../services/call_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 import '../utils/session.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
@@ -26,6 +27,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   bool obscurePassword = true;
   bool isLoading = false;
+  String? _errorMessage;
 
   // ── Palette ──────────────────────────────────────────────────────────────
   Color get _bg       => ThemeController.currentTheme.value.bg;
@@ -41,6 +43,14 @@ class _LoginScreenState extends State<LoginScreen>
 
     emailFocus.addListener(() => setState(() {}));
     passwordFocus.addListener(() => setState(() {}));
+    emailController.addListener(_onTextChanged);
+    passwordController.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (_errorMessage != null) {
+      setState(() => _errorMessage = null);
+    }
   }
 
   @override
@@ -306,24 +316,22 @@ class _LoginScreenState extends State<LoginScreen>
       } else {
         final errMsg = (result != null && result.containsKey("error"))
             ? result["error"].toString()
-            : "Hmm, those credentials don't match";
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errMsg),
-            backgroundColor: const Color(0xFF2A1040),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
+            : "Incorrect email or password";
+        setState(() => _errorMessage = errMsg);
+        AppFeedback.showError(
+          context,
+          errMsg,
+          title: "Sign In Failed",
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-        ),
+      final errMsg = "Cannot connect to server. Check your network or backend.";
+      setState(() => _errorMessage = errMsg);
+      AppFeedback.showError(
+        context,
+        errMsg,
+        title: "Connection Error",
       );
     }
     setState(() => isLoading = false);
@@ -421,11 +429,45 @@ class _LoginScreenState extends State<LoginScreen>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Pulsing gradient heart — the signature element
-                   const Icon(
-                    Icons.favorite_rounded,
-                    size: 68,
-                    color: Colors.pink,
+                    // Modern branded connection emblem
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            _rose.withValues(alpha: 0.25),
+                            _surface,
+                          ],
+                        ),
+                        border: Border.all(
+                          color: _rose.withValues(alpha: 0.35),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _rose.withValues(alpha: 0.18),
+                            blurRadius: 24,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: ShaderMask(
+                          shaderCallback: (bounds) => LinearGradient(
+                            colors: [_rose, _lavender],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ).createShader(bounds),
+                          blendMode: BlendMode.srcIn,
+                          child: const Icon(
+                            Icons.all_inclusive_rounded,
+                            size: 40,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 16),
@@ -521,6 +563,50 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                       ),
                     ),
+
+                    if (_errorMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF241018),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFFF4D4D).withValues(alpha: 0.35),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              color: Color(0xFFFF5252),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _errorMessage!,
+                                style: const TextStyle(
+                                  color: Color(0xFFFF8A80),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() => _errorMessage = null),
+                              child: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.white38,
+                                size: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 10),
 
