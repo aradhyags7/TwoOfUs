@@ -4,20 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
-import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
 import '../utils/session.dart';
-import '../widgets/encryption_verification_modal.dart';
-import '../widgets/passcode_lock_button.dart';
-import 'partner_profile_screen.dart';
-import 'passcode_setup_screen.dart';
-import 'theme_selection_screen.dart';
-import 'two_factor_setup_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TwoOfUs — Professional ProfileScreen
+// TwoOfUs — Focused & Professional Profile Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ProfileScreen extends StatefulWidget {
@@ -29,16 +22,16 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   // ── Controllers ────────────────────────────────────────────────────────────
-  final _usernameCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
   final _bioCtrl = TextEditingController();
   final _birthdayCtrl = TextEditingController();
 
   // ── Focus Nodes ────────────────────────────────────────────────────────────
-  final _usernameFocus = FocusNode();
+  final _nameFocus = FocusNode();
   final _bioFocus = FocusNode();
 
-  // ── Initial Snapshot (for change tracking) ─────────────────────────────────
-  String _initialUsername = "";
+  // ── Initial Snapshot (Tracks edits) ────────────────────────────────────────
+  String _initialName = "";
   String _initialBio = "";
   String _initialBirthday = "";
 
@@ -52,19 +45,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _saving = false;
   int _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
 
-  int? _partnerId;
-  String? _partnerName;
-  bool _hasPasscode = false;
-
-  // ── Palette (Reacts to Active Theme) ───────────────────────────────────────
+  // ── Theme Palette ──────────────────────────────────────────────────────────
   Color get _bg => ThemeController.currentTheme.value.bg;
   Color get _surface => ThemeController.currentTheme.value.surface;
   Color get _rose => ThemeController.currentTheme.value.primary;
   Color get _violet => ThemeController.currentTheme.value.secondary;
-  Color get _lavender => ThemeController.currentTheme.value.gradientEnd;
 
   bool get _hasChanges =>
-      _usernameCtrl.text.trim() != _initialUsername ||
+      _nameCtrl.text.trim() != _initialName ||
       _bioCtrl.text.trim() != _initialBio ||
       _birthdayCtrl.text != _initialBirthday;
 
@@ -73,10 +61,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
 
-    _usernameFocus.addListener(() => setState(() {}));
+    _nameFocus.addListener(() => setState(() {}));
     _bioFocus.addListener(() => setState(() {}));
 
-    _usernameCtrl.addListener(() => setState(() {}));
+    _nameCtrl.addListener(() => setState(() {}));
     _bioCtrl.addListener(() => setState(() {}));
     _birthdayCtrl.addListener(() => setState(() {}));
 
@@ -85,10 +73,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
-    _usernameCtrl.dispose();
+    _nameCtrl.dispose();
     _bioCtrl.dispose();
     _birthdayCtrl.dispose();
-    _usernameFocus.dispose();
+    _nameFocus.dispose();
     _bioFocus.dispose();
     super.dispose();
   }
@@ -97,9 +85,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfileData() async {
     _userId = await Session.getUserId();
     _userEmail = await Session.getEmail();
-    _partnerId = await Session.getCachedPartnerId();
-    _partnerName = await Session.getCachedPartnerName();
-    _hasPasscode = await SecurityService.hasPasscode();
 
     if (_userId == null) {
       if (mounted) setState(() => _loading = false);
@@ -111,12 +96,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     if (profile != null) {
-      _initialUsername = profile["username"] ?? "";
+      _initialName = profile["username"] ?? "";
       _initialBio = profile["bio"] ?? "";
       _initialBirthday = profile["birthday"] ?? "";
       _avatarUrl = profile["avatar_url"];
 
-      _usernameCtrl.text = _initialUsername;
+      _nameCtrl.text = _initialName;
       _bioCtrl.text = _initialBio;
       _birthdayCtrl.text = _initialBirthday;
       if (profile["email"] != null && (profile["email"] as String).isNotEmpty) {
@@ -127,7 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _loading = false);
   }
 
-  // ── Avatar Handling ────────────────────────────────────────────────────────
+  // ── Avatar Pick & Upload ───────────────────────────────────────────────────
   Future<void> _pickAndUploadAvatar(ImageSource source) async {
     HapticFeedback.lightImpact();
     Navigator.pop(context);
@@ -158,12 +143,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
               _uploadingAvatar = false;
             });
-            AppFeedback.showSuccess(context, "Profile picture updated successfully.", title: "Photo Updated");
+            AppFeedback.showSuccess(context, "Profile picture updated.", title: "Photo Updated");
           }
         } else {
           if (mounted) {
             setState(() => _uploadingAvatar = false);
-            AppFeedback.showError(context, "Failed to upload avatar to server.", title: "Upload Failed");
+            AppFeedback.showError(context, "Failed to upload photo to server.", title: "Upload Failed");
           }
         }
       }
@@ -186,7 +171,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -200,14 +185,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 18),
             const Text(
-              "Profile Photo",
+              "Change Profile Photo",
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 17,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(10),
@@ -243,7 +228,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
               ),
               subtitle: const Text(
-                "Select existing photo",
+                "Select existing picture",
                 style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -260,9 +245,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_userId == null || _saving) return;
     HapticFeedback.mediumImpact();
 
-    final newUsername = _usernameCtrl.text.trim();
-    if (newUsername.isEmpty) {
-      AppFeedback.showError(context, "Username cannot be empty.", title: "Validation Error");
+    final newName = _nameCtrl.text.trim();
+    if (newName.isEmpty) {
+      AppFeedback.showError(context, "Name cannot be empty.", title: "Validation Error");
       return;
     }
 
@@ -270,7 +255,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final success = await ApiService.updateProfile(
       _userId!,
-      newUsername,
+      newName,
       _bioCtrl.text.trim(),
       _birthdayCtrl.text.trim(),
     );
@@ -278,24 +263,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     if (success) {
-      _initialUsername = newUsername;
+      _initialName = newName;
       _initialBio = _bioCtrl.text.trim();
       _initialBirthday = _birthdayCtrl.text.trim();
 
-      // Propagate locally across the app session
+      // Synchronize locally with app session
       final token = await Session.getToken();
       if (token != null) {
         await Session.saveLogin(
           token: token,
           userId: _userId!,
-          username: newUsername,
+          username: newName,
           email: _userEmail ?? "",
         );
       }
 
       if (!mounted) return;
       setState(() => _saving = false);
-      AppFeedback.showSuccess(context, "Profile changes saved successfully.", title: "Saved");
+      AppFeedback.showSuccess(context, "Profile updated successfully.", title: "Saved");
     } else {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -306,11 +291,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _discardChanges() {
     HapticFeedback.lightImpact();
     setState(() {
-      _usernameCtrl.text = _initialUsername;
+      _nameCtrl.text = _initialName;
       _bioCtrl.text = _initialBio;
       _birthdayCtrl.text = _initialBirthday;
     });
-    AppFeedback.showInfo(context, "Unsaved changes discarded.");
+    AppFeedback.showInfo(context, "Edits discarded.");
   }
 
   Future<void> _pickBirthday() async {
@@ -353,12 +338,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   String _formatBirthdayDisplay(String raw) {
-    if (raw.trim().isEmpty) return "Not specified";
+    if (raw.trim().isEmpty) return "Not set";
     try {
       final dt = DateTime.parse(raw);
       const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
       ];
       final now = DateTime.now();
       var age = now.year - dt.year;
@@ -397,920 +382,412 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ── Build Main ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final initial = _usernameCtrl.text.isNotEmpty
-        ? _usernameCtrl.text[0].toUpperCase()
-        : "?";
+    final initial = _nameCtrl.text.isNotEmpty ? _nameCtrl.text[0].toUpperCase() : "?";
 
     return ValueListenableBuilder<AppTheme>(
       valueListenable: ThemeController.currentTheme,
       builder: (context, activeTheme, _) {
         return Scaffold(
           backgroundColor: activeTheme.bg,
-          body: Stack(
-            children: [
-              // Ambient soft gradient orbs
-              Positioned(
-                top: -80,
-                right: -60,
-                child: _Glow(color: _violet.withValues(alpha: 0.15), size: 300),
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: const Text(
+              "My Profile",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                letterSpacing: -0.3,
               ),
-              Positioned(
-                bottom: 80,
-                left: -60,
-                child: _Glow(color: _rose.withValues(alpha: 0.12), size: 320),
-              ),
-
-              SafeArea(
-                child: Column(
-                  children: [
-                    // ── Professional Top Navigation Bar ──────────────────────
-                    _buildTopAppBar(),
-
-                    // ── Scrollable Body Content ──────────────────────────────
-                    Expanded(
-                      child: _loading
-                          ? Center(child: CircularProgressIndicator(color: _rose))
-                          : SingleChildScrollView(
-                              padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-                              child: Column(
-                                children: [
-                                  // ── Hero Profile Card ──────────────────────
-                                  _buildHeroHeader(initial),
-                                  const SizedBox(height: 24),
-
-                                  // ── Section 1: Profile Details ─────────────
-                                  _buildSectionHeader(
-                                    title: "PROFILE DETAILS",
-                                    icon: Icons.person_outline_rounded,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  _buildPersonalDetailsGroup(),
-                                  const SizedBox(height: 24),
-
-                                  // ── Section 2: Relationship & Security ──────
-                                  _buildSectionHeader(
-                                    title: "RELATIONSHIP & PRIVACY",
-                                    icon: Icons.shield_outlined,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  _buildRelationshipAndSecurityGroup(),
-                                  const SizedBox(height: 24),
-
-                                  // ── Section 3: App Preferences ─────────────
-                                  _buildSectionHeader(
-                                    title: "PREFERENCES",
-                                    icon: Icons.tune_rounded,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  _buildPreferencesGroup(),
-                                ],
-                              ),
-                            ),
-                    ),
-                  ],
+            ),
+            centerTitle: true,
+            actions: [
+              TextButton(
+                onPressed: (_hasChanges && !_saving) ? _saveProfile : null,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                 ),
+                child: _saving
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(color: _rose, strokeWidth: 2),
+                      )
+                    : Text(
+                        "Save",
+                        style: TextStyle(
+                          color: _hasChanges ? _rose : Colors.white24,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
               ),
-
-              // ── Floating Action Save Bar (Appears on Edit) ─────────────────
-              if (_hasChanges && !_loading)
-                Positioned(
-                  bottom: 24,
-                  left: 20,
-                  right: 20,
-                  child: _buildFloatingSaveDock(),
-                ),
+              const SizedBox(width: 4),
             ],
           ),
+          body: _loading
+              ? Center(child: CircularProgressIndicator(color: _rose))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // ── Profile Photo Section ─────────────────────────────
+                      const SizedBox(height: 12),
+                      _buildAvatarHero(initial),
+                      const SizedBox(height: 28),
+
+                      // ── Card 1: Identity & Name ────────────────────────────
+                      _buildCardGroup(
+                        title: "PROFILE INFO",
+                        children: [
+                          _buildTextInputRow(
+                            label: "Display Name",
+                            controller: _nameCtrl,
+                            focusNode: _nameFocus,
+                            icon: Icons.person_rounded,
+                            hint: "Enter your display name",
+                            helperText: "Visible to your partner in chats and calls",
+                          ),
+                          _divider(),
+                          _buildTextInputRow(
+                            label: "About (Bio)",
+                            controller: _bioCtrl,
+                            focusNode: _bioFocus,
+                            icon: Icons.edit_note_rounded,
+                            hint: "Write a short note for your partner…",
+                            helperText: "Your personal status or message",
+                            maxLines: 3,
+                            maxLength: 160,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ── Card 2: Personal Details ───────────────────────────
+                      _buildCardGroup(
+                        title: "PERSONAL DETAILS",
+                        children: [
+                          _buildTappableRow(
+                            label: "Birthday",
+                            icon: Icons.cake_rounded,
+                            value: _formatBirthdayDisplay(_birthdayCtrl.text),
+                            onTap: _pickBirthday,
+                            trailing: Icon(
+                              Icons.calendar_today_rounded,
+                              color: Colors.white.withValues(alpha: 0.35),
+                              size: 16,
+                            ),
+                          ),
+                          _divider(),
+                          _buildInfoRow(
+                            label: "Email",
+                            icon: Icons.alternate_email_rounded,
+                            value: _userEmail ?? "Not set",
+                            badge: "Verified",
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+
+                      // ── Bottom Save Changes Button (if edited) ────────────
+                      if (_hasChanges)
+                        Column(
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: ElevatedButton(
+                                onPressed: _saving ? null : _saveProfile,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _rose,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  elevation: 3,
+                                ),
+                                child: _saving
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                      )
+                                    : const Text(
+                                        "Save Changes",
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: _discardChanges,
+                              child: Text(
+                                "Discard changes",
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.45),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
         );
       },
     );
   }
 
-  // ── Top Navigation Bar ─────────────────────────────────────────────────────
-  Widget _buildTopAppBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          // Back Button
-          InkWell(
-            onTap: () => Navigator.pop(context),
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _surface.withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          const Text(
-            "My Profile",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              letterSpacing: -0.4,
-            ),
-          ),
-          const Spacer(),
-          // Quick Save in header if changes exist
-          if (_hasChanges)
-            TextButton(
-              onPressed: _saving ? null : _saveProfile,
-              style: TextButton.styleFrom(
-                backgroundColor: _rose.withValues(alpha: 0.2),
-                foregroundColor: _rose,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              ),
-              child: _saving
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: _rose),
-                    )
-                  : const Text("Save", style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          const SizedBox(width: 6),
-          const PasscodeLockButton(),
-        ],
-      ),
-    );
-  }
+  // ── Avatar Hero ────────────────────────────────────────────────────────────
+  Widget _buildAvatarHero(String initial) {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: _showAvatarOptionsSheet,
+          child: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              Container(
+                width: 110,
+                height: 110,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _rose.withValues(alpha: 0.5),
+                    width: 2.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _rose.withValues(alpha: 0.25),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_localAvatarFile != null)
+                        Image.file(
+                          _localAvatarFile!,
+                          fit: BoxFit.cover,
+                        )
+                      else if (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                        Image.network(
+                          _avatarUrl!.startsWith('http')
+                              ? "${_avatarUrl!}?v=$_avatarCacheKey"
+                              : "${ApiService.baseUrl}/${_avatarUrl!.startsWith('/') ? _avatarUrl!.substring(1) : _avatarUrl!}?v=$_avatarCacheKey",
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => _avatarFallback(initial),
+                        )
+                      else
+                        _avatarFallback(initial),
 
-  // ── Hero Profile Header ────────────────────────────────────────────────────
-  Widget _buildHeroHeader(String initial) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-      decoration: BoxDecoration(
-        color: _surface.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Avatar with Edit Button
-          GestureDetector(
-            onTap: _showAvatarOptionsSheet,
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.bottomRight,
-              children: [
-                Container(
-                  width: 104,
-                  height: 104,
+                      if (_uploadingAvatar)
+                        Container(
+                          color: Colors.black54,
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Camera Badge
+              Positioned(
+                bottom: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
+                    color: _rose,
                     shape: BoxShape.circle,
+                    border: Border.all(color: _bg, width: 2.5),
                     boxShadow: [
                       BoxShadow(
-                        color: _rose.withValues(alpha: 0.3),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
-                  child: ClipOval(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (_localAvatarFile != null)
-                          Image.file(
-                            _localAvatarFile!,
-                            fit: BoxFit.cover,
-                          )
-                        else if (_avatarUrl != null && _avatarUrl!.isNotEmpty)
-                          Image.network(
-                            _avatarUrl!.startsWith('http')
-                                ? "${_avatarUrl!}?v=$_avatarCacheKey"
-                                : "${ApiService.baseUrl}/${_avatarUrl!.startsWith('/') ? _avatarUrl!.substring(1) : _avatarUrl!}?v=$_avatarCacheKey",
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => _avatarFallback(initial),
-                          )
-                        else
-                          _avatarFallback(initial),
-
-                        if (_uploadingAvatar)
-                          Container(
-                            color: Colors.black54,
-                            child: const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2.5,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                  child: const Icon(
+                    Icons.camera_alt_rounded,
+                    color: Colors.white,
+                    size: 15,
                   ),
                 ),
-
-                // Camera Action Pill
-                Positioned(
-                  bottom: -2,
-                  right: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [_rose, _violet],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      border: Border.all(color: _bg, width: 2.5),
-                    ),
-                    child: const Icon(
-                      Icons.camera_alt_rounded,
-                      color: Colors.white,
-                      size: 15,
-                    ),
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: _showAvatarOptionsSheet,
+          child: Text(
+            "Change Photo",
+            style: TextStyle(
+              color: _rose,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 14),
+        ),
+      ],
+    );
+  }
 
-          // User Display Name
-          Text(
-            _usernameCtrl.text.isEmpty ? "Your Name" : _usernameCtrl.text,
-            style: const TextStyle(
-              fontSize: 22,
+  // ── Card Group Container ───────────────────────────────────────────────────
+  Widget _buildCardGroup({required String title, required List<Widget> children}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 6, bottom: 8),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 11,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
-              letterSpacing: -0.4,
+              letterSpacing: 1.0,
             ),
           ),
-          const SizedBox(height: 4),
-
-          // Copyable Username / ID Tag
-          GestureDetector(
-            onTap: () {
-              final idStr = _userId != null ? "#$_userId" : "@${_usernameCtrl.text}";
-              Clipboard.setData(ClipboardData(text: idStr));
-              HapticFeedback.lightImpact();
-              AppFeedback.showSuccess(context, "Copied $idStr to clipboard", title: "Copied");
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    "@${_usernameCtrl.text.isEmpty ? "username" : _usernameCtrl.text}",
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (_userId != null) ...[
-                    Text(
-                      "  •  ID #$_userId",
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(width: 5),
-                  Icon(
-                    Icons.copy_rounded,
-                    color: Colors.white.withValues(alpha: 0.4),
-                    size: 11,
-                  ),
-                ],
-              ),
-            ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: _surface.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-          const SizedBox(height: 12),
-
-          // Relationship Connection Status Pill
-          GestureDetector(
-            onTap: () {
-              if (_partnerId != null && _partnerName != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PartnerProfileScreen(
-                      partnerId: _partnerId!,
-                      partnerName: _partnerName!,
-                    ),
-                  ),
-                );
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _partnerId != null
-                    ? Colors.greenAccent.withValues(alpha: 0.12)
-                    : Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _partnerId != null
-                      ? Colors.greenAccent.withValues(alpha: 0.3)
-                      : Colors.white.withValues(alpha: 0.1),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _partnerId != null ? Colors.greenAccent : Colors.white38,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _partnerId != null
-                        ? "Coupled with $_partnerName  •  E2EE Active"
-                        : "Solo Channel  •  Pair with Partner",
-                    style: TextStyle(
-                      color: _partnerId != null ? Colors.greenAccent : Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (_partnerId != null) ...[
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Colors.greenAccent,
-                      size: 14,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+          child: Column(children: children),
+        ),
+      ],
     );
   }
 
-  // ── Section 1: Personal Details Group ──────────────────────────────────────
-  Widget _buildPersonalDetailsGroup() {
-    final isUsernameFocused = _usernameFocus.hasFocus;
-    final isBioFocused = _bioFocus.hasFocus;
+  // ── Input Row ──────────────────────────────────────────────────────────────
+  Widget _buildTextInputRow({
+    required String label,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required IconData icon,
+    required String hint,
+    String? helperText,
+    int maxLines = 1,
+    int? maxLength,
+  }) {
+    final isFocused = focusNode.hasFocus;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: _surface.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        children: [
-          // Display Name
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isUsernameFocused ? _rose.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.badge_outlined,
-                    color: isUsernameFocused ? _rose : Colors.white60,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Display Name",
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      TextField(
-                        controller: _usernameCtrl,
-                        focusNode: _usernameFocus,
-                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
-                        cursorColor: _rose,
-                        decoration: InputDecoration(
-                          hintText: "Enter your display name",
-                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 15),
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                          border: InputBorder.none,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _divider(),
-
-          // About You (Bio)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  margin: const EdgeInsets.only(top: 2),
-                  decoration: BoxDecoration(
-                    color: isBioFocused ? _violet.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.edit_note_rounded,
-                    color: isBioFocused ? _violet : Colors.white60,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "About You",
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            "${_bioCtrl.text.length}/160",
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.35),
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                      TextField(
-                        controller: _bioCtrl,
-                        focusNode: _bioFocus,
-                        maxLength: 160,
-                        maxLines: 3,
-                        minLines: 1,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
-                        cursorColor: _violet,
-                        decoration: InputDecoration(
-                          hintText: "Write a short bio, quote, or note for your partner…",
-                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 13),
-                          isDense: true,
-                          counterText: "",
-                          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                          border: InputBorder.none,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _divider(),
-
-          // Birthday Tile
-          InkWell(
-            onTap: _pickBirthday,
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.cake_outlined, color: Colors.amber, size: 18),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Birthday",
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.45),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _formatBirthdayDisplay(_birthdayCtrl.text),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.edit_calendar_rounded,
-                    color: Colors.white.withValues(alpha: 0.35),
-                    size: 16,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          _divider(),
-
-          // Account Email Tile (Read Only)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.alternate_email_rounded, color: Colors.blueAccent, size: 18),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Registered Email",
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _userEmail ?? "Not available",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.greenAccent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    "Verified",
-                    style: TextStyle(
-                      color: Colors.greenAccent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Section 2: Relationship & Security Group ───────────────────────────────
-  Widget _buildRelationshipAndSecurityGroup() {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surface.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        children: [
-          // Partner Profile Tile
-          if (_partnerId != null && _partnerName != null) ...[
-            _buildNavigationTile(
-              icon: Icons.favorite_rounded,
-              iconColor: _rose,
-              title: "$_partnerName's Profile",
-              subtitle: "View partner details, shared media & memories",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PartnerProfileScreen(
-                      partnerId: _partnerId!,
-                      partnerName: _partnerName!,
-                    ),
-                  ),
-                );
-              },
-            ),
-            _divider(),
-          ],
-
-          // End-to-End Encryption
-          _buildNavigationTile(
-            icon: Icons.lock_rounded,
-            iconColor: Colors.greenAccent,
-            title: "End-to-End Encryption (E2EE)",
-            subtitle: "DTLS-SRTP & Double Ratchet safety code",
-            onTap: () {
-              if (_partnerId != null && _partnerName != null) {
-                EncryptionVerificationModal.show(
-                  context,
-                  partnerId: _partnerId!,
-                  partnerName: _partnerName!,
-                );
-              } else {
-                AppFeedback.showInfo(context, "Pair with a partner first to view your E2EE safety code.");
-              }
-            },
-          ),
-          _divider(),
-
-          // Two-Factor Authentication (2FA)
-          _buildNavigationTile(
-            icon: Icons.security_rounded,
-            iconColor: const Color(0xFF00E5FF),
-            title: "Two-Factor Authentication",
-            subtitle: "Authenticator app (TOTP) & backup security codes",
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TwoFactorSetupScreen()),
-              );
-            },
-          ),
-          _divider(),
-
-          // Passcode & Biometrics
-          _buildNavigationTile(
-            icon: Icons.fingerprint_rounded,
-            iconColor: _violet,
-            title: "App Lock & Biometrics",
-            subtitle: _hasPasscode ? "Passcode lock is active" : "Protect app with PIN or fingerprint",
-            trailingText: _hasPasscode ? "Active" : "Set up",
-            trailingTextColor: _hasPasscode ? Colors.greenAccent : _rose,
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PasscodeSetupScreen(
-                    mode: _hasPasscode ? PasscodeMode.change : PasscodeMode.setup,
-                  ),
-                ),
-              );
-              final updated = await SecurityService.hasPasscode();
-              if (mounted) setState(() => _hasPasscode = updated);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Section 3: Preferences Group ───────────────────────────────────────────
-  Widget _buildPreferencesGroup() {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surface.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        children: [
-          // Theme & Appearance
-          _buildNavigationTile(
-            icon: Icons.palette_outlined,
-            iconColor: _lavender,
-            title: "Theme & Palette",
-            subtitle: "Personalize your couples space",
-            trailingText: ThemeController.currentTheme.value.name,
-            trailingTextColor: _rose,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ThemeSelectionScreen()),
-              );
-            },
-          ),
-          _divider(),
-
-          // App Version & About
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.info_outline_rounded, color: Colors.white60, size: 18),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "TwoOfUs Private Space",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        "Version 1.0.0 (Build 43)  •  DTLS-SRTP E2EE",
-                        style: TextStyle(
-                          color: Colors.white38,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Floating Action Save Bar ───────────────────────────────────────────────
-  Widget _buildFloatingSaveDock() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B1626).withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _rose.withValues(alpha: 0.4)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
+        crossAxisAlignment: maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
           Container(
-            width: 8,
-            height: 8,
+            padding: const EdgeInsets.all(8),
+            margin: maxLines > 1 ? const EdgeInsets.only(top: 2) : null,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _rose,
-              boxShadow: [
-                BoxShadow(
-                  color: _rose.withValues(alpha: 0.8),
-                  blurRadius: 6,
+              color: isFocused ? _rose.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: isFocused ? _rose : Colors.white60, size: 18),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (maxLength != null)
+                      Text(
+                        "${controller.text.length}/$maxLength",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          fontSize: 10,
+                        ),
+                      ),
+                  ],
                 ),
+                TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  maxLines: maxLines,
+                  maxLength: maxLength,
+                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
+                  cursorColor: _rose,
+                  decoration: InputDecoration(
+                    hintText: hint,
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 15),
+                    isDense: true,
+                    counterText: "",
+                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                    border: InputBorder.none,
+                  ),
+                ),
+                if (helperText != null && !isFocused && controller.text.isEmpty)
+                  Text(
+                    helperText,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      fontSize: 11,
+                    ),
+                  ),
               ],
             ),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              "Unsaved profile edits",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: _discardChanges,
-            child: const Text(
-              "Discard",
-              style: TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-          ),
-          const SizedBox(width: 6),
-          ElevatedButton(
-            onPressed: _saving ? null : _saveProfile,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _rose,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              elevation: 2,
-            ),
-            child: _saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                  )
-                : const Text(
-                    "Save",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
           ),
         ],
       ),
     );
   }
 
-  // ── Helper Sub-Widgets ─────────────────────────────────────────────────────
-  Widget _buildSectionHeader({required String title, required IconData icon}) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 4),
-        child: Row(
-          children: [
-            Icon(icon, size: 14, color: _rose.withValues(alpha: 0.8)),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.1,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavigationTile({
+  // ── Tappable Row (Birthday) ────────────────────────────────────────────────
+  Widget _buildTappableRow({
+    required String label,
     required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    String? trailingText,
-    Color? trailingTextColor,
+    required String value,
     required VoidCallback onTap,
+    Widget? trailing,
   }) {
     return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.15),
+                color: Colors.white.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: iconColor, size: 18),
+              child: Icon(icon, color: Colors.white60, size: 18),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1318,42 +795,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
+                    label,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: 12,
+                    value,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
-            if (trailingText != null) ...[
-              Text(
-                trailingText,
-                style: TextStyle(
-                  color: trailingTextColor ?? Colors.white54,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 6),
-            ],
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.25),
-              size: 18,
-            ),
+            ?trailing,
           ],
         ),
+      ),
+    );
+  }
+
+  // ── Info Row (Email) ───────────────────────────────────────────────────────
+  Widget _buildInfoRow({
+    required String label,
+    required IconData icon,
+    required String value,
+    String? badge,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: Colors.white60, size: 18),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (badge != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.greenAccent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                badge,
+                style: const TextStyle(
+                  color: Colors.greenAccent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1363,27 +891,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: Colors.white.withValues(alpha: 0.06),
         margin: const EdgeInsets.symmetric(horizontal: 16),
       );
-}
-
-// ── Soft Ambient Radial Glow Orb ─────────────────────────────────────────────
-class _Glow extends StatelessWidget {
-  final Color color;
-  final double size;
-
-  const _Glow({required this.color, required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color, Colors.transparent],
-          stops: const [0.0, 1.0],
-        ),
-      ),
-    );
-  }
 }
