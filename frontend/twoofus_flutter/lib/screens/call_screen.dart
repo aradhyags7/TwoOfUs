@@ -177,6 +177,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         } else if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
             state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
           _statusMessage = "Connected (DTLS-SRTP P2P)";
+          // Ensure hardware audio routing is firmly asserted once ICE is connected
+          _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
         } else if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
           _statusMessage = "Reconnecting...";
         } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
@@ -337,6 +339,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
             final answerDesc = RTCSessionDescription(sdp, sdpType);
             await _webrtcManager.setRemoteAnswer(answerDesc);
+            await _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
 
             if (mounted) {
               setState(() {
