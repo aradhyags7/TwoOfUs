@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/e2ee_service.dart';
 import '../utils/session.dart';
 import 'qr_scanner_dialog.dart';
+import '../utils/app_feedback.dart';
 
 class EncryptionVerificationModal extends StatefulWidget {
   final int partnerId;
@@ -113,32 +114,19 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
     await E2EEService.setPartnerVerified(widget.partnerId, newStatus);
     if (mounted) {
       setState(() => _isVerified = newStatus);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(
-                newStatus ? Icons.verified_user_rounded : Icons.info_outline_rounded,
-                color: newStatus ? Colors.greenAccent : Colors.pinkAccent,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  newStatus
-                      ? "Safety code marked as VERIFIED! 🛡️"
-                      : "Verification status reset.",
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: const Color(0xFF1D1826),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          duration: const Duration(milliseconds: 2200),
-        ),
-      );
+      if (newStatus) {
+        AppFeedback.showSuccess(
+          context,
+          "Safety code marked as verified.",
+          title: "Channel Verified",
+        );
+      } else {
+        AppFeedback.showInfo(
+          context,
+          "Verification status has been reset.",
+          title: "Verification Reset",
+        );
+      }
     }
   }
 
@@ -181,19 +169,10 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
     });
 
     if (isMatch) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.verified_user_rounded, color: Colors.greenAccent, size: 20),
-              SizedBox(width: 8),
-              Text("Codes Match! Channel Verified 🛡️", style: TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          backgroundColor: const Color(0xFF11291F),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
+      AppFeedback.showSuccess(
+        context,
+        "Codes match. End-to-end encrypted channel verified.",
+        title: "Channel Verified",
       );
     }
   }
@@ -202,22 +181,12 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
     final textToCopy = specificBlock ?? _safetyCode;
     Clipboard.setData(ClipboardData(text: textToCopy));
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.pinkAccent, size: 18),
-            const SizedBox(width: 8),
-            Text(specificBlock != null
-                ? "Block '$specificBlock' copied to clipboard!"
-                : "60-digit Security Code copied to clipboard!"),
-          ],
-        ),
-        backgroundColor: const Color(0xFF1D1826),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        duration: const Duration(milliseconds: 1800),
-      ),
+    AppFeedback.showSuccess(
+      context,
+      specificBlock != null
+          ? "Block '$specificBlock' copied to clipboard"
+          : "60-digit Security Code copied to clipboard",
+      title: "Copied to Clipboard",
     );
   }
 
