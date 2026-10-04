@@ -10,7 +10,7 @@ import '../utils/app_feedback.dart';
 import '../utils/session.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TwoOfUs — Focused & Professional Profile Screen
+// TwoOfUs — Telegram & Apple ID Styled Professional Profile Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ProfileScreen extends StatefulWidget {
@@ -21,70 +21,57 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // ── Controllers ────────────────────────────────────────────────────────────
-  final _nameCtrl = TextEditingController();
-  final _bioCtrl = TextEditingController();
-  final _birthdayCtrl = TextEditingController();
-
-  // ── Focus Nodes ────────────────────────────────────────────────────────────
-  final _nameFocus = FocusNode();
-  final _bioFocus = FocusNode();
-
-  // ── Initial Snapshot (Tracks edits) ────────────────────────────────────────
-  String _initialName = "";
-  String _initialBio = "";
-  String _initialBirthday = "";
-
   // ── State ──────────────────────────────────────────────────────────────────
   int? _userId;
+  String _name = "";
+  String _bio = "";
+  String _birthday = "";
   String? _userEmail;
   String? _avatarUrl;
   File? _localAvatarFile;
-  bool _uploadingAvatar = false;
+
+  String? _partnerName;
+
   bool _loading = true;
-  bool _saving = false;
+  bool _uploadingAvatar = false;
   int _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
 
-  // ── Theme Palette ──────────────────────────────────────────────────────────
+  final ScrollController _scrollController = ScrollController();
+  bool _showCollapsedTitle = false;
+
+  // ── Palette ────────────────────────────────────────────────────────────────
   Color get _bg => ThemeController.currentTheme.value.bg;
   Color get _surface => ThemeController.currentTheme.value.surface;
   Color get _rose => ThemeController.currentTheme.value.primary;
   Color get _violet => ThemeController.currentTheme.value.secondary;
 
-  bool get _hasChanges =>
-      _nameCtrl.text.trim() != _initialName ||
-      _bioCtrl.text.trim() != _initialBio ||
-      _birthdayCtrl.text != _initialBirthday;
-
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
-
-    _nameFocus.addListener(() => setState(() {}));
-    _bioFocus.addListener(() => setState(() {}));
-
-    _nameCtrl.addListener(() => setState(() {}));
-    _bioCtrl.addListener(() => setState(() {}));
-    _birthdayCtrl.addListener(() => setState(() {}));
-
+    _scrollController.addListener(_onScroll);
     _loadProfileData();
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _bioCtrl.dispose();
-    _birthdayCtrl.dispose();
-    _nameFocus.dispose();
-    _bioFocus.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    final show = _scrollController.hasClients && _scrollController.offset > 120;
+    if (show != _showCollapsedTitle) {
+      setState(() => _showCollapsedTitle = show);
+    }
   }
 
   // ── Data Loading ───────────────────────────────────────────────────────────
   Future<void> _loadProfileData() async {
     _userId = await Session.getUserId();
     _userEmail = await Session.getEmail();
+    _partnerName = await Session.getCachedPartnerName();
 
     if (_userId == null) {
       if (mounted) setState(() => _loading = false);
@@ -96,14 +83,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     if (profile != null) {
-      _initialName = profile["username"] ?? "";
-      _initialBio = profile["bio"] ?? "";
-      _initialBirthday = profile["birthday"] ?? "";
+      _name = profile["username"] ?? "";
+      _bio = profile["bio"] ?? "";
+      _birthday = profile["birthday"] ?? "";
       _avatarUrl = profile["avatar_url"];
-
-      _nameCtrl.text = _initialName;
-      _bioCtrl.text = _initialBio;
-      _birthdayCtrl.text = _initialBirthday;
       if (profile["email"] != null && (profile["email"] as String).isNotEmpty) {
         _userEmail = profile["email"];
       }
@@ -185,7 +168,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 18),
             const Text(
-              "Change Profile Photo",
+              "Profile Photo",
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
@@ -193,6 +176,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            if (_avatarUrl != null || _localAvatarFile != null) ...[
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 20),
+                ),
+                title: const Text(
+                  "View Full Photo",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openAvatarLightbox();
+                },
+              ),
+              const SizedBox(height: 4),
+            ],
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(10),
@@ -213,7 +218,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               onTap: () => _pickAndUploadAvatar(ImageSource.camera),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(10),
@@ -240,70 +245,325 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Save Profile ───────────────────────────────────────────────────────────
-  Future<void> _saveProfile() async {
-    if (_userId == null || _saving) return;
-    HapticFeedback.mediumImpact();
+  void _openAvatarLightbox() {
+    final imageProvider = _localAvatarFile != null
+        ? FileImage(_localAvatarFile!) as ImageProvider
+        : (_avatarUrl != null && _avatarUrl!.isNotEmpty
+            ? NetworkImage(_avatarUrl!.startsWith('http')
+                ? "${_avatarUrl!}?v=$_avatarCacheKey"
+                : "${ApiService.baseUrl}/${_avatarUrl!.startsWith('/') ? _avatarUrl!.substring(1) : _avatarUrl!}?v=$_avatarCacheKey")
+            : null);
 
-    final newName = _nameCtrl.text.trim();
-    if (newName.isEmpty) {
-      AppFeedback.showError(context, "Name cannot be empty.", title: "Validation Error");
-      return;
-    }
+    if (imageProvider == null) return;
 
-    setState(() => _saving = true);
-
-    final success = await ApiService.updateProfile(
-      _userId!,
-      newName,
-      _bioCtrl.text.trim(),
-      _birthdayCtrl.text.trim(),
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: InteractiveViewer(
+                child: Image(
+                  image: imageProvider,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _showAvatarOptionsSheet();
+              },
+              icon: const Icon(Icons.camera_alt_rounded, color: Colors.white70),
+              label: const Text("Change Photo", style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
+      ),
     );
-
-    if (!mounted) return;
-
-    if (success) {
-      _initialName = newName;
-      _initialBio = _bioCtrl.text.trim();
-      _initialBirthday = _birthdayCtrl.text.trim();
-
-      // Synchronize locally with app session
-      final token = await Session.getToken();
-      if (token != null) {
-        await Session.saveLogin(
-          token: token,
-          userId: _userId!,
-          username: newName,
-          email: _userEmail ?? "",
-        );
-      }
-
-      if (!mounted) return;
-      setState(() => _saving = false);
-      AppFeedback.showSuccess(context, "Profile updated successfully.", title: "Saved");
-    } else {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      AppFeedback.showError(context, "Failed to save profile. Please try again.", title: "Save Failed");
-    }
   }
 
-  void _discardChanges() {
-    HapticFeedback.lightImpact();
-    setState(() {
-      _nameCtrl.text = _initialName;
-      _bioCtrl.text = _initialBio;
-      _birthdayCtrl.text = _initialBirthday;
-    });
-    AppFeedback.showInfo(context, "Edits discarded.");
+  // ── Edit Name Sheet ────────────────────────────────────────────────────────
+  void _showEditNameSheet() {
+    final ctrl = TextEditingController(text: _name);
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Edit Display Name",
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "This is how your partner will see you in chats and calls.",
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _bg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _rose.withValues(alpha: 0.4)),
+                  ),
+                  child: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                    cursorColor: _rose,
+                    decoration: InputDecoration(
+                      hintText: "Enter your name",
+                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                      border: InputBorder.none,
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.clear_rounded, color: Colors.white38, size: 18),
+                        onPressed: () => ctrl.clear(),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final newName = ctrl.text.trim();
+                            if (newName.isEmpty) {
+                              AppFeedback.showError(ctx, "Name cannot be empty.");
+                              return;
+                            }
+                            setSheetState(() => isSaving = true);
+                            final ok = await ApiService.updateProfile(_userId!, newName, _bio, _birthday);
+                            if (!ctx.mounted) return;
+                            if (ok) {
+                              final token = await Session.getToken();
+                              if (token != null) {
+                                await Session.saveLogin(
+                                  token: token,
+                                  userId: _userId!,
+                                  username: newName,
+                                  email: _userEmail ?? "",
+                                );
+                              }
+                              if (!mounted) return;
+                              setState(() => _name = newName);
+                              if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                              AppFeedback.showSuccess(context, "Display name updated.");
+                            } else {
+                              setSheetState(() => isSaving = false);
+                              if (ctx.mounted) AppFeedback.showError(ctx, "Failed to update name.");
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _rose,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: isSaving
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Text("Save Changes", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
+  // ── Edit Bio Sheet ─────────────────────────────────────────────────────────
+  void _showEditBioSheet() {
+    final ctrl = TextEditingController(text: _bio);
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Edit Bio / Status",
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "A note, inside joke, or feeling visible to your partner.",
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: _bg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _violet.withValues(alpha: 0.4)),
+                  ),
+                  child: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    maxLines: 4,
+                    maxLength: 160,
+                    style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+                    cursorColor: _violet,
+                    decoration: const InputDecoration(
+                      hintText: "What's on your mind…",
+                      hintStyle: TextStyle(color: Colors.white24),
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Quick suggestions
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _bioChip("Forever & always 💖", ctrl),
+                    _bioChip("Thinking of you 🥰", ctrl),
+                    _bioChip("Best partner ever 🌟", ctrl),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final newBio = ctrl.text.trim();
+                            setSheetState(() => isSaving = true);
+                            final ok = await ApiService.updateProfile(_userId!, _name, newBio, _birthday);
+                            if (!ctx.mounted) return;
+                            if (ok) {
+                              if (mounted) {
+                                setState(() => _bio = newBio);
+                                Navigator.pop(sheetCtx);
+                                AppFeedback.showSuccess(context, "Bio updated.");
+                              }
+                            } else {
+                              setSheetState(() => isSaving = false);
+                              AppFeedback.showError(ctx, "Failed to update bio.");
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _violet,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: isSaving
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Text("Save Bio", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bioChip(String text, TextEditingController ctrl) {
+    return InkWell(
+      onTap: () {
+        ctrl.text = text;
+        ctrl.selection = TextSelection.fromPosition(TextPosition(offset: text.length));
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  // ── Pick Birthday ──────────────────────────────────────────────────────────
   Future<void> _pickBirthday() async {
     HapticFeedback.selectionClick();
     DateTime initial = DateTime(2000, 1, 1);
-    if (_birthdayCtrl.text.isNotEmpty) {
+    if (_birthday.isNotEmpty) {
       try {
-        initial = DateTime.parse(_birthdayCtrl.text);
+        initial = DateTime.parse(_birthday);
       } catch (_) {}
     }
 
@@ -331,9 +591,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (picked != null && mounted) {
-      setState(() {
-        _birthdayCtrl.text = picked.toIso8601String().split("T")[0];
-      });
+      final newBirthday = picked.toIso8601String().split("T")[0];
+      final ok = await ApiService.updateProfile(_userId!, _name, _bio, newBirthday);
+      if (ok && mounted) {
+        setState(() => _birthday = newBirthday);
+        AppFeedback.showSuccess(context, "Birthday updated.");
+      }
     }
   }
 
@@ -371,7 +634,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           initial,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 44,
+            fontSize: 42,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -379,10 +642,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Build Main ─────────────────────────────────────────────────────────────
+  // ── Build Main Screen ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final initial = _nameCtrl.text.isNotEmpty ? _nameCtrl.text[0].toUpperCase() : "?";
+    final initial = _name.isNotEmpty ? _name[0].toUpperCase() : "?";
 
     return ValueListenableBuilder<AppTheme>(
       valueListenable: ThemeController.currentTheme,
@@ -390,156 +653,350 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return Scaffold(
           backgroundColor: activeTheme.bg,
           appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
+            backgroundColor: _showCollapsedTitle ? _surface.withValues(alpha: 0.95) : Colors.transparent,
+            elevation: _showCollapsedTitle ? 2 : 0,
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Center(
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
             ),
-            title: const Text(
-              "My Profile",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                letterSpacing: -0.3,
+            title: AnimatedOpacity(
+              opacity: _showCollapsedTitle ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: Text(
+                _name.isNotEmpty ? _name : "Profile",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             centerTitle: true,
             actions: [
-              TextButton(
-                onPressed: (_hasChanges && !_saving) ? _saveProfile : null,
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+              Padding(
+                padding: const EdgeInsets.only(right: 14),
+                child: Center(
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.edit_rounded, color: Colors.white, size: 18),
+                      tooltip: "Edit Name",
+                      onPressed: _showEditNameSheet,
+                    ),
+                  ),
                 ),
-                child: _saving
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(color: _rose, strokeWidth: 2),
-                      )
-                    : Text(
-                        "Save",
-                        style: TextStyle(
-                          color: _hasChanges ? _rose : Colors.white24,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
               ),
-              const SizedBox(width: 4),
             ],
           ),
+          extendBodyBehindAppBar: true,
           body: _loading
               ? Center(child: CircularProgressIndicator(color: _rose))
               : SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
+                  controller: _scrollController,
+                  physics: const BouncingScrollPhysics(),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // ── Profile Photo Section ─────────────────────────────
-                      const SizedBox(height: 12),
-                      _buildAvatarHero(initial),
-                      const SizedBox(height: 28),
-
-                      // ── Card 1: Identity & Name ────────────────────────────
-                      _buildCardGroup(
-                        title: "PROFILE INFO",
+                      // ── Hero Header ─────────────────────────────────────────
+                      Stack(
+                        alignment: Alignment.center,
                         children: [
-                          _buildTextInputRow(
-                            label: "Display Name",
-                            controller: _nameCtrl,
-                            focusNode: _nameFocus,
-                            icon: Icons.person_rounded,
-                            hint: "Enter your display name",
-                            helperText: "Visible to your partner in chats and calls",
-                          ),
-                          _divider(),
-                          _buildTextInputRow(
-                            label: "About (Bio)",
-                            controller: _bioCtrl,
-                            focusNode: _bioFocus,
-                            icon: Icons.edit_note_rounded,
-                            hint: "Write a short note for your partner…",
-                            helperText: "Your personal status or message",
-                            maxLines: 3,
-                            maxLength: 160,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // ── Card 2: Personal Details ───────────────────────────
-                      _buildCardGroup(
-                        title: "PERSONAL DETAILS",
-                        children: [
-                          _buildTappableRow(
-                            label: "Birthday",
-                            icon: Icons.cake_rounded,
-                            value: _formatBirthdayDisplay(_birthdayCtrl.text),
-                            onTap: _pickBirthday,
-                            trailing: Icon(
-                              Icons.calendar_today_rounded,
-                              color: Colors.white.withValues(alpha: 0.35),
-                              size: 16,
+                          // Ambient decorative background mesh glow
+                          Container(
+                            height: 290,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  _rose.withValues(alpha: 0.28),
+                                  _violet.withValues(alpha: 0.18),
+                                  _bg,
+                                ],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
                             ),
                           ),
-                          _divider(),
-                          _buildInfoRow(
-                            label: "Email",
-                            icon: Icons.alternate_email_rounded,
-                            value: _userEmail ?? "Not set",
-                            badge: "Verified",
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 32),
 
-                      // ── Bottom Save Changes Button (if edited) ────────────
-                      if (_hasChanges)
-                        Column(
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: ElevatedButton(
-                                onPressed: _saving ? null : _saveProfile,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _rose,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  elevation: 3,
-                                ),
-                                child: _saving
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                                      )
-                                    : const Text(
-                                        "Save Changes",
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
+                          // Header Content
+                          Positioned(
+                            top: 100,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Avatar with camera badge
+                                GestureDetector(
+                                  onTap: _showAvatarOptionsSheet,
+                                  child: Stack(
+                                    alignment: Alignment.bottomRight,
+                                    children: [
+                                      Container(
+                                        width: 104,
+                                        height: 104,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: Colors.white, width: 3.5),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: _rose.withValues(alpha: 0.35),
+                                              blurRadius: 24,
+                                              spreadRadius: 2,
+                                            ),
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.4),
+                                              blurRadius: 16,
+                                              offset: const Offset(0, 6),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipOval(
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              if (_localAvatarFile != null)
+                                                Image.file(_localAvatarFile!, fit: BoxFit.cover)
+                                              else if (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                                                Image.network(
+                                                  _avatarUrl!.startsWith('http')
+                                                      ? "${_avatarUrl!}?v=$_avatarCacheKey"
+                                                      : "${ApiService.baseUrl}/${_avatarUrl!.startsWith('/') ? _avatarUrl!.substring(1) : _avatarUrl!}?v=$_avatarCacheKey",
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (context, error, stackTrace) => _avatarFallback(initial),
+                                                )
+                                              else
+                                                _avatarFallback(initial),
+
+                                              if (_uploadingAvatar)
+                                                Container(
+                                                  color: Colors.black54,
+                                                  child: const Center(
+                                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
                                         ),
                                       ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: _discardChanges,
-                              child: Text(
-                                "Discard changes",
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.45),
-                                  fontSize: 13,
+
+                                      // Camera Edit Badge
+                                      Positioned(
+                                        bottom: 2,
+                                        right: 2,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(7),
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [_rose, _violet],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(color: Colors.white, width: 2),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.35),
+                                                blurRadius: 6,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          child: const Icon(
+                                            Icons.camera_alt_rounded,
+                                            color: Colors.white,
+                                            size: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 14),
+
+                                // Name
+                                Text(
+                                  _name.isNotEmpty ? _name : "Your Name",
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.5,
+                                    shadows: [
+                                      Shadow(color: Colors.black45, blurRadius: 10),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+
+                                // Handle Chip with Tap-to-Copy
+                                GestureDetector(
+                                  onTap: () {
+                                    final text = "@${_name.isNotEmpty ? _name : 'username'}";
+                                    Clipboard.setData(ClipboardData(text: text));
+                                    HapticFeedback.lightImpact();
+                                    AppFeedback.showSuccess(context, "Copied $text to clipboard");
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          "@${_name.isNotEmpty ? _name : "username"}",
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(alpha: 0.8),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          Icons.copy_rounded,
+                                          color: Colors.white.withValues(alpha: 0.5),
+                                          size: 12,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // ── Inset Grouped Profile Information ─────────────────
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ── Group 1: Identity & Bio ─────────────────────
+                            _buildGroupCard(
+                              title: "PROFILE INFO",
+                              children: [
+                                _buildProfileTile(
+                                  icon: Icons.person_rounded,
+                                  iconColor: _rose,
+                                  label: "Display Name",
+                                  value: _name,
+                                  helperText: "Visible across all chats and calls",
+                                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+                                  onTap: _showEditNameSheet,
+                                ),
+                                _divider(),
+                                _buildProfileTile(
+                                  icon: Icons.format_quote_rounded,
+                                  iconColor: _violet,
+                                  label: "Bio / Note",
+                                  value: _bio,
+                                  helperText: "A short status or inside joke",
+                                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+                                  onTap: _showEditBioSheet,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // ── Group 2: Personal Details ─────────────────
+                            _buildGroupCard(
+                              title: "PERSONAL DETAILS",
+                              children: [
+                                _buildProfileTile(
+                                  icon: Icons.cake_rounded,
+                                  iconColor: Colors.amber,
+                                  label: "Birthday",
+                                  value: _formatBirthdayDisplay(_birthday),
+                                  helperText: "Tap to select your birth date",
+                                  trailing: const Icon(Icons.calendar_month_rounded, color: Colors.white30, size: 18),
+                                  onTap: _pickBirthday,
+                                ),
+                                _divider(),
+                                _buildProfileTile(
+                                  icon: Icons.alternate_email_rounded,
+                                  iconColor: Colors.blueAccent,
+                                  label: "Email Address",
+                                  value: _userEmail ?? "Not available",
+                                  trailing: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.greenAccent.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.25)),
+                                    ),
+                                    child: const Text(
+                                      "Verified",
+                                      style: TextStyle(
+                                        color: Colors.greenAccent,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  onTap: () {},
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // ── Group 3: Private Channel Status ───────────
+                            _buildGroupCard(
+                              title: "SPACE DETAILS",
+                              children: [
+                                _buildProfileTile(
+                                  icon: Icons.favorite_rounded,
+                                  iconColor: _rose,
+                                  label: "Relationship Space",
+                                  value: _partnerName != null ? "Coupled with $_partnerName" : "Solo Channel",
+                                  helperText: "End-to-End Encrypted space",
+                                  trailing: Container(
+                                    width: 9,
+                                    height: 9,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _partnerName != null ? Colors.greenAccent : Colors.white38,
+                                      boxShadow: _partnerName != null
+                                          ? [
+                                              BoxShadow(
+                                                color: Colors.greenAccent.withValues(alpha: 0.6),
+                                                blurRadius: 6,
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                  ),
+                                  onTap: () {},
+                                ),
+                              ],
                             ),
                           ],
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -548,113 +1005,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Avatar Hero ────────────────────────────────────────────────────────────
-  Widget _buildAvatarHero(String initial) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: _showAvatarOptionsSheet,
-          child: Stack(
-            alignment: Alignment.bottomRight,
-            children: [
-              Container(
-                width: 110,
-                height: 110,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: _rose.withValues(alpha: 0.5),
-                    width: 2.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _rose.withValues(alpha: 0.25),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (_localAvatarFile != null)
-                        Image.file(
-                          _localAvatarFile!,
-                          fit: BoxFit.cover,
-                        )
-                      else if (_avatarUrl != null && _avatarUrl!.isNotEmpty)
-                        Image.network(
-                          _avatarUrl!.startsWith('http')
-                              ? "${_avatarUrl!}?v=$_avatarCacheKey"
-                              : "${ApiService.baseUrl}/${_avatarUrl!.startsWith('/') ? _avatarUrl!.substring(1) : _avatarUrl!}?v=$_avatarCacheKey",
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => _avatarFallback(initial),
-                        )
-                      else
-                        _avatarFallback(initial),
-
-                      if (_uploadingAvatar)
-                        Container(
-                          color: Colors.black54,
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2.5,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Camera Badge
-              Positioned(
-                bottom: 2,
-                right: 2,
-                child: Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: _rose,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: _bg, width: 2.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.camera_alt_rounded,
-                    color: Colors.white,
-                    size: 15,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: _showAvatarOptionsSheet,
-          child: Text(
-            "Change Photo",
-            style: TextStyle(
-              color: _rose,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Card Group Container ───────────────────────────────────────────────────
-  Widget _buildCardGroup({required String title, required List<Widget> children}) {
+  // ── Inset Group Container ──────────────────────────────────────────────────
+  Widget _buildGroupCard({required String title, required List<Widget> children}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -675,6 +1027,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             color: _surface.withValues(alpha: 0.85),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(children: children),
         ),
@@ -682,112 +1041,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Input Row ──────────────────────────────────────────────────────────────
-  Widget _buildTextInputRow({
-    required String label,
-    required TextEditingController controller,
-    required FocusNode focusNode,
+  // ── Profile Tile Row ───────────────────────────────────────────────────────
+  Widget _buildProfileTile({
     required IconData icon,
-    required String hint,
-    String? helperText,
-    int maxLines = 1,
-    int? maxLength,
-  }) {
-    final isFocused = focusNode.hasFocus;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Row(
-        crossAxisAlignment: maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            margin: maxLines > 1 ? const EdgeInsets.only(top: 2) : null,
-            decoration: BoxDecoration(
-              color: isFocused ? _rose.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: isFocused ? _rose : Colors.white60, size: 18),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (maxLength != null)
-                      Text(
-                        "${controller.text.length}/$maxLength",
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          fontSize: 10,
-                        ),
-                      ),
-                  ],
-                ),
-                TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  maxLines: maxLines,
-                  maxLength: maxLength,
-                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
-                  cursorColor: _rose,
-                  decoration: InputDecoration(
-                    hintText: hint,
-                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 15),
-                    isDense: true,
-                    counterText: "",
-                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                    border: InputBorder.none,
-                  ),
-                ),
-                if (helperText != null && !isFocused && controller.text.isEmpty)
-                  Text(
-                    helperText,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      fontSize: 11,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Tappable Row (Birthday) ────────────────────────────────────────────────
-  Widget _buildTappableRow({
+    required Color iconColor,
     required String label,
-    required IconData icon,
     required String value,
-    required VoidCallback onTap,
+    String? helperText,
     Widget? trailing,
+    required VoidCallback onTap,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(20),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(9),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(10),
+                color: iconColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: Colors.white60, size: 18),
+              child: Icon(icon, color: iconColor, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -800,17 +1081,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: Colors.white.withValues(alpha: 0.45),
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
-                    value,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    value.isNotEmpty ? value : "Not set",
+                    style: TextStyle(
+                      color: value.isNotEmpty ? Colors.white : Colors.white30,
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
+                      fontStyle: value.isNotEmpty ? FontStyle.normal : FontStyle.italic,
                     ),
                   ),
+                  if (helperText != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      helperText,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -821,74 +1114,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Info Row (Email) ───────────────────────────────────────────────────────
-  Widget _buildInfoRow({
-    required String label,
-    required IconData icon,
-    required String value,
-    String? badge,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: Colors.white60, size: 18),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (badge != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.greenAccent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                badge,
-                style: const TextStyle(
-                  color: Colors.greenAccent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _divider() => Container(
         height: 1,
-        color: Colors.white.withValues(alpha: 0.06),
-        margin: const EdgeInsets.symmetric(horizontal: 16),
+        color: Colors.white.withValues(alpha: 0.05),
+        margin: const EdgeInsets.only(left: 60, right: 16),
       );
 }
