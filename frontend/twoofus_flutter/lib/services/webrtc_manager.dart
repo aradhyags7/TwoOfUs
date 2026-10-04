@@ -237,21 +237,52 @@ class WebRTCManager {
 
   /// Optimizes SDP for mobile networks with Opus Forward Error Correction and DTX
   String _optimizeSdp(String sdp, {bool isVideo = false}) {
-    var modified = sdp;
-    if (modified.contains('opus/48000')) {
-      if (modified.contains('useinbandfec=1')) {
-        modified = modified.replaceAll(
-          'useinbandfec=1',
-          'useinbandfec=1;usedtx=1;minptime=10',
-        );
-      } else {
-        modified = modified.replaceAllMapped(
-          RegExp(r'(a=rtpmap:(\d+) opus/48000/2)'),
-          (m) => '${m[1]}\r\na=fmtp:${m[2]} useinbandfec=1;usedtx=1;minptime=10',
-        );
+    if (!sdp.contains('opus/48000')) return sdp;
+
+    final lines = sdp.split(RegExp(r'\r\n|\n'));
+    String? opusPt;
+    for (final line in lines) {
+      final match = RegExp(r'^a=rtpmap:(\d+)\s+opus/48000/2').firstMatch(line.trim());
+      if (match != null) {
+        opusPt = match.group(1);
+        break;
       }
     }
-    return modified;
+
+    if (opusPt == null) return sdp;
+
+    bool fmtpFound = false;
+    final updatedLines = <String>[];
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      if (trimmed.startsWith('a=fmtp:$opusPt')) {
+        fmtpFound = true;
+        var fmtp = trimmed;
+        if (!fmtp.contains('useinbandfec=')) {
+          fmtp += ';useinbandfec=1';
+        }
+        if (!fmtp.contains('usedtx=')) {
+          fmtp += ';usedtx=1';
+        }
+        updatedLines.add(fmtp);
+      } else {
+        updatedLines.add(trimmed);
+      }
+    }
+
+    if (!fmtpFound) {
+      final result = <String>[];
+      for (final line in updatedLines) {
+        result.add(line);
+        if (line.startsWith('a=rtpmap:$opusPt opus/48000/2')) {
+          result.add('a=fmtp:$opusPt useinbandfec=1;usedtx=1');
+        }
+      }
+      return '${result.join('\r\n')}\r\n';
+    }
+
+    return '${updatedLines.join('\r\n')}\r\n';
   }
 
   /// Creates and sets local WebRTC SDP Offer (Caller side)
