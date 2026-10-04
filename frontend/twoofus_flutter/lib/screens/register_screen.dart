@@ -222,7 +222,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Icon(
-                            Icons.auto_awesome_rounded,
+                            Icons.all_inclusive_rounded,
                             color: _rose,
                             size: 26,
                           ),
@@ -239,7 +239,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ).createShader(bounds),
                           blendMode: BlendMode.srcIn,
                           child: const Text(
-                            "Create your\nspace",
+                            "Create your\naccount",
                             style: TextStyle(
                               fontSize: 36,
                               fontWeight: FontWeight.w800,
@@ -252,7 +252,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 10),
 
                         Text(
-                          "Just the two of you — always private.",
+                          "Private, end-to-end encrypted space for two.",
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.38),
                             fontSize: 14,
@@ -370,7 +370,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              "Already have a space?  ",
+                              "Already have an account?  ",
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.38),
                                 fontSize: 14,

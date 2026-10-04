@@ -291,7 +291,7 @@ class _SplashScreenState extends State<SplashScreen>
                 FadeTransition(
                   opacity: _subtitleFade,
                   child: Text(
-                    "Your private space, always ✨",
+                    "Private 1-to-1 space for two ✨",
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.38),
                       fontSize: 15,

@@ -118,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF16082A),
+      backgroundColor: _surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -147,10 +147,10 @@ class _LoginScreenState extends State<LoginScreen>
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF4081).withValues(alpha: 0.15),
+                    color: _rose.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.shield_rounded, color: Color(0xFFFF4081), size: 32),
+                  child: Icon(Icons.shield_rounded, color: _rose, size: 32),
                 ),
                 const SizedBox(height: 14),
                 const Text(
@@ -188,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen>
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: Color(0xFFFF4081), width: 2),
+                      borderSide: BorderSide(color: _rose, width: 2),
                     ),
                     errorText: errorText,
                   ),
@@ -233,7 +233,7 @@ class _LoginScreenState extends State<LoginScreen>
                             }
                           },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF4081),
+                      backgroundColor: _rose,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       elevation: 0,
@@ -494,7 +494,7 @@ class _LoginScreenState extends State<LoginScreen>
                     const SizedBox(height: 6),
 
                     Text(
-                      "Your private space, always ✨",
+                      "Private 1-to-1 space for two ✨",
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.38),
                         fontSize: 14,
@@ -688,7 +688,7 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                           ),
                           child: Text(
-                            "Create your space",
+                            "Create account",
                             style: TextStyle(
                               color: _rose,
                               fontWeight: FontWeight.w600,

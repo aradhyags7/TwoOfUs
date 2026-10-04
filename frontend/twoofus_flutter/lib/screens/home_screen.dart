@@ -1524,7 +1524,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 20),
             Text(
-              "Pairing QR Code",
+              "Connection QR Code",
               style: TextStyle(color: _text, fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 6),
@@ -1584,7 +1584,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Clipboard.setData(ClipboardData(text: _generatedPin));
                   HapticFeedback.lightImpact();
                   Navigator.pop(ctx);
-                  _toast("Pairing PIN copied to clipboard");
+                  _toast("Invite PIN copied to clipboard");
                 },
                 icon: const Icon(Icons.copy_rounded, size: 18),
                 label: const Text("Copy PIN to Share"),
