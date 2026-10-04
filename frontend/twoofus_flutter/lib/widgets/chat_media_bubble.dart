@@ -9,6 +9,7 @@ import '../utils/session.dart';
 import 'full_screen_image_viewer.dart';
 import 'video_player_dialog.dart';
 import 'view_once_badge.dart';
+import '../utils/app_feedback.dart';
 
 class ChatMediaBubble extends StatefulWidget {
   final MediaItem media;
@@ -31,18 +32,14 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
 
   Future<void> _openDocument(BuildContext context) async {
     final fileUrl = ApiService.getMediaFileUrl(widget.media.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Downloading ${widget.media.originalFilename}...')),
-    );
+    AppFeedback.showInfo(context, 'Downloading ${widget.media.originalFilename}...');
 
     try {
       final effectiveToken = widget.token.isNotEmpty ? widget.token : (await Session.getToken() ?? '');
       final rawBytes = await ApiService.fetchAuthenticatedBytes(fileUrl, effectiveToken);
       if (rawBytes == null) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to download document')),
-          );
+          AppFeedback.showError(context, 'Failed to download document');
         }
         return;
       }
@@ -75,9 +72,7 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error opening file: $e')),
-        );
+        AppFeedback.showError(context, 'Error opening file: $e');
       }
     }
   }
