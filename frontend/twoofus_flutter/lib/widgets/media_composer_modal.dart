@@ -8,6 +8,7 @@ import '../services/e2ee_service.dart';
 import '../utils/session.dart';
 import 'image_crop_editor.dart';
 import 'view_once_badge.dart';
+import '../utils/app_feedback.dart';
 
 class MediaComposerModal extends StatefulWidget {
   final int receiverId;
@@ -169,12 +170,10 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
       _videoMuted[_currentIndex] = newMuted;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(newMuted ? "🔇 Audio muted for video" : "🔊 Audio enabled for video"),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppFeedback.showInfo(
+      context,
+      newMuted ? "Audio muted for video" : "Audio enabled for video",
+      title: "Audio Setting",
     );
   }
 
@@ -184,14 +183,12 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
       _isViewOnce = !_isViewOnce;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_isViewOnce
-            ? "1️⃣ View Once enabled. Media can only be opened once."
-            : "Media will be kept permanently in chat."),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppFeedback.showInfo(
+      context,
+      _isViewOnce
+          ? "View Once enabled. Media can only be opened once."
+          : "Media will be kept permanently in chat.",
+      title: _isViewOnce ? "View Once Enabled" : "Permanent Mode",
     );
   }
 
