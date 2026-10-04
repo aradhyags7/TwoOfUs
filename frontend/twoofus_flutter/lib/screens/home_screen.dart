@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 import '../utils/session.dart';
 import '../widgets/passcode_lock_button.dart';
 import 'login_screen.dart';
@@ -184,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             _partnerId = partnerId;
             _partnerName = partnerName;
             _partnerEmail = partnerEmail;
-            _partnerLabel = partnerName.isNotEmpty ? partnerName : "Connected ❤️";
+            _partnerLabel = partnerName.isNotEmpty ? partnerName : "Connected";
           });
 
           await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
@@ -216,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _partnerName = partnerName;
           _partnerEmail = partnerEmail;
           _partnerLabel = connected
-              ? (partnerName.isNotEmpty ? partnerName : "Connected ❤️")
+              ? (partnerName.isNotEmpty ? partnerName : "Connected")
               : "Not Connected";
         });
 
@@ -305,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final result = await ApiService.generatePin(userId, token: token);
       if (result != null && mounted) {
         setState(() => _generatedPin = result["pin"] ?? "");
-        if (!silent) _toast("New PIN generated ❤️");
+        if (!silent) _toast("New pairing PIN generated");
       }
     } catch (_) {}
   }
@@ -416,16 +417,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _toast(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: isError ? const Color(0xFF4A0E17) : _violet,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      ),
-    );
+    if (isError) {
+      AppFeedback.showError(context, msg);
+    } else {
+      AppFeedback.showSuccess(context, msg);
+    }
   }
 
   void _openProfileScreen() async {
@@ -903,7 +899,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Text(
                     _userBio != null && _userBio!.isNotEmpty
                         ? _userBio!
-                        : (_userEmail.isNotEmpty ? _userEmail : "Tap to complete your profile bio ❤️"),
+                        : (_userEmail.isNotEmpty ? _userEmail : "Tap to complete your profile bio"),
                     style: TextStyle(
                       color: _sub,
                       fontSize: 12.5,
@@ -1081,7 +1077,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionLabel("Connected Couple Space ❤️"),
+        _buildSectionLabel("Connected Space"),
         const SizedBox(height: 12),
 
         // Couple Visual Card
@@ -1585,7 +1581,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Clipboard.setData(ClipboardData(text: _generatedPin));
                   HapticFeedback.lightImpact();
                   Navigator.pop(ctx);
-                  _toast("Pairing PIN copied to clipboard! ❤️");
+                  _toast("Pairing PIN copied to clipboard");
                 },
                 icon: const Icon(Icons.copy_rounded, size: 18),
                 label: const Text("Copy PIN to Share"),
@@ -2443,7 +2439,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                     ).createShader(b),
                     blendMode: BlendMode.srcIn,
                     child: const Text(
-                      "You're Connected! ❤️",
+                      "You're Connected!",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 24,
@@ -2528,7 +2524,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                         },
                         icon: const Icon(Icons.favorite, color: Colors.white, size: 20),
                         label: const Text(
-                          "Enter Our Space ❤️",
+                          "Enter Our Space",
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 16,
