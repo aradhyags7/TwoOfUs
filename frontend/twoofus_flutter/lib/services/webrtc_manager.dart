@@ -56,6 +56,15 @@ class WebRTCManager {
     _pendingIceCandidates.clear();
     _hasRemoteDescription = false;
 
+    // Ensure permissions are active before accessing audio/video hardware
+    final hasPerms = await requestPermissions(isVideo: isVideo);
+    if (!hasPerms) {
+      if (kDebugMode) {
+        print("[WebRTCManager] Microphone/Camera permission not granted");
+      }
+      throw Exception("Microphone/Camera permission not granted");
+    }
+
     // 0. Configure native platform audio session for voice/video communication
     if (WebRTC.platformIsAndroid) {
       try {
@@ -98,20 +107,38 @@ class WebRTCManager {
         'urls': [
           'stun:stun.l.google.com:19302',
           'stun:stun1.l.google.com:19302',
+          'stun:stun2.l.google.com:19302',
+          'stun:stun3.l.google.com:19302',
+          'stun:stun4.l.google.com:19302',
+          'stun:stun.cloudflare.com:3478',
         ],
+      },
+      // OpenRelay public TURN servers for guaranteed P2P NAT traversal
+      {
+        'urls': [
+          'turn:openrelay.metered.ca:80',
+          'turn:openrelay.metered.ca:443',
+          'turn:openrelay.metered.ca:443?transport=tcp',
+        ],
+        'username': 'openrelayproject',
+        'credential': 'openrelayproject',
       },
     ];
 
     if (turnData != null && turnData['uris'] is List) {
-      final uris = List<String>.from(turnData['uris'] as List);
+      final rawUris = List<String>.from(turnData['uris'] as List);
+      // Filter out invalid/non-existent domains like turn.twoofus.app
+      final uris = rawUris.where((u) => !u.contains('turn.twoofus.app')).toList();
       final username = turnData['username']?.toString() ?? '';
       final password = turnData['password']?.toString() ?? '';
 
-      iceServers.add({
-        'urls': uris,
-        'username': username,
-        'credential': password,
-      });
+      if (uris.isNotEmpty && username.isNotEmpty && password.isNotEmpty) {
+        iceServers.add({
+          'urls': uris,
+          'username': username,
+          'credential': password,
+        });
+      }
     }
 
     final configuration = <String, dynamic>{

@@ -452,9 +452,21 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   Future<void> _acceptCall() async {
     HapticFeedback.mediumImpact();
-    setState(() => _isConnecting = true);
-
     final isVideo = _currentSession.callType == 'video';
+
+    final hasPerms = await WebRTCManager.requestPermissions(isVideo: isVideo);
+    if (!hasPerms) {
+      if (mounted) {
+        AppFeedback.showError(
+          context,
+          "Microphone permission is required to answer this call.",
+          title: "Permission Required",
+        );
+      }
+      return;
+    }
+
+    setState(() => _isConnecting = true);
 
     // 1. Initialize local media capture
     try {

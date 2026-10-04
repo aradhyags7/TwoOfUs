@@ -162,8 +162,8 @@ def get_turn_credentials(
     """
     user_id = get_current_user_id_from_token(token)
 
-    turn_secret = os.getenv("TURN_SECRET", "twoofus_turn_secret_dev")
-    turn_host = os.getenv("TURN_HOST", "turn.twoofus.app")
+    turn_secret = os.getenv("TURN_SECRET")
+    turn_host = os.getenv("TURN_HOST")
     turn_port = os.getenv("TURN_PORT", "3478")
     turn_tls_port = os.getenv("TURN_TLS_PORT", "5349")
 
@@ -172,18 +172,33 @@ def get_turn_credentials(
     expiry_timestamp = int(time.time()) + ttl
     username = f"{expiry_timestamp}:{user_id}"
 
-    # HMAC-SHA1 signature of username using shared turn_secret (Coturn REST standard)
-    hashed = hmac.new(turn_secret.encode('utf-8'), username.encode('utf-8'), hashlib.sha1)
-    password = base64.b64encode(hashed.digest()).decode('utf-8')
-
-    uris = [
-        "stun:stun.l.google.com:19302",
-        "stun:stun1.l.google.com:19302",
-        "stun:stun.cloudflare.com:3478",
-        f"turn:{turn_host}:{turn_port}?transport=udp",
-        f"turn:{turn_host}:{turn_port}?transport=tcp",
-        f"turns:{turn_host}:{turn_tls_port}?transport=tcp",
-    ]
+    if turn_secret and turn_host and turn_host != "turn.twoofus.app":
+        hashed = hmac.new(turn_secret.encode('utf-8'), username.encode('utf-8'), hashlib.sha1)
+        password = base64.b64encode(hashed.digest()).decode('utf-8')
+        uris = [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+            "stun:stun.cloudflare.com:3478",
+            f"turn:{turn_host}:{turn_port}?transport=udp",
+            f"turn:{turn_host}:{turn_port}?transport=tcp",
+            f"turns:{turn_host}:{turn_tls_port}?transport=tcp",
+        ]
+    else:
+        # High-availability production OpenRelay TURN & global STUN
+        username = "openrelayproject"
+        password = "openrelayproject"
+        uris = [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+            "stun:stun3.l.google.com:19302",
+            "stun:stun4.l.google.com:19302",
+            "stun:stun.cloudflare.com:3478",
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turn:openrelay.metered.ca:443?transport=tcp",
+        ]
 
     return TurnCredentialsResponse(
         username=username,
