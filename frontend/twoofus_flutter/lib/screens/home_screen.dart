@@ -636,17 +636,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               _buildQuickThemeStrip(),
                               const SizedBox(height: 24),
 
-                              // ── 3. Connected Couple Space OR Pairing ───────
+                              // ── 3. Connected Space OR Pairing ───────────────
                               if (_isPartnerConnected) ...[
-                                _buildConnectedCoupleHero(),
+                                _buildConnectedSpaceHero(),
                               ] else ...[
                                 _buildStatusCard(),
                                 const SizedBox(height: 26),
-                                _buildSectionLabel("Share with Partner"),
+                                _buildSectionLabel("Share Connection Code"),
                                 const SizedBox(height: 12),
                                 _buildShareSection(),
                                 const SizedBox(height: 26),
-                                _buildSectionLabel("Connect with Partner"),
+                                _buildSectionLabel("Enter Connection Code"),
                                 const SizedBox(height: 12),
                                 _buildConnectTabs(),
                                 const SizedBox(height: 12),
@@ -1072,15 +1072,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── 3. Connected Couple Space ──────────────────────────────────────────────
-  Widget _buildConnectedCoupleHero() {
+  // ── 3. Connected Space ──────────────────────────────────────────────────────
+  Widget _buildConnectedSpaceHero() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionLabel("Connected Space"),
         const SizedBox(height: 12),
 
-        // Couple Visual Card
+        // Connected Visual Card
         AnimatedContainer(
           duration: const Duration(milliseconds: 320),
           width: double.infinity,
@@ -1106,7 +1106,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           child: Column(
             children: [
-              // Two Avatars + Heart Line
+              // Two Avatars + Connection Link
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -1150,7 +1150,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ],
                   ),
 
-                  // Beating Love Connection Line
+                  // Secure Connection Link
                   Expanded(
                     child: Column(
                       children: [
@@ -1460,7 +1460,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                "Partner Status",
+                "Connection Status",
                 style: TextStyle(color: _sub, fontSize: 12, letterSpacing: 0.3),
               ),
               const SizedBox(height: 4),
@@ -1483,7 +1483,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               border: Border.all(color: _rose.withValues(alpha: 0.3)),
             ),
             child: Text(
-              "Pair Now",
+              "Connect",
               style: TextStyle(
                 color: _rose,
                 fontSize: 11,
@@ -1529,7 +1529,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 6),
             Text(
-              "Have your partner scan this code to connect instantly",
+              "Scan this code to connect instantly",
               textAlign: TextAlign.center,
               style: TextStyle(color: _sub, fontSize: 13),
             ),
@@ -1929,7 +1929,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               _buildField(
                 controller: _pinController,
-                hint: "Partner 8-Digit Invite PIN",
+                hint: "8-Digit Invite PIN",
                 icon: Icons.vpn_key_rounded,
                 type: TextInputType.text,
                 maxLength: 8,
@@ -1984,7 +1984,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            "Scan Partner's QR Code",
+                            "Scan QR Code",
                             style: TextStyle(color: _text, fontSize: 13, fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 4),
@@ -2000,7 +2000,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 14),
               _buildGradientBtn(
-                label: _isConnecting ? "Connecting…" : "Scan Partner QR",
+                label: _isConnecting ? "Connecting…" : "Scan QR Code",
                 icon: Icons.camera_alt_rounded,
                 isLoading: _isConnecting,
                 onTap: _isConnecting ? () {} : _scanPartnerQR,
@@ -2367,7 +2367,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Dual Glowing Hearts Celebration Icon
+                  // Connected Celebration Icon
                   AnimatedBuilder(
                     animation: _animCtrl,
                     builder: (context, _) {
@@ -2435,8 +2435,8 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
 
                   // Celebration Headline
                   ShaderMask(
-                    shaderCallback: (b) => const LinearGradient(
-                      colors: [Color(0xFFFF528F), Color(0xFFFFB3D1)],
+                    shaderCallback: (b) => LinearGradient(
+                      colors: [rose, violet],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ).createShader(b),
@@ -2455,7 +2455,7 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
 
                   const SizedBox(height: 10),
 
-                  // Couple Subtitle
+                  // Connection Subtitle
                   RichText(
                     textAlign: TextAlign.center,
                     text: TextSpan(

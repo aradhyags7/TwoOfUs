@@ -100,13 +100,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   final Set<int>    _deletedIds  = {};
   final Map<int, String> _reactions = {};
 
-  // ── Calendar & Couple Diary State ──────────────────────────────────────────
+  // ── Calendar & Shared Timeline State ───────────────────────────────────────
   List<DiaryMemoryItem> _sharedMemories = [];
   bool _loadingMemories = false;
-  int _diaryTab = 0; // 0 = 📔 Diary Notes, 1 = 🖼️ Photo Album
+  int _diaryTab = 0; // 0 = 📔 Timeline Notes, 1 = 🖼️ Photo Album
   DateTime _calMonth = DateTime.now();
   DateTime? _selDate = DateTime.now();
-  String _selectedMoodEmoji = '❤️';
+  String _selectedMoodEmoji = '✨';
   File? _memorySelectedPhoto;
   bool _isSavingMemory = false;
 
@@ -2382,7 +2382,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       });
 
       if (res != null) {
-        _toast("Saved to shared diary for ${_fmtDateLabel(targetDate)}");
+        _toast("Saved to timeline for ${_fmtDateLabel(targetDate)}");
         await _loadMemories();
       } else {
         _toast("Failed to save memory entry", isError: true);
@@ -2522,11 +2522,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Shared Diary & Album',
+                        'Shared Timeline & Notes',
                         style: TextStyle(color: _text, fontSize: 16, fontWeight: FontWeight.w800),
                       ),
                       Text(
-                        'Shared memories & dates',
+                        'Shared milestones & notes',
                         style: TextStyle(color: _sub, fontSize: 11),
                       ),
                     ],
@@ -2537,7 +2537,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                     icon: Icon(Icons.refresh_rounded, color: _rose, size: 20),
                     onPressed: () {
                       _loadMemories();
-                      _toast("Refreshed diary entries");
+                      _toast("Refreshed timeline entries");
                     },
                   ),
                   IconButton(
@@ -2549,7 +2549,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               ),
             ),
 
-            // Tab Selector: [ 📔 Diary Notes ] | [ 🖼️ Photo Album ]
+            // Tab Selector: [ 📔 Timeline Notes ] | [ 🖼️ Photo Album ]
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Container(
@@ -2577,7 +2577,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                               Icon(Icons.edit_note_rounded, size: 16, color: _diaryTab == 0 ? Colors.white : _sub),
                               const SizedBox(width: 6),
                               Text(
-                                "Diary (${_sharedMemories.length})",
+                                "Timeline (${_sharedMemories.length})",
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: _diaryTab == 0 ? FontWeight.bold : FontWeight.w500,
@@ -2651,7 +2651,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
 
   Widget _buildDiaryComposer() {
     final dateLabel = _selDate != null ? _fmtDateLabel(_selDate!) : 'Today';
-    const moods = ['❤️', '🥰', '✨', '🌟', '✈️', '🎂', '🥂', '💍', '🏖️', '💌', '☕', '🌙'];
+    const moods = ['✨', '🌟', '☕', '🔥', '🎉', '🚀', '💡', '✈️', '🏖️', '🎧', '🍕', '🌙'];
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 14),
@@ -2853,7 +2853,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               Text(
                 _selDate != null
                     ? 'No entries for ${_fmtDateLabel(_selDate!)}'
-                    : 'No diary entries yet',
+                    : 'No timeline entries yet',
                 style: TextStyle(color: _text, fontSize: 14, fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
@@ -2886,8 +2886,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                   context: context,
                   builder: (c) => AlertDialog(
                     backgroundColor: _surf,
-                    title: Text("Delete Memory?", style: TextStyle(color: _text)),
-                    content: Text("Are you sure you want to delete this diary entry?", style: TextStyle(color: _sub)),
+                    title: Text("Delete Entry?", style: TextStyle(color: _text)),
+                    content: Text("Are you sure you want to delete this timeline entry?", style: TextStyle(color: _sub)),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(c, false), child: Text("Cancel", style: TextStyle(color: _sub))),
                       TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("Delete", style: TextStyle(color: Colors.redAccent))),
@@ -3636,7 +3636,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _isOnline ? 'Active now 🟢' : 'Partner profile & details',
+                    _isOnline ? 'Active now 🟢' : 'View profile & info',
                     style: TextStyle(
                       color: _isOnline ? Colors.greenAccent : _rose,
                       fontSize: 11,

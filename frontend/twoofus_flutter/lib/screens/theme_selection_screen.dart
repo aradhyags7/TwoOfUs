@@ -325,7 +325,7 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Couple Milestone Banner
+                // Connection Sync Banner
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -358,7 +358,7 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Partner Bubble (Received)
+                // Contact Bubble (Received)
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
@@ -381,7 +381,7 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Did you drink water today? Missing you! ☕💕",
+                          "Hey! Did you check out the shared notes from earlier? ☕",
                           style: TextStyle(
                             color: theme.textPrimary,
                             fontSize: 12.5,
@@ -431,7 +431,7 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         const Text(
-                          "Just did! Can't wait to see you tonight 🥰",
+                          "Just reviewed them! Everything looks great and ready to go 👍",
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 12.5,

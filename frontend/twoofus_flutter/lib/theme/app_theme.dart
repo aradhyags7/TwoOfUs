@@ -54,26 +54,26 @@ class AppTheme {
         end: Alignment.bottomRight,
       );
 
-  // ── 1. Classic Velvet (Signature Romantic Noir) ───────────────────────────
+  // ── 1. Midnight Obsidian (Sleek Modern Luxury) ─────────────────────────────
   static const AppTheme defaultTheme = AppTheme(
     id: 'default',
-    name: 'Velvet Romance',
-    subtitle: 'Signature deep amethyst & radiant rose',
-    moodEmoji: '💖',
-    bg: Color(0xFF0C0914),
-    surface: Color(0xFF171126),
-    surfaceElevated: Color(0xFF221938),
+    name: 'Midnight Obsidian',
+    subtitle: 'Sleek deep space & electric indigo',
+    moodEmoji: '✨',
+    bg: Color(0xFF0B0D14),
+    surface: Color(0xFF141724),
+    surfaceElevated: Color(0xFF1D2235),
     surfaceTeal: Color(0xFF12232B),
-    primary: Color(0xFFFF3370),
+    primary: Color(0xFF6366F1),
     secondary: Color(0xFF8B5CF6),
-    gradientStart: Color(0xFFFF3370),
+    gradientStart: Color(0xFF6366F1),
     gradientEnd: Color(0xFF8B5CF6),
     textPrimary: Color(0xFFF8FAFC),
     textMuted: Color(0xFF94A3B8),
-    border: Color(0x338B5CF6),
-    glow: Color(0x40FF3370),
-    bubbleSelf: Color(0xFF8B5CF6),
-    bubblePartner: Color(0xFF1E1730),
+    border: Color(0x336366F1),
+    glow: Color(0x406366F1),
+    bubbleSelf: Color(0xFF6366F1),
+    bubblePartner: Color(0xFF1E2235),
   );
 
   // ── 2. Midnight Cyber (Deep Space & Neon Cyan) ────────────────────────────
