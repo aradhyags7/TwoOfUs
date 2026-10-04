@@ -685,6 +685,50 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             );
           },
         ),
+        if (isOngoing) ...[
+          const SizedBox(height: 8),
+          ValueListenableBuilder<bool>(
+            valueListenable: CallService.isSpeakerNotifier,
+            builder: (context, isSpeaker, _) {
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  CallService.toggleSpeaker();
+                  _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: (isSpeaker ? Colors.greenAccent : Colors.amberAccent).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: (isSpeaker ? Colors.greenAccent : Colors.amberAccent).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isSpeaker ? Icons.volume_up_rounded : Icons.phone_in_talk_rounded,
+                        color: isSpeaker ? Colors.greenAccent : Colors.amberAccent,
+                        size: 13,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        isSpeaker ? "Speakerphone Active" : "Earpiece Active",
+                        style: TextStyle(
+                          color: isSpeaker ? Colors.greenAccent : Colors.amberAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ],
     );
   }
