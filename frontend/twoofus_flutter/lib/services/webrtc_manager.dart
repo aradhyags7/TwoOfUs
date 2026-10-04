@@ -213,6 +213,20 @@ class WebRTCManager {
       await _peerConnection!.addTrack(track, _localStream!);
     }
 
+    // Ensure Unified Plan transceivers are explicitly set to SendRecv
+    try {
+      final transceivers = await _peerConnection!.getTransceivers();
+      for (final t in transceivers) {
+        if (t.sender.track?.kind == 'audio') {
+          await t.setDirection(TransceiverDirection.SendRecv);
+        } else if (t.sender.track?.kind == 'video') {
+          await t.setDirection(isVideo ? TransceiverDirection.SendRecv : TransceiverDirection.RecvOnly);
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print("[WebRTCManager] Error setting transceiver directions: $e");
+    }
+
     // Ensure audio routing is active on the device loudspeaker by default
     _isSpeakerphoneOn = true;
     await setSpeakerphone(_isSpeakerphoneOn);
@@ -246,12 +260,8 @@ class WebRTCManager {
       throw Exception("PeerConnection not initialized");
     }
 
-    final offerConstraints = <String, dynamic>{
-      'offerToReceiveAudio': 1,
-      'offerToReceiveVideo': isVideo ? 1 : 0,
-    };
-
-    final offer = await _peerConnection!.createOffer(offerConstraints);
+    // In Unified Plan, transceivers are configured via addTrack & setDirection; avoid legacy offerToReceiveAudio duplicate m-lines
+    final offer = await _peerConnection!.createOffer({});
     final optimizedSdp = _optimizeSdp(offer.sdp ?? '', isVideo: isVideo);
     final optimizedOffer = RTCSessionDescription(optimizedSdp, offer.type);
     await _peerConnection!.setLocalDescription(optimizedOffer);
@@ -264,13 +274,7 @@ class WebRTCManager {
       throw Exception("PeerConnection not initialized");
     }
 
-    final offerConstraints = <String, dynamic>{
-      'offerToReceiveAudio': 1,
-      'offerToReceiveVideo': isVideo ? 1 : 0,
-      'IceRestart': true,
-    };
-
-    final offer = await _peerConnection!.createOffer(offerConstraints);
+    final offer = await _peerConnection!.createOffer({'iceRestart': true});
     final optimizedSdp = _optimizeSdp(offer.sdp ?? '', isVideo: isVideo);
     final optimizedOffer = RTCSessionDescription(optimizedSdp, offer.type);
     await _peerConnection!.setLocalDescription(optimizedOffer);
@@ -290,12 +294,8 @@ class WebRTCManager {
     _hasRemoteDescription = true;
     _flushPendingIceCandidates();
 
-    final answerConstraints = <String, dynamic>{
-      'offerToReceiveAudio': 1,
-      'offerToReceiveVideo': isVideo ? 1 : 0,
-    };
-
-    final answer = await _peerConnection!.createAnswer(answerConstraints);
+    // In Unified Plan, answer automatically reflects negotiated media transceivers
+    final answer = await _peerConnection!.createAnswer({});
     final optimizedSdp = _optimizeSdp(answer.sdp ?? '', isVideo: isVideo);
     final optimizedAnswer = RTCSessionDescription(optimizedSdp, answer.type);
     await _peerConnection!.setLocalDescription(optimizedAnswer);
