@@ -131,20 +131,36 @@ class WebRTCManager {
       }
     };
 
-    _peerConnection!.onTrack = (RTCTrackEvent event) {
+    _peerConnection!.onTrack = (RTCTrackEvent event) async {
       if (kDebugMode) {
         print("[WebRTCManager] onTrack: kind=${event.track.kind}, id=${event.track.id}, streams=${event.streams.length}");
       }
 
-      // Explicitly enable remote audio track and ensure platform speaker routing
+      // Explicitly enable remote audio track, boost hardware playback volume, and verify routing
       if (event.track.kind == 'audio') {
         event.track.enabled = true;
-        setSpeakerphone(_isSpeakerphoneOn);
+        try {
+          await Helper.setVolume(1.0, event.track);
+        } catch (e) {
+          if (kDebugMode) {
+            print("[WebRTCManager] Helper.setVolume error: $e");
+          }
+        }
+        await setSpeakerphone(_isSpeakerphoneOn);
       }
 
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams[0];
+      } else if (_remoteStream == null) {
+        try {
+          _remoteStream = await createLocalMediaStream('remote_stream_${DateTime.now().millisecondsSinceEpoch}');
+        } catch (e) {
+          if (kDebugMode) {
+            print("[WebRTCManager] Fallback createLocalMediaStream error: $e");
+          }
+        }
       }
+
       if (_remoteStream != null) {
         if (!_remoteStream!.getTracks().any((t) => t.id == event.track.id)) {
           _remoteStream!.addTrack(event.track);
