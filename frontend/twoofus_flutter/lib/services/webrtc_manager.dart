@@ -400,13 +400,22 @@ class WebRTCManager {
     } catch (_) {}
   }
 
-  /// Sets device speakerphone on or off using the official platform Helper API
+  /// Sets device speakerphone on or off using the official platform Helper API with Bluetooth routing preference
   Future<void> setSpeakerphone(bool enableSpeaker) async {
     _isSpeakerphoneOn = enableSpeaker;
     try {
-      await Helper.setSpeakerphoneOn(enableSpeaker);
+      await Helper.ensureAudioSession();
+      if (enableSpeaker) {
+        try {
+          await Helper.setSpeakerphoneOnButPreferBluetooth();
+        } catch (_) {
+          await Helper.setSpeakerphoneOn(true);
+        }
+      } else {
+        await Helper.setSpeakerphoneOn(false);
+      }
       if (kDebugMode) {
-        print("[WebRTCManager] Speakerphone successfully routed: $enableSpeaker");
+        print("[WebRTCManager] Speakerphone successfully routed: $enableSpeaker (with Bluetooth preference)");
       }
     } catch (e) {
       if (kDebugMode) {
