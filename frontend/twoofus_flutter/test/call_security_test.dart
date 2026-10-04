@@ -74,9 +74,11 @@ void main() {
       // Clean up call
       CallService.endCall(999);
 
-      // Verify immediate zeroization of active session
+      // Verify immediate zeroization of active session and audio hardware state
       expect(CallService.activeCallNotifier.value, isNull);
       expect(CallService.callDurationNotifier.value, equals(0));
+      expect(CallService.isMutedNotifier.value, isFalse);
+      expect(CallService.isSpeakerNotifier.value, isTrue);
     });
   });
 }

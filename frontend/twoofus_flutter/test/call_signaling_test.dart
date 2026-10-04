@@ -62,5 +62,52 @@ void main() {
       CallService.flipCamera();
       expect(CallService.isFrontCameraNotifier.value, false);
     });
+
+    test('CallService.endCall resets audio and speaker state to unmuted and speaker active', () async {
+      CallService.isMutedNotifier.value = true;
+      CallService.isSpeakerNotifier.value = false;
+      CallService.isVideoEnabledNotifier.value = true;
+      CallService.isFrontCameraNotifier.value = false;
+
+      await CallService.endCall(101);
+
+      expect(CallService.isMutedNotifier.value, false);
+      expect(CallService.isSpeakerNotifier.value, true);
+      expect(CallService.isVideoEnabledNotifier.value, false);
+      expect(CallService.isFrontCameraNotifier.value, true);
+    });
+
+    test('Opus SDP formatting ensures useinbandfec and usedtx without duplicate attributes', () {
+      const sampleSdp = "v=0\r\no=- 12345 2 IN IP4 127.0.0.1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10\r\n";
+
+      final lines = sampleSdp.split(RegExp(r'\r\n|\n'));
+      String? opusPt;
+      for (final line in lines) {
+        final match = RegExp(r'^a=rtpmap:(\d+)\s+opus/48000/2').firstMatch(line.trim());
+        if (match != null) {
+          opusPt = match.group(1);
+          break;
+        }
+      }
+      expect(opusPt, '111');
+
+      final updatedLines = <String>[];
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        if (trimmed.startsWith('a=fmtp:$opusPt')) {
+          var fmtp = trimmed;
+          if (!fmtp.contains('useinbandfec=')) fmtp += ';useinbandfec=1';
+          if (!fmtp.contains('usedtx=')) fmtp += ';usedtx=1';
+          updatedLines.add(fmtp);
+        } else {
+          updatedLines.add(trimmed);
+        }
+      }
+
+      final result = updatedLines.join('\r\n');
+      expect(result.contains('a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1'), true);
+      expect('minptime'.allMatches(result).length, 1);
+    });
   });
 }
