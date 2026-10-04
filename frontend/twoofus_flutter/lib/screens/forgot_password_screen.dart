@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/theme_controller.dart';
+import '../utils/app_feedback.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   final String? initialEmailOrUsername;
@@ -84,30 +85,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
 
   void _toast(String msg, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline_rounded : Icons.mark_email_read_rounded,
-              color: isError ? Colors.redAccent : Colors.pinkAccent,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                msg,
-                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF200F35),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.all(16),
-      ),
-    );
+    if (isError) {
+      AppFeedback.showError(context, msg);
+    } else {
+      AppFeedback.showSuccess(context, msg);
+    }
   }
 
   Future<void> _requestCode() async {
