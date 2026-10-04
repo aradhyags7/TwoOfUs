@@ -30,8 +30,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _avatarUrl;
   File? _localAvatarFile;
 
-  String? _partnerName;
-
   bool _loading = true;
   bool _uploadingAvatar = false;
   int _avatarCacheKey = DateTime.now().millisecondsSinceEpoch;
@@ -71,7 +69,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfileData() async {
     _userId = await Session.getUserId();
     _userEmail = await Session.getEmail();
-    _partnerName = await Session.getCachedPartnerName();
 
     if (_userId == null) {
       if (mounted) setState(() => _loading = false);
@@ -335,7 +332,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "This is how your partner will see you in chats and calls.",
+                  "This name will be displayed in your chats and calls.",
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
                 ),
                 const SizedBox(height: 20),
@@ -455,7 +452,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "A note, inside joke, or feeling visible to your partner.",
+                  "A short status or personal note visible on your profile.",
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
                 ),
                 const SizedBox(height: 20),
@@ -488,9 +485,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _bioChip("Forever & always 💖", ctrl),
-                    _bioChip("Thinking of you 🥰", ctrl),
-                    _bioChip("Best partner ever 🌟", ctrl),
+                    _bioChip("Available 👋", ctrl),
+                    _bioChip("Living life ✨", ctrl),
+                    _bioChip("Busy right now ⚡", ctrl),
+                    _bioChip("Offline 💤", ctrl),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -956,38 +954,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
                                       ),
-                                    ),
-                                  ),
-                                  onTap: () {},
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // ── Group 3: Private Channel Status ───────────
-                            _buildGroupCard(
-                              title: "SPACE DETAILS",
-                              children: [
-                                _buildProfileTile(
-                                  icon: Icons.favorite_rounded,
-                                  iconColor: _rose,
-                                  label: "Relationship Space",
-                                  value: _partnerName != null ? "Coupled with $_partnerName" : "Solo Channel",
-                                  helperText: "End-to-End Encrypted space",
-                                  trailing: Container(
-                                    width: 9,
-                                    height: 9,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: _partnerName != null ? Colors.greenAccent : Colors.white38,
-                                      boxShadow: _partnerName != null
-                                          ? [
-                                              BoxShadow(
-                                                color: Colors.greenAccent.withValues(alpha: 0.6),
-                                                blurRadius: 6,
-                                              ),
-                                            ]
-                                          : null,
                                     ),
                                   ),
                                   onTap: () {},

@@ -286,7 +286,7 @@ class _TwoFactorSetupScreenState extends State<TwoFactorSetupScreen> {
           ),
           const SizedBox(height: 14),
           const Text(
-            "Protect Your Couple Space",
+            "Protect Your Account",
             style: TextStyle(
               color: Colors.white,
               fontSize: 20,
