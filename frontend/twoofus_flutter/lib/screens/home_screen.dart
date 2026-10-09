@@ -512,12 +512,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ShaderMask(
-                shaderCallback: (b) =>
-                    LinearGradient(colors: [_rose, _violet]).createShader(b),
-                blendMode: BlendMode.srcIn,
-                child: const Icon(Icons.logout_rounded, size: 42, color: Colors.white),
-              ),
+              Icon(Icons.logout_rounded, size: 40, color: _rose),
               const SizedBox(height: 16),
               Text(
                 "Sign Out",
@@ -598,17 +593,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           backgroundColor: _bg,
           body: Stack(
             children: [
-              // ── Ambient background glows ───────────────────────────────────
-              Positioned(
-                top: -90,
-                right: -70,
-                child: _Glow(color: _rose.withValues(alpha: 0.16), size: 340),
-              ),
-              Positioned(
-                bottom: -110,
-                left: -80,
-                child: _Glow(color: _violet.withValues(alpha: 0.14), size: 380),
-              ),
+
 
               // ── Main Content ───────────────────────────────────────────────
               SafeArea(
@@ -680,31 +665,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Row(
         children: [
-          ScaleTransition(
-            scale: _heartScale,
-            child: ShaderMask(
-              shaderCallback: (b) =>
-                  LinearGradient(colors: [_rose, _violet]).createShader(b),
-              blendMode: BlendMode.srcIn,
-              child: const Icon(Icons.all_inclusive_rounded, size: 28, color: Colors.white),
-            ),
-          ),
+          Icon(Icons.all_inclusive_rounded, size: 26, color: _rose),
           const SizedBox(width: 10),
-          ShaderMask(
-            shaderCallback: (b) => LinearGradient(
-              colors: [_rose, _lavender],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ).createShader(b),
-            blendMode: BlendMode.srcIn,
-            child: const Text(
-              "TwoOfUs",
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: -0.6,
-              ),
+          Text(
+            "TwoOfUs",
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: _text,
+              letterSpacing: -0.5,
             ),
           ),
           const Spacer(),
@@ -1713,21 +1682,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ? Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                ShaderMask(
-                                  shaderCallback: (b) =>
-                                      LinearGradient(colors: [_rose, _violet])
-                                          .createShader(b),
-                                  blendMode: BlendMode.srcIn,
-                                  child: Text(
-                                    _generatedPin.length == 8
-                                        ? '${_generatedPin.substring(0, 4)}-${_generatedPin.substring(4, 8)}'
-                                        : _generatedPin,
-                                    style: const TextStyle(
-                                      fontSize: 19,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 2,
-                                      color: Colors.white,
-                                    ),
+                                Text(
+                                  _generatedPin.length == 8
+                                      ? '${_generatedPin.substring(0, 4)}-${_generatedPin.substring(4, 8)}'
+                                      : _generatedPin,
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 2,
+                                    color: _rose,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
                                   ),
                                 ),
                                 const SizedBox(height: 10),
@@ -1972,15 +1936,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          ShaderMask(
-                            shaderCallback: (b) =>
-                                LinearGradient(colors: [_rose, _violet]).createShader(b),
-                            blendMode: BlendMode.srcIn,
-                            child: const Icon(
-                              Icons.qr_code_scanner_rounded,
-                              size: 48,
-                              color: Colors.white,
-                            ),
+                          Icon(
+                            Icons.qr_code_scanner_rounded,
+                            size: 48,
+                            color: _rose,
                           ),
                           const SizedBox(height: 10),
                           Text(
@@ -2238,26 +2197,7 @@ class _CornerPainter extends CustomPainter {
       old.color != color || old.thickness != thickness;
 }
 
-// ── Radial glow blob ───────────────────────────────────────────────────────
-class _Glow extends StatelessWidget {
-  final Color color;
-  final double size;
 
-  const _Glow({required this.color, required this.size});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color, Colors.transparent],
-            stops: const [0.0, 1.0],
-          ),
-        ),
-      );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Romantic Connected Celebration Modal Dialog
@@ -2378,40 +2318,15 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                           children: [
                             // Outer Halo
                             Container(
-                              width: 110,
-                              height: 110,
+                              width: 80,
+                              height: 80,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: RadialGradient(
-                                  colors: [
-                                    rose.withValues(alpha: 0.35 * _glowAnim.value),
-                                    Colors.transparent,
-                                  ],
-                                ),
-                              ),
-                            ),
-                            // Gradient Core Circle
-                            Container(
-                              width: 86,
-                              height: 86,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [rose, violet],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: rose.withValues(alpha: 0.5),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
+                                color: rose,
                               ),
                               child: const Icon(
                                 Icons.link_rounded,
-                                size: 46,
+                                size: 42,
                                 color: Colors.white,
                               ),
                             ),
@@ -2434,22 +2349,14 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                   const SizedBox(height: 24),
 
                   // Celebration Headline
-                  ShaderMask(
-                    shaderCallback: (b) => LinearGradient(
-                      colors: [rose, violet],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ).createShader(b),
-                    blendMode: BlendMode.srcIn,
-                    child: const Text(
-                      "You're Connected!",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -0.4,
-                      ),
+                  Text(
+                    "You're Connected!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: theme.textPrimary,
+                      letterSpacing: -0.4,
                     ),
                   ),
 

@@ -14,6 +14,7 @@ import '../widgets/video_player_dialog.dart';
 import '../services/call_service.dart';
 import 'media_gallery_screen.dart';
 import 'theme_selection_screen.dart';
+import '../widgets/design_system/design_system.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TwoOfUs — PartnerProfileScreen (Telegram / WhatsApp Style)
@@ -197,35 +198,21 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
           body: CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // Collapsible Hero Header
+              // Clean Header
               SliverAppBar(
-                expandedHeight: 310.0,
+                expandedHeight: 220.0,
                 pinned: true,
                 backgroundColor: _surf,
+                surfaceTintColor: Colors.transparent,
                 elevation: 0,
+                scrolledUnderElevation: 0,
                 leading: IconButton(
-                  icon: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Colors.black38,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.arrow_back_rounded,
-                        color: Colors.white, size: 20),
-                  ),
+                  icon: Icon(Icons.arrow_back_rounded, color: _text, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
                 actions: [
                   IconButton(
-                    icon: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: Colors.black38,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.refresh_rounded,
-                          color: Colors.white, size: 20),
-                    ),
+                    icon: Icon(Icons.refresh_rounded, color: _text, size: 20),
                     onPressed: () {
                       _fetchPartnerProfile();
                       _fetchMediaGallery();
@@ -233,144 +220,55 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                     },
                   ),
                   IconButton(
-                    icon: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: Colors.black38,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.more_vert_rounded,
-                          color: Colors.white, size: 20),
-                    ),
+                    icon: Icon(Icons.more_vert_rounded, color: _text, size: 20),
                     onPressed: _showMoreOptionsMenu,
                   ),
                 ],
                 flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Gradient Cover Background
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [_rose, _violet, _bg],
+                  background: Container(
+                    color: _surf,
+                    child: SafeArea(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () => _openAvatarLightbox(avatarUrl, username),
+                            child: Hero(
+                              tag: 'partner_avatar_${widget.partnerId}',
+                              child: AppAvatar(
+                                name: username,
+                                imageUrl: avatarUrl,
+                                size: 80,
+                                isOnline: widget.isOnline,
+                                showOnlineIndicator: true,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          Text(
+                            username,
+                            style: TextStyle(
+                              color: _text,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.isOnline ? "Online" : "Offline",
+                            style: TextStyle(
+                              color: widget.isOnline
+                                  ? (_isDark ? AppColors.darkSuccess : AppColors.lightSuccess)
+                                  : _sub,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                      // Glass Overlay
-                      Container(color: Colors.black.withValues(alpha: 0.25)),
-
-                      // Main Header Content
-                      Positioned(
-                        bottom: 24,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Avatar
-                            GestureDetector(
-                              onTap: () => _openAvatarLightbox(avatarUrl, username),
-                              child: Hero(
-                                tag: 'partner_avatar_${widget.partnerId}',
-                                child: Container(
-                                  width: 100,
-                                  height: 100,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(
-                                      colors: [_rose, _lavender],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.35),
-                                        blurRadius: 16,
-                                        offset: const Offset(0, 6),
-                                      ),
-                                    ],
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 3,
-                                    ),
-                                  ),
-                                  child: avatarUrl != null && avatarUrl.isNotEmpty
-                                      ? ClipOval(
-                                          child: Image.network(
-                                            avatarUrl.startsWith('http')
-                                                ? avatarUrl
-                                                : "${ApiService.baseUrl}/${avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl}",
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) =>
-                                                _avatarFallback(username),
-                                          ),
-                                        )
-                                      : _avatarFallback(username),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Partner Name
-                            Text(
-                              username,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black54,
-                                    blurRadius: 8,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-
-                            // Status Badge
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: widget.isOnline
-                                        ? Colors.greenAccent
-                                        : Colors.white54,
-                                    boxShadow: widget.isOnline
-                                        ? [
-                                            BoxShadow(
-                                              color: Colors.greenAccent
-                                                  .withValues(alpha: 0.6),
-                                              blurRadius: 6,
-                                              spreadRadius: 1,
-                                            )
-                                          ]
-                                        : [],
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  widget.isOnline ? "Online now" : "Offline",
-                                  style: TextStyle(
-                                    color: widget.isOnline
-                                        ? Colors.greenAccent
-                                        : Colors.white70,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -378,67 +276,67 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               // Quick Action Bar (Audio, Video, Media Vault, Mute)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
                       color: _surf,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: _border),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.04),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _actionBtn(
-                          icon: Icons.call_rounded,
-                          label: "Audio",
-                          onTap: () {
-                            CallService.startCall(
-                              context: context,
-                              partnerId: widget.partnerId,
-                              partnerName: username,
-                              callType: 'voice',
-                            );
-                          },
+                        Expanded(
+                          child: _actionBtn(
+                            icon: Icons.call_outlined,
+                            label: "Audio",
+                            onTap: () {
+                              CallService.startCall(
+                                context: context,
+                                partnerId: widget.partnerId,
+                                partnerName: username,
+                                callType: 'voice',
+                              );
+                            },
+                          ),
                         ),
-                        _actionBtn(
-                          icon: Icons.videocam_rounded,
-                          label: "Video",
-                          onTap: () {
-                            CallService.startCall(
-                              context: context,
-                              partnerId: widget.partnerId,
-                              partnerName: username,
-                              callType: 'video',
-                            );
-                          },
+                        Expanded(
+                          child: _actionBtn(
+                            icon: Icons.videocam_outlined,
+                            label: "Video",
+                            onTap: () {
+                              CallService.startCall(
+                                context: context,
+                                partnerId: widget.partnerId,
+                                partnerName: username,
+                                callType: 'video',
+                              );
+                            },
+                          ),
                         ),
-                        _actionBtn(
-                          icon: Icons.photo_library_rounded,
-                          label: "Vault",
-                          onTap: _openMediaVaultFull,
+                        Expanded(
+                          child: _actionBtn(
+                            icon: Icons.photo_library_outlined,
+                            label: "Vault",
+                            onTap: _openMediaVaultFull,
+                          ),
                         ),
-                        _actionBtn(
-                          icon: _muted
-                              ? Icons.notifications_off_rounded
-                              : Icons.notifications_active_rounded,
-                          label: _muted ? "Unmute" : "Mute",
-                          color: _muted ? Colors.orangeAccent : _rose,
-                          onTap: () {
-                            setState(() => _muted = !_muted);
-                            _toast(
-                              _muted
-                                  ? "Muted notifications for $username 🔕"
-                                  : "Unmuted notifications for $username 🔔",
-                            );
-                          },
+                        Expanded(
+                          child: _actionBtn(
+                            icon: _muted
+                                ? Icons.notifications_off_outlined
+                                : Icons.notifications_outlined,
+                            label: _muted ? "Unmute" : "Mute",
+                            color: _muted ? AppColors.darkWarning : null,
+                            onTap: () {
+                              setState(() => _muted = !_muted);
+                              _toast(
+                                _muted
+                                    ? "Muted notifications for $username"
+                                    : "Unmuted notifications for $username",
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -449,80 +347,41 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               // About & Information Section
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: _surf,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            ShaderMask(
-                              shaderCallback: (b) =>
-                                  LinearGradient(colors: [_rose, _violet])
-                                      .createShader(b),
-                              blendMode: BlendMode.srcIn,
-                              child: const Icon(Icons.info_outline_rounded,
-                                  size: 20, color: Colors.white),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "About & Info",
-                              style: TextStyle(
-                                color: _text,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: SectionGroup(
+                    title: "About",
+                    children: [
+                      AppListTile(
+                        icon: Icons.notes_rounded,
+                        title: _loading
+                            ? "Loading profile info..."
+                            : (bio.isNotEmpty ? bio : "No bio added yet"),
+                        subtitle: "Bio",
+                      ),
+                      if (email.isNotEmpty)
+                        AppListTile(
+                          icon: Icons.email_outlined,
+                          title: email,
+                          subtitle: "Email",
                         ),
-                        const SizedBox(height: 14),
-
-                        // Bio
-                        _infoTile(
-                          icon: Icons.notes_rounded,
-                          title: _loading
-                              ? "Loading profile info..."
-                              : (bio.isNotEmpty ? bio : "No bio added yet"),
-                          subtitle: "Bio",
+                      if (birthday.isNotEmpty)
+                        AppListTile(
+                          icon: Icons.cake_outlined,
+                          title: birthday,
+                          subtitle: "Birthday / Special Date",
                         ),
-
-                        if (email.isNotEmpty) ...[
-                          const Divider(height: 20),
-                          _infoTile(
-                            icon: Icons.email_outlined,
-                            title: email,
-                            subtitle: "Email",
-                          ),
-                        ],
-
-                        if (birthday.isNotEmpty) ...[
-                          const Divider(height: 20),
-                          _infoTile(
-                            icon: Icons.cake_outlined,
-                            title: birthday,
-                            subtitle: "Birthday / Special Date",
-                          ),
-                        ],
-
-                        const Divider(height: 20),
-                        _infoTile(
-                          icon: Icons.alternate_email_rounded,
-                          title: "@${username.toLowerCase().replaceAll(' ', '_')}",
-                          subtitle: "Username",
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(
-                                text: "@${username.toLowerCase()}"));
-                            _toast("Username copied to clipboard 📋");
-                          },
-                        ),
-                      ],
-                    ),
+                      AppListTile(
+                        icon: Icons.alternate_email_rounded,
+                        title: "@${username.toLowerCase().replaceAll(' ', '_')}",
+                        subtitle: "Username",
+                        trailing: Icon(Icons.copy_rounded, color: _sub, size: 16),
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(
+                              text: "@${username.toLowerCase()}"));
+                          _toast("Username copied to clipboard");
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -530,24 +389,28 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               // Shared Media Tabs Title & Header
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                   child: Container(
                     decoration: BoxDecoration(
                       color: _surf,
                       borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
                       ),
                       border: Border.all(color: _border),
                     ),
                     child: TabBar(
                       controller: _tabController,
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
                       indicatorColor: _rose,
-                      indicatorWeight: 3,
+                      indicatorWeight: 2,
                       labelColor: _rose,
                       unselectedLabelColor: _sub,
                       labelStyle: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold),
+                          fontSize: 13, fontWeight: FontWeight.w600),
+                      unselectedLabelStyle: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.normal),
                       tabs: [
                         Tab(text: "Media ($totalMediaCount)"),
                         Tab(text: "Links (${_sharedLinks.length})"),
@@ -568,8 +431,8 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                     decoration: BoxDecoration(
                       color: _surf,
                       borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(20),
-                        bottomRight: Radius.circular(20),
+                        bottomLeft: Radius.circular(16),
+                        bottomRight: Radius.circular(16),
                       ),
                       border: Border(
                         left: BorderSide(color: _border),
@@ -580,13 +443,9 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                     child: TabBarView(
                       controller: _tabController,
                       children: [
-                        // Media Grid Tab
                         _buildMediaTab(),
-                        // Links Tab
                         _buildLinksTab(),
-                        // Docs Tab
                         _buildDocsTab(),
-                        // Memories Tab
                         _buildMemoriesTab(),
                       ],
                     ),
@@ -598,59 +457,48 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _surf,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _border),
-                    ),
-                    child: Column(
-                      children: [
-                        _settingRow(
-                          icon: Icons.palette_outlined,
-                          title: "Chat Theme & Wallpaper",
-                          subtitle: "Personalize chat background and colors",
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ThemeSelectionScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        Divider(height: 1, color: _border),
-                        _settingRow(
-                          icon: Icons.verified_user_rounded,
-                          title: "Encryption & Safety Code",
-                          subtitle: "Verify 60-digit security safety code 🔒",
-                          iconColor: Colors.pinkAccent,
-                          onTap: () => EncryptionVerificationModal.show(
+                  child: SectionGroup(
+                    title: "Settings & Privacy",
+                    children: [
+                      AppListTile(
+                        icon: Icons.palette_outlined,
+                        title: "Chat Theme & Wallpaper",
+                        subtitle: "Personalize chat background and colors",
+                        trailing: Icon(Icons.chevron_right_rounded, color: _sub, size: 20),
+                        onTap: () {
+                          Navigator.push(
                             context,
-                            partnerId: widget.partnerId,
-                            partnerName: username,
-                          ),
+                            MaterialPageRoute(
+                              builder: (_) => const ThemeSelectionScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      AppListTile(
+                        icon: Icons.verified_user_outlined,
+                        title: "Encryption & Safety Code",
+                        subtitle: "Verify 60-digit security safety code",
+                        trailing: Icon(Icons.chevron_right_rounded, color: _sub, size: 20),
+                        onTap: () => EncryptionVerificationModal.show(
+                          context,
+                          partnerId: widget.partnerId,
+                          partnerName: username,
                         ),
-                        Divider(height: 1, color: _border),
-                        _settingRow(
-                          icon: Icons.cleaning_services_rounded,
-                          title: "Clear Chat History",
-                          subtitle: "Delete local messages with $username",
-                          iconColor: Colors.amberAccent,
-                          onTap: _showClearChatDialog,
-                        ),
-                        Divider(height: 1, color: _border),
-                        _settingRow(
-                          icon: Icons.block_rounded,
-                          title: "Block / Unpair Partner",
-                          subtitle: "Disconnect from this pair connection",
-                          iconColor: Colors.redAccent,
-                          titleColor: Colors.redAccent,
-                          onTap: _showBlockPartnerDialog,
-                        ),
-                      ],
-                    ),
+                      ),
+                      AppListTile(
+                        icon: Icons.cleaning_services_outlined,
+                        title: "Clear Chat History",
+                        subtitle: "Delete local messages with $username",
+                        onTap: _showClearChatDialog,
+                      ),
+                      AppListTile(
+                        icon: Icons.block_outlined,
+                        title: "Block / Unpair Partner",
+                        subtitle: "Disconnect from this pair connection",
+                        isDestructive: true,
+                        onTap: _showBlockPartnerDialog,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -658,26 +506,6 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
           ),
         );
       },
-    );
-  }
-
-  // ── Avatar Fallback ────────────────────────────────────────────────────────
-  Widget _avatarFallback(String name) {
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : "P";
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            initial,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -691,83 +519,33 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
     final btnColor = color ?? _rose;
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 46,
-            height: 46,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: btnColor.withValues(alpha: 0.12),
-              border: Border.all(color: btnColor.withValues(alpha: 0.3)),
+              color: _isDark ? AppColors.darkSurfaceRaised : AppColors.lightSurfaceRaised,
+              border: Border.all(color: _border),
             ),
-            child: Icon(icon, color: btnColor, size: 22),
+            child: Icon(icon, color: btnColor, size: 20),
           ),
           const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: _text,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: _text,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  // ── Info Tile Item ────────────────────────────────────────────────────────
-  Widget _infoTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    VoidCallback? onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _rose.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: _rose, size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: _text,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: _sub,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (onTap != null)
-              Icon(Icons.copy_rounded, color: _sub, size: 16),
-          ],
-        ),
       ),
     );
   }
@@ -895,7 +673,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
       padding: const EdgeInsets.all(12),
       physics: const BouncingScrollPhysics(),
       itemCount: _sharedLinks.length,
-      separatorBuilder: (_, __) => Divider(height: 12, color: _border),
+      separatorBuilder: (context, index) => Divider(height: 12, color: _border),
       itemBuilder: (ctx, index) {
         final link = _sharedLinks[index];
         return ListTile(
@@ -949,7 +727,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
       padding: const EdgeInsets.all(12),
       physics: const BouncingScrollPhysics(),
       itemCount: combinedDocs.length,
-      separatorBuilder: (_, __) => Divider(height: 12, color: _border),
+      separatorBuilder: (context, index) => Divider(height: 12, color: _border),
       itemBuilder: (ctx, index) {
         final doc = combinedDocs[index];
         if (doc is MediaItem) {
@@ -1016,7 +794,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
       padding: const EdgeInsets.all(12),
       physics: const BouncingScrollPhysics(),
       itemCount: widget.memories.length,
-      separatorBuilder: (_, __) => Divider(height: 12, color: _border),
+      separatorBuilder: (context, index) => Divider(height: 12, color: _border),
       itemBuilder: (ctx, index) {
         final mem = widget.memories[index];
         final text = mem.text ?? mem.toString();
@@ -1056,42 +834,6 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
     );
   }
 
-  // ── Settings Tile Row ─────────────────────────────────────────────────────
-  Widget _settingRow({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    Color? iconColor,
-    Color? titleColor,
-  }) {
-    final color = iconColor ?? _rose;
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: color, size: 20),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: titleColor ?? _text,
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: _sub, fontSize: 11),
-      ),
-      trailing: Icon(Icons.arrow_forward_ios_rounded, color: _sub, size: 14),
-      onTap: onTap,
-    );
-  }
-
   // ── Dialogs & Lightboxes ──────────────────────────────────────────────────
   void _openAvatarLightbox(String? avatarUrl, String username) {
     showDialog(
@@ -1110,27 +852,10 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                 onPressed: () => Navigator.pop(context),
               ),
             ),
-            Container(
-              width: 280,
-              height: 280,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(colors: [_rose, _violet]),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black54, blurRadius: 20),
-                ],
-              ),
-              child: avatarUrl != null && avatarUrl.isNotEmpty
-                  ? ClipOval(
-                      child: Image.network(
-                        avatarUrl.startsWith('http')
-                            ? avatarUrl
-                            : "${ApiService.baseUrl}/${avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl}",
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _avatarFallback(username),
-                      ),
-                    )
-                  : _avatarFallback(username),
+            AppAvatar(
+              name: username,
+              imageUrl: avatarUrl,
+              size: 200,
             ),
             const SizedBox(height: 16),
             Text(
@@ -1148,56 +873,53 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
   }
 
   void _showMoreOptionsMenu() {
-    showModalBottomSheet(
+    AppSheet.show(
       context: context,
-      backgroundColor: _surf,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      builder: (ctx) => AppSheet(
+        title: "Conversation Options",
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: Icon(Icons.photo_library_rounded, color: _rose),
-              title: Text("Open Shared Media Vault", style: TextStyle(color: _text)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _openMediaVaultFull();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.share_rounded, color: _rose),
-              title: Text("Share Contact", style: TextStyle(color: _text)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _toast("Contact link copied 📲");
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.shortcut_rounded, color: _violet),
-              title: Text("Add Shortcut to Home Screen", style: TextStyle(color: _text)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _toast("Shortcut added to home screen ⭐");
-              },
-            ),
-          ],
-        ),
+          AppListTile(
+            icon: Icons.photo_library_outlined,
+            title: "Open Shared Media Vault",
+            onTap: () {
+              Navigator.pop(context);
+              _openMediaVaultFull();
+            },
+          ),
+          AppListTile(
+            icon: Icons.share_outlined,
+            title: "Share Contact",
+            onTap: () {
+              Navigator.pop(context);
+              _toast("Contact link copied");
+            },
+          ),
+          AppListTile(
+            icon: Icons.shortcut_outlined,
+            title: "Add Shortcut to Home Screen",
+            onTap: () {
+              Navigator.pop(context);
+              _toast("Shortcut added to home screen");
+            },
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _showClearChatDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surf,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("Clear Chat History?", style: TextStyle(color: _text)),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: _border)),
+        title: Text("Clear Chat History?", style: TextStyle(color: _text, fontWeight: FontWeight.w600)),
         content: Text(
-          "Are you sure you want to permanently delete all messages and media with ${widget.partnerName} from the database?",
+          "Are you sure you want to permanently delete all messages and media with ${widget.partnerName}?",
           style: TextStyle(color: _sub),
         ),
         actions: [
@@ -1211,7 +933,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               final token = await Session.getToken();
               final success = await ApiService.clearConversation(widget.partnerId, token: token);
               if (success) {
-                _toast("Chat history cleared from database 🧹");
+                _toast("Chat history cleared");
                 if (mounted) {
                   setState(() {
                     _galleryMedia.clear();
@@ -1226,7 +948,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                 _toast("Failed to clear chat history", isError: true);
               }
             },
-            child: const Text("Clear", style: TextStyle(color: Colors.redAccent)),
+            child: Text("Clear", style: TextStyle(color: _isDark ? AppColors.darkDanger : AppColors.lightDanger, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -1238,8 +960,9 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surf,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("Unpair / Block ${widget.partnerName}?", style: TextStyle(color: _text)),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: _border)),
+        title: Text("Unpair / Block ${widget.partnerName}?", style: TextStyle(color: _text, fontWeight: FontWeight.w600)),
         content: Text(
           "This will disconnect your connection with ${widget.partnerName}.",
           style: TextStyle(color: _sub),
@@ -1254,7 +977,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
               Navigator.pop(ctx);
               _toast("Unpaired successfully", isError: true);
             },
-            child: const Text("Unpair", style: TextStyle(color: Colors.redAccent)),
+            child: Text("Unpair", style: TextStyle(color: _isDark ? AppColors.darkDanger : AppColors.lightDanger, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

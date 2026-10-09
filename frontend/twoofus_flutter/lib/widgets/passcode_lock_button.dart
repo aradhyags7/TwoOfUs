@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/security_service.dart';
+import '../theme/theme_controller.dart';
 
 
 class PasscodeLockButton extends StatefulWidget {
@@ -57,8 +58,7 @@ class _PasscodeLockButtonState extends State<PasscodeLockButton>
           return const SizedBox.shrink();
         }
 
-        const rose = Color(0xFFFF6B9D);
-        const violet = Color(0xFF7C3AED);
+        final color = widget.color ?? ThemeController.currentTheme.value.textSecondary;
 
         return ScaleTransition(
           scale: _scaleAnimation,
@@ -66,18 +66,10 @@ class _PasscodeLockButtonState extends State<PasscodeLockButton>
             tooltip: "Lock App",
             padding: const EdgeInsets.all(8),
             constraints: const BoxConstraints(),
-            icon: ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [rose, violet],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ).createShader(bounds),
-              blendMode: BlendMode.srcIn,
-              child: Icon(
-                Icons.lock_open_rounded,
-                size: widget.iconSize,
-                color: widget.color ?? Colors.white,
-              ),
+            icon: Icon(
+              Icons.lock_open_rounded,
+              size: widget.iconSize,
+              color: color,
             ),
             onPressed: _onTap,
           ),

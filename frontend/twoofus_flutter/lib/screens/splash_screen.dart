@@ -39,10 +39,7 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _subtitleCtrl;
   late Animation<double>   _subtitleFade;
 
-  // ── Palette ────────────────────────────────────────────────────────────────
-  Color get _rose     => ThemeController.currentTheme.value.primary;
-  Color get _violet   => ThemeController.currentTheme.value.secondary;
-  Color get _lavender => ThemeController.currentTheme.value.gradientEnd;
+
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
@@ -194,9 +191,9 @@ class _SplashScreenState extends State<SplashScreen>
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => screen,
+        pageBuilder: (context, animation, secondaryAnimation) => screen,
         transitionDuration: const Duration(milliseconds: 600),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+        transitionsBuilder: (context, animation, secondaryAnimation, child) => FadeTransition(
           opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
           child: child,
         ),
@@ -212,25 +209,11 @@ class _SplashScreenState extends State<SplashScreen>
       builder: (context, activeTheme, _) {
         return Scaffold(
           backgroundColor: activeTheme.bg,
-          body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // ── Ambient corner glows ─────────────────────────────────────────
-          Positioned(
-            top: -100, left: -80,
-            child: _Glow(color: _rose.withOpacity(0.13), size: 340),
-          ),
-          Positioned(
-            bottom: -120, right: -100,
-            child: _Glow(color: _violet.withOpacity(0.11), size: 380),
-          ),
-
-          // ── Center content ───────────────────────────────────────────────
-          Center(
+          body: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Entrance animation wraps heart + title
+                // Entrance animation wraps emblem + title
                 AnimatedBuilder(
                   animation: _entryCtrl,
                   builder: (_, child) => Opacity(
@@ -243,75 +226,68 @@ class _SplashScreenState extends State<SplashScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Pulsing gradient duo/infinity symbol
+                      // Clean emblem
                       ScaleTransition(
                         scale: _heartScale,
-                        child: ShaderMask(
-                          shaderCallback: (b) => LinearGradient(
-                            colors: [_rose, _violet],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ).createShader(b),
-                          blendMode: BlendMode.srcIn,
-                          child: const Icon(
-                            Icons.all_inclusive_rounded,
-                            size: 92,
-                            color: Colors.white,
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: activeTheme.surfaceElevated,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: activeTheme.border),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              Icons.lock_rounded,
+                              size: 36,
+                              color: activeTheme.primary,
+                            ),
                           ),
                         ),
                       ),
 
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
 
-                      // Gradient title
-                      ShaderMask(
-                        shaderCallback: (b) => LinearGradient(
-                          colors: [_rose, _lavender],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ).createShader(b),
-                        blendMode: BlendMode.srcIn,
-                        child: const Text(
-                          "TwoOfUs",
-                          style: TextStyle(
-                            fontSize: 46,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: -1.0,
-                          ),
+                      // Clean Title
+                      Text(
+                        "TwoOfUs",
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w700,
+                          color: activeTheme.textPrimary,
+                          letterSpacing: -0.5,
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
 
-                // Subtitle fades in after the title
+                // Subtitle
                 FadeTransition(
                   opacity: _subtitleFade,
                   child: Text(
-                    "Private 1-to-1 space for two ✨",
+                    "Private 1-to-1 encrypted messenger",
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.38),
-                      fontSize: 15,
-                      letterSpacing: 0.2,
+                      color: activeTheme.textMuted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.normal,
                     ),
                   ),
                 ),
 
-                const SizedBox(height: 72),
+                const SizedBox(height: 48),
 
                 // Animated loading dots
                 FadeTransition(
                   opacity: _subtitleFade,
-                  child: const _LoadingDots(),
+                  child: _LoadingDots(color: activeTheme.primary),
                 ),
               ],
             ),
           ),
-        ],
-      ),
         );
       },
     );
@@ -320,10 +296,10 @@ class _SplashScreenState extends State<SplashScreen>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Three pulsing dots that animate in a staggered wave.
-// Self-contained so it manages its own AnimationController.
 // ─────────────────────────────────────────────────────────────────────────────
 class _LoadingDots extends StatefulWidget {
-  const _LoadingDots();
+  final Color color;
+  const _LoadingDots({required this.color});
 
   @override
   State<_LoadingDots> createState() => _LoadingDotsState();
@@ -352,26 +328,23 @@ class _LoadingDotsState extends State<_LoadingDots>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ctrl,
-      builder: (_, __) {
+      builder: (context, child) {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: List.generate(3, (i) {
-            // Each dot is offset by 1/3 of the cycle.
             final phase = (((_ctrl.value * 3) - i) % 3) / 3;
-            // Smooth sine-like opacity: 0.2 → 1.0 → 0.2
             final opacity = 0.2 + 0.8 * _sineWave(phase);
-            // Vertical bob matching the opacity
-            final dy = -6.0 * _sineWave(phase);
+            final dy = -4.0 * _sineWave(phase);
 
             return Transform.translate(
               offset: Offset(0, dy),
               child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 5),
-                width: 7,
-                height: 7,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: 6,
+                height: 6,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFFFF6B9D).withOpacity(opacity),
+                  color: widget.color.withValues(alpha: opacity),
                 ),
               ),
             );
@@ -381,35 +354,8 @@ class _LoadingDotsState extends State<_LoadingDots>
     );
   }
 
-  /// Maps a value in [0,1] to a smooth [0,1] sine-like peak at 0.5.
   double _sineWave(double t) {
-    // t in [0,1] → peak at 0.5
     if (t <= 0.5) return t / 0.5;
     return 1.0 - (t - 0.5) / 0.5;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Radial ambient glow (same helper used in Login / Home / Chat screens).
-// ─────────────────────────────────────────────────────────────────────────────
-class _Glow extends StatelessWidget {
-  final Color color;
-  final double size;
-
-  const _Glow({required this.color, required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color, Colors.transparent],
-          stops: const [0.0, 1.0],
-        ),
-      ),
-    );
   }
 }

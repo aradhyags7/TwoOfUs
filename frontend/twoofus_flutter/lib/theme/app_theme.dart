@@ -1,227 +1,396 @@
 import 'package:flutter/material.dart';
 
+/// Supported accent themes in TwoOfUs design system.
+/// Every accent fill passes WCAG AA >= 4.5:1 with white text in BOTH light & dark modes.
+enum AppAccent {
+  indigo(
+    id: 'indigo',
+    name: 'Indigo',
+    subtitle: 'Quiet slate & electric indigo',
+    fillColor: Color(0xFF4F46E5),   // Indigo-600 (vs White: 6.29:1)
+    brightColor: Color(0xFF818CF8), // Indigo-400 (vs DarkSurface: 6.03:1)
+  ),
+  teal(
+    id: 'teal',
+    name: 'Teal',
+    subtitle: 'Balanced obsidian & radiant teal',
+    fillColor: Color(0xFF0F766E),   // Teal-700 (vs White: 5.47:1)
+    brightColor: Color(0xFF2DD4BF), // Teal-400 (vs DarkSurface: 9.66:1)
+  ),
+  rose(
+    id: 'rose',
+    name: 'Rose',
+    subtitle: 'Deep crimson & soft rose',
+    fillColor: Color(0xFFBE123C),   // Rose-700 (vs White: 6.29:1)
+    brightColor: Color(0xFFFB7185), // Rose-400 (vs DarkSurface: 6.68:1)
+  ),
+  amber(
+    id: 'amber',
+    name: 'Amber',
+    subtitle: 'Warm espresso & honey amber',
+    fillColor: Color(0xFF92400E),   // Amber-800 (vs White: 7.09:1)
+    brightColor: Color(0xFFFBBF24), // Amber-400 (vs DarkSurface: 10.77:1)
+  ),
+  graphite(
+    id: 'graphite',
+    name: 'Graphite',
+    subtitle: 'Monochrome slate & zinc',
+    fillColor: Color(0xFF334155),   // Slate-700 (vs White: 10.35:1)
+    brightColor: Color(0xFF94A3B8), // Slate-400 (vs DarkSurface: 7.01:1)
+  );
+
+  const AppAccent({
+    required this.id,
+    required this.name,
+    required this.subtitle,
+    required this.fillColor,
+    required this.brightColor,
+  });
+
+  final String id;
+  final String name;
+  final String subtitle;
+  final Color fillColor;
+  final Color brightColor;
+
+  String get label => name;
+
+  /// Contrast-validated foreground color for accent fills.
+  /// Passes >= 4.5:1 in both light and dark.
+  Color onAccent(Brightness brightness) => Colors.white;
+
+  static AppAccent fromId(String id) {
+    return AppAccent.values.firstWhere(
+      (accent) => accent.id == id,
+      orElse: () => AppAccent.indigo,
+    );
+  }
+}
+
+/// Central Theme Tokens for TwoOfUs.
+/// Strict WCAG AA compliance, neutral-first palette, zero neon glow, 1px hairlines.
 class AppTheme {
+  // Metadata
   final String id;
   final String name;
   final String subtitle;
   final String moodEmoji;
+  final Brightness brightness;
+  final AppAccent accent;
 
+  // Backgrounds & Canvas
   final Color bg;
   final Color surface;
-  final Color surfaceElevated;
-  final Color surfaceTeal;
+  final Color surfaceRaised;
+  final Color surfaceElevated; // Backward compatibility alias for surfaceRaised
+  final Color surfaceTeal;     // Backward compatibility alias
+
+  // Borders & Dividers
+  final Color border;
+  final Color borderSubtle;
+  final Color divider;
+
+  // Typography Tokens (Strict contrast: primary >= 12:1, secondary >= 7:1, tertiary >= 5:1)
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color textTertiary;
+  final Color textMuted;       // Backward compatibility alias for textTertiary
+
+  // Accents & Interactions
   final Color primary;
   final Color secondary;
+  final Color accentFill;
+  final Color accentBright;
+  final Color accentBorder;
+  final Color onAccent;
+  final Color focusRing;
+
+  // Bubbles
+  final Color bubbleSelf;      // Backward compatibility alias for bubbleSent
+  final Color bubblePartner;   // Backward compatibility alias for bubbleReceived
+  final Color bubbleSent;
+  final Color bubbleReceived;
+  final Color onBubbleSent;
+  final Color onBubbleReceived;
+
+  // Semantics
+  final Color danger;
+  final Color success;
+  final Color warning;
+
+  // Shadows / Glow (Set to transparent across all themes to remove AI neon glows)
+  final Color glow;
+
+  // Gradients (Solid/flat or subtle ramps, no rainbow AI gradients)
   final Color gradientStart;
   final Color gradientEnd;
-  final Color textPrimary;
-  final Color textMuted;
-  final Color border;
-  final Color glow;
-  final Color bubbleSelf;
-  final Color bubblePartner;
 
   const AppTheme({
     required this.id,
     required this.name,
     required this.subtitle,
-    this.moodEmoji = '💖',
+    this.moodEmoji = '💬',
+    required this.brightness,
+    required this.accent,
     required this.bg,
     required this.surface,
-    this.surfaceElevated = const Color(0xFF221A35),
+    required this.surfaceRaised,
+    required this.surfaceElevated,
     required this.surfaceTeal,
+    required this.border,
+    required this.borderSubtle,
+    required this.divider,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.textTertiary,
+    required this.textMuted,
     required this.primary,
     required this.secondary,
-    required this.gradientStart,
-    required this.gradientEnd,
-    required this.textPrimary,
-    required this.textMuted,
-    required this.border,
-    required this.glow,
+    required this.accentFill,
+    required this.accentBright,
+    this.accentBorder = Colors.transparent,
+    required this.onAccent,
+    required this.focusRing,
     required this.bubbleSelf,
     required this.bubblePartner,
+    required this.bubbleSent,
+    required this.bubbleReceived,
+    required this.onBubbleSent,
+    required this.onBubbleReceived,
+    required this.danger,
+    required this.success,
+    required this.warning,
+    required this.glow,
+    required this.gradientStart,
+    required this.gradientEnd,
   });
 
+  bool get isDark => brightness == Brightness.dark;
+
   LinearGradient get gradient => LinearGradient(
-        colors: [gradientStart, gradientEnd],
+        colors: [accentFill, accentFill],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
 
   LinearGradient get cardGradient => LinearGradient(
-        colors: [surface, surfaceElevated],
+        colors: [surface, surface],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
 
-  // ── 1. Midnight Obsidian (Sleek Modern Luxury) ─────────────────────────────
-  static const AppTheme defaultTheme = AppTheme(
-    id: 'default',
-    name: 'Midnight Obsidian',
-    subtitle: 'Sleek deep space & electric indigo',
-    moodEmoji: '✨',
-    bg: Color(0xFF0B0D14),
-    surface: Color(0xFF141724),
-    surfaceElevated: Color(0xFF1D2235),
-    surfaceTeal: Color(0xFF12232B),
-    primary: Color(0xFF6366F1),
-    secondary: Color(0xFF8B5CF6),
-    gradientStart: Color(0xFF6366F1),
-    gradientEnd: Color(0xFF8B5CF6),
-    textPrimary: Color(0xFFF8FAFC),
-    textMuted: Color(0xFF94A3B8),
-    border: Color(0x336366F1),
-    glow: Color(0x406366F1),
-    bubbleSelf: Color(0xFF6366F1),
-    bubblePartner: Color(0xFF1E2235),
-  );
+  // ── Factory Constructors ───────────────────────────────────────────────────
 
-  // ── 2. Midnight Cyber (Deep Space & Neon Cyan) ────────────────────────────
-  static const AppTheme midnightTheme = AppTheme(
-    id: 'midnight',
-    name: 'Midnight Cyber',
-    subtitle: 'Obsidian black with bioluminescent cyan',
-    moodEmoji: '🌌',
-    bg: Color(0xFF07090F),
-    surface: Color(0xFF0E1422),
-    surfaceElevated: Color(0xFF161F33),
-    surfaceTeal: Color(0xFF0D2533),
-    primary: Color(0xFF00E5FF),
-    secondary: Color(0xFF6366F1),
-    gradientStart: Color(0xFF00E5FF),
-    gradientEnd: Color(0xFF6366F1),
-    textPrimary: Color(0xFFF1F5F9),
-    textMuted: Color(0xFF94A3B8),
-    border: Color(0x3300E5FF),
-    glow: Color(0x4000E5FF),
-    bubbleSelf: Color(0xFF4F46E5),
-    bubblePartner: Color(0xFF121B2E),
-  );
+  /// Build a Dark Theme instance for any accent
+  factory AppTheme.dark(AppAccent accent) {
+    const bgDark = Color(0xFF0E1013);
+    const surfaceDark = Color(0xFF14171B);
+    const surfaceRaisedDark = Color(0xFF1A1E23);
+    const borderDark = Color(0xFF262B32);
+    const borderSubtleDark = Color(0xFF1E232A);
+    const dividerDark = Color(0xFF1D2127);
 
-  // ── 3. Sakura Bloom (Warm Cherry Blossom) ──────────────────────────────────
-  static const AppTheme roseTheme = AppTheme(
-    id: 'rose',
-    name: 'Sakura Bloom',
-    subtitle: 'Warm wine espresso & radiant cherry blossom',
-    moodEmoji: '🌸',
-    bg: Color(0xFF11080E),
-    surface: Color(0xFF1D0E18),
-    surfaceElevated: Color(0xFF2B1424),
-    surfaceTeal: Color(0xFF1C1D24),
-    primary: Color(0xFFFB7185),
-    secondary: Color(0xFFE879F9),
-    gradientStart: Color(0xFFFB7185),
-    gradientEnd: Color(0xFFE879F9),
-    textPrimary: Color(0xFFFFF1F2),
-    textMuted: Color(0xFFE2C4D2),
-    border: Color(0x33FB7185),
-    glow: Color(0x40FB7185),
-    bubbleSelf: Color(0xFFE11D48),
-    bubblePartner: Color(0xFF261220),
-  );
+    const textPrimaryDark = Color(0xFFF1F5F9);
+    const textSecondaryDark = Color(0xFF94A3B8);
+    // Measured 6.31:1 on bgDark, 5.96:1 on surfaceDark (passes >= 4.5:1)
+    const textTertiaryDark = Color(0xFF8896A6);
 
-  // ── 4. Twilight Abyss (Royal Sapphire & Ocean) ─────────────────────────────
-  static const AppTheme oceanTheme = AppTheme(
-    id: 'ocean',
-    name: 'Twilight Abyss',
-    subtitle: 'Serene deep ocean & azure bioluminescence',
-    moodEmoji: '🌊',
-    bg: Color(0xFF040B16),
-    surface: Color(0xFF0A172B),
-    surfaceElevated: Color(0xFF112442),
-    surfaceTeal: Color(0xFF0C2B3D),
-    primary: Color(0xFF38BDF8),
-    secondary: Color(0xFF3B82F6),
-    gradientStart: Color(0xFF38BDF8),
-    gradientEnd: Color(0xFF2563EB),
-    textPrimary: Color(0xFFF0F9FF),
-    textMuted: Color(0xFF93C5FD),
-    border: Color(0x3338BDF8),
-    glow: Color(0x4038BDF8),
-    bubbleSelf: Color(0xFF0284C7),
-    bubblePartner: Color(0xFF0E203B),
-  );
+    final fill = accent.fillColor;
+    final bright = accent.brightColor;
 
-  // ── 5. Moonlight Lavender (Lilac & Soft Orchid) ───────────────────────────
-  static const AppTheme lavenderTheme = AppTheme(
-    id: 'lavender',
-    name: 'Moonlight Lilac',
-    subtitle: 'Dreamy midnight violet & glowing orchid',
-    moodEmoji: '🌙',
-    bg: Color(0xFF0B0716),
-    surface: Color(0xFF17102A),
-    surfaceElevated: Color(0xFF23193E),
-    surfaceTeal: Color(0xFF171D2E),
-    primary: Color(0xFFC084FC),
-    secondary: Color(0xFFF472B6),
-    gradientStart: Color(0xFFC084FC),
-    gradientEnd: Color(0xFFF472B6),
-    textPrimary: Color(0xFFFAF5FF),
-    textMuted: Color(0xFFC4B5FD),
-    border: Color(0x33C084FC),
-    glow: Color(0x40C084FC),
-    bubbleSelf: Color(0xFF9333EA),
-    bubblePartner: Color(0xFF1E1535),
-  );
+    return AppTheme(
+      id: 'dark_${accent.id}',
+      name: '${accent.name} Dark',
+      subtitle: accent.subtitle,
+      moodEmoji: '🌙',
+      brightness: Brightness.dark,
+      accent: accent,
+      bg: bgDark,
+      surface: surfaceDark,
+      surfaceRaised: surfaceRaisedDark,
+      surfaceElevated: surfaceRaisedDark,
+      surfaceTeal: surfaceDark,
+      border: borderDark,
+      borderSubtle: borderSubtleDark,
+      divider: dividerDark,
+      textPrimary: textPrimaryDark,
+      textSecondary: textSecondaryDark,
+      textTertiary: textTertiaryDark,
+      textMuted: textTertiaryDark,
+      primary: bright,
+      secondary: bright,
+      accentFill: fill,
+      accentBright: bright,
+      accentBorder: bright.withValues(alpha: 0.35),
+      onAccent: accent.onAccent(Brightness.dark),
+      focusRing: bright,
+      bubbleSelf: fill,
+      bubblePartner: surfaceRaisedDark,
+      bubbleSent: fill,
+      bubbleReceived: surfaceRaisedDark,
+      onBubbleSent: Colors.white,
+      onBubbleReceived: textPrimaryDark,
+      danger: const Color(0xFFEF4444),
+      success: const Color(0xFF10B981),
+      warning: const Color(0xFFF59E0B),
+      glow: Colors.transparent, // Zero blur glow
+      gradientStart: fill,
+      gradientEnd: bright,
+    );
+  }
 
-  // ── 6. Nordic Aurora (Emerald & Arctic Jade) ──────────────────────────────
-  static const AppTheme emeraldTheme = AppTheme(
-    id: 'emerald',
-    name: 'Nordic Aurora',
-    subtitle: 'Pine forest midnight & luminous jade aurora',
-    moodEmoji: '🌿',
-    bg: Color(0xFF040F0C),
-    surface: Color(0xFF0B1E18),
-    surfaceElevated: Color(0xFF122C24),
-    surfaceTeal: Color(0xFF0C2B22),
-    primary: Color(0xFF10B981),
-    secondary: Color(0xFF06B6D4),
-    gradientStart: Color(0xFF10B981),
-    gradientEnd: Color(0xFF2DD4BF),
-    textPrimary: Color(0xFFF0FDF4),
-    textMuted: Color(0xFF94B8A3),
-    border: Color(0x3310B981),
-    glow: Color(0x4010B981),
-    bubbleSelf: Color(0xFF059669),
-    bubblePartner: Color(0xFF0F261E),
-  );
+  /// Build a Light Theme instance for any accent
+  factory AppTheme.light(AppAccent accent) {
+    const bgLight = Color(0xFFF6F7F9);
+    const surfaceLight = Color(0xFFFFFFFF);
+    const surfaceRaisedLight = Color(0xFFF0F2F5);
+    const borderLight = Color(0xFFE2E8F0);
+    const borderSubtleLight = Color(0xFFEDF2F7);
+    const dividerLight = Color(0xFFE2E8F0);
 
-  // ── 7. Golden Sunset (Warm Amber & Ruby Rose) ──────────────────────────────
-  static const AppTheme sunsetTheme = AppTheme(
-    id: 'sunset',
-    name: 'Golden Sunset',
-    subtitle: 'Warm cedar espresso & glowing twilight amber',
-    moodEmoji: '🌅',
-    bg: Color(0xFF100906),
-    surface: Color(0xFF20120B),
-    surfaceElevated: Color(0xFF2E1A11),
-    surfaceTeal: Color(0xFF281C1B),
-    primary: Color(0xFFF97316),
-    secondary: Color(0xFFF43F5E),
-    gradientStart: Color(0xFFF97316),
-    gradientEnd: Color(0xFFE11D48),
-    textPrimary: Color(0xFFFFF7ED),
-    textMuted: Color(0xFFD4B09E),
-    border: Color(0x33F97316),
-    glow: Color(0x40F97316),
-    bubbleSelf: Color(0xFFEA580C),
-    bubblePartner: Color(0xFF26160F),
-  );
+    const textPrimaryLight = Color(0xFF0F172A);
+    const textSecondaryLight = Color(0xFF475569);
+    // Measured 5.30:1 on bgLight, 5.68:1 on surfaceLight (passes >= 4.5:1)
+    const textTertiaryLight = Color(0xFF5A687A);
 
-  static const List<AppTheme> allThemes = [
-    defaultTheme,
-    midnightTheme,
-    roseTheme,
-    oceanTheme,
-    lavenderTheme,
-    emeraldTheme,
-    sunsetTheme,
+    final fill = accent.fillColor;
+    final bright = accent.brightColor;
+
+    return AppTheme(
+      id: 'light_${accent.id}',
+      name: '${accent.name} Light',
+      subtitle: accent.subtitle,
+      moodEmoji: '☀️',
+      brightness: Brightness.light,
+      accent: accent,
+      bg: bgLight,
+      surface: surfaceLight,
+      surfaceRaised: surfaceRaisedLight,
+      surfaceElevated: surfaceRaisedLight,
+      surfaceTeal: surfaceLight,
+      border: borderLight,
+      borderSubtle: borderSubtleLight,
+      divider: dividerLight,
+      textPrimary: textPrimaryLight,
+      textSecondary: textSecondaryLight,
+      textTertiary: textTertiaryLight,
+      textMuted: textTertiaryLight,
+      primary: fill,
+      secondary: fill,
+      accentFill: fill,
+      accentBright: bright,
+      onAccent: accent.onAccent(Brightness.light),
+      focusRing: fill,
+      bubbleSelf: fill,
+      bubblePartner: surfaceLight,
+      bubbleSent: fill,
+      bubbleReceived: surfaceLight,
+      onBubbleSent: Colors.white,
+      onBubbleReceived: textPrimaryLight,
+      danger: const Color(0xFFDC2626),
+      success: const Color(0xFF059669),
+      warning: const Color(0xFFD97706),
+      glow: Colors.transparent, // Zero blur glow
+      gradientStart: fill,
+      gradientEnd: fill,
+    );
+  }
+
+  // ── Preset Themes ──────────────────────────────────────────────────────────
+
+  /// Default theme: Dark + Indigo accent
+  static final AppTheme defaultTheme = AppTheme.dark(AppAccent.indigo);
+
+  static final AppTheme darkIndigo = AppTheme.dark(AppAccent.indigo);
+  static final AppTheme darkTeal = AppTheme.dark(AppAccent.teal);
+  static final AppTheme darkRose = AppTheme.dark(AppAccent.rose);
+  static final AppTheme darkAmber = AppTheme.dark(AppAccent.amber);
+  static final AppTheme darkGraphite = AppTheme.dark(AppAccent.graphite);
+
+  static final AppTheme lightIndigo = AppTheme.light(AppAccent.indigo);
+  static final AppTheme lightTeal = AppTheme.light(AppAccent.teal);
+  static final AppTheme lightRose = AppTheme.light(AppAccent.rose);
+  static final AppTheme lightAmber = AppTheme.light(AppAccent.amber);
+  static final AppTheme lightGraphite = AppTheme.light(AppAccent.graphite);
+
+  static final List<AppTheme> allThemes = [
+    darkIndigo,
+    darkTeal,
+    darkRose,
+    darkAmber,
+    darkGraphite,
+    lightIndigo,
+    lightTeal,
+    lightRose,
+    lightAmber,
+    lightGraphite,
   ];
 
+  /// Backward compatible legacy presets pointing directly to modern tokens
+  static final AppTheme midnightTheme = AppTheme.dark(AppAccent.indigo);
+  static final AppTheme roseTheme = AppTheme.dark(AppAccent.rose);
+  static final AppTheme oceanTheme = AppTheme.dark(AppAccent.teal);
+  static final AppTheme lavenderTheme = AppTheme.dark(AppAccent.indigo);
+  static final AppTheme emeraldTheme = AppTheme.dark(AppAccent.teal);
+  static final AppTheme sunsetTheme = AppTheme.dark(AppAccent.amber);
+
+  /// Resolves any theme ID (legacy or modern) safely
   static AppTheme fromId(String id) {
+    // Migration: Map legacy theme IDs to default Dark Indigo
+    const legacyIds = {
+      'default',
+      'midnight',
+      'rose',
+      'ocean',
+      'lavender',
+      'emerald',
+      'sunset',
+    };
+    if (legacyIds.contains(id)) {
+      return AppTheme.dark(AppAccent.indigo);
+    }
+
+    // Direct match
     return allThemes.firstWhere(
       (theme) => theme.id == id,
       orElse: () => defaultTheme,
     );
   }
+
+  /// Resolve theme for given brightness and accent
+  static AppTheme resolve({
+    required Brightness brightness,
+    required AppAccent accent,
+  }) {
+    return brightness == Brightness.dark
+        ? AppTheme.dark(accent)
+        : AppTheme.light(accent);
+  }
+}
+
+/// Standalone access to design tokens and semantic colors
+abstract final class AppColors {
+  static const Color darkBg = Color(0xFF0E1013);
+  static const Color darkSurface = Color(0xFF14171B);
+  static const Color darkSurfaceRaised = Color(0xFF1A1E23);
+  static const Color darkBorder = Color(0xFF262C34);
+  static const Color darkBorderSubtle = Color(0xFF1E232A);
+  static const Color darkTextPrimary = Color(0xFFF1F5F9);
+  static const Color darkTextSecondary = Color(0xFFB0BCCB);
+  static const Color darkTextTertiary = Color(0xFF8896A6);
+  static const Color darkSuccess = Color(0xFF10B981);
+  static const Color darkWarning = Color(0xFFF59E0B);
+  static const Color darkDanger = Color(0xFFEF4444);
+
+  static const Color lightBg = Color(0xFFF6F7F9);
+  static const Color lightSurface = Color(0xFFFFFFFF);
+  static const Color lightSurfaceRaised = Color(0xFFF0F2F5);
+  static const Color lightBorder = Color(0xFFE2E8F0);
+  static const Color lightBorderSubtle = Color(0xFFECEFF3);
+  static const Color lightTextPrimary = Color(0xFF0F172A);
+  static const Color lightTextSecondary = Color(0xFF334155);
+  static const Color lightTextTertiary = Color(0xFF5A687A);
+  static const Color lightSuccess = Color(0xFF059669);
+  static const Color lightWarning = Color(0xFFD97706);
+  static const Color lightDanger = Color(0xFFDC2626);
 }

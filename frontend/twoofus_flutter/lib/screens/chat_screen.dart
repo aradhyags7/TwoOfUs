@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../widgets/design_system/design_system.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/message.dart';
@@ -26,6 +28,7 @@ import '../models/diary_memory.dart';
 import '../widgets/chat_media_bubble.dart';
 import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/media_composer_modal.dart';
+import '../widgets/timeline_drawer.dart';
 import '../widgets/encryption_verification_modal.dart';
 import '../services/call_service.dart';
 import '../utils/date_time_utils.dart';
@@ -103,12 +106,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   // ── Calendar & Shared Timeline State ───────────────────────────────────────
   List<DiaryMemoryItem> _sharedMemories = [];
   bool _loadingMemories = false;
-  int _diaryTab = 0; // 0 = 📔 Timeline Notes, 1 = 🖼️ Photo Album
-  DateTime _calMonth = DateTime.now();
   DateTime? _selDate = DateTime.now();
-  String _selectedMoodEmoji = '✨';
-  File? _memorySelectedPhoto;
-  bool _isSavingMemory = false;
 
   // ── Animation ─────────────────────────────────────────────────────────────
   late AnimationController _pulseCtrl;
@@ -1148,16 +1146,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   }
 
   // ── App Bar ───────────────────────────────────────────────────────────────
+  // ── App Bar ───────────────────────────────────────────────────────────────
   Widget _buildAppBar() {
     if (_isSearching) {
       return _buildSearchBarAppBar();
     }
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+    final theme = context.appTheme;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
       decoration: BoxDecoration(
-        color: _surf,
-        border: Border(bottom: BorderSide(color: _border)),
+        color: theme.surface,
+        border: Border(bottom: BorderSide(color: theme.divider, width: 1)),
       ),
       child: Row(
         children: [
@@ -1170,37 +1170,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
                 child: Row(
                   children: [
-                    // Avatar
-                    Hero(
-                      tag: 'partner_avatar_${widget.partnerId}',
-                      child: Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(colors: [_rose, _violet]),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _rose.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty
-                            ? ClipOval(
-                                child: Image.network(
-                                  _partnerAvatarUrl!.startsWith('http')
-                                      ? _partnerAvatarUrl!
-                                      : '${ApiService.baseUrl}${_partnerAvatarUrl!.startsWith('/') ? '' : '/'}$_partnerAvatarUrl',
-                                  fit: BoxFit.cover,
-                                  headers: _userToken.isNotEmpty
-                                      ? {'Authorization': 'Bearer $_userToken'}
-                                      : null,
-                                  errorBuilder: (_, __, ___) => _buildAvatarFallback(),
-                                ),
-                              )
-                            : _buildAvatarFallback(),
-                      ),
+                    AppAvatar(
+                      size: 38,
+                      name: widget.partnerName,
+                      imageUrl: _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty
+                          ? (_partnerAvatarUrl!.startsWith('http')
+                              ? _partnerAvatarUrl!
+                              : '${ApiService.baseUrl}${_partnerAvatarUrl!.startsWith('/') ? '' : '/'}$_partnerAvatarUrl')
+                          : null,
+                      isOnline: _isOnline,
+                      showOnlineIndicator: true,
                     ),
                     const SizedBox(width: 10),
                     // Name + online status
@@ -1214,34 +1193,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                               Flexible(
                                 child: Text(
                                   widget.partnerName,
-                                  style: TextStyle(color: _text, fontSize: 16, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    color: theme.textPrimary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.2,
+                                  ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (_isOnline) ...[
-                                const SizedBox(width: 6),
-                                // Pulsing green online dot
-                                AnimatedBuilder(
-                                  animation: _pulseAnim,
-                                  builder: (_, __) => Transform.scale(
-                                    scale: _pulseAnim.value,
-                                    child: Container(
-                                      width: 8, height: 8,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.greenAccent,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.greenAccent.withValues(alpha: 0.55),
-                                            blurRadius: 6, spreadRadius: 1,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              // Only show lock icon if chats are genuinely E2EE (partner public key is loaded & active)
                               if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) ...[
                                 const SizedBox(width: 5),
                                 GestureDetector(
@@ -1261,7 +1222,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                                         : "End-to-End Encrypted (Tap to verify)",
                                     child: Icon(
                                       _isPartnerVerified ? Icons.verified_user_rounded : Icons.lock_rounded,
-                                      color: _isPartnerVerified ? Colors.greenAccent : _rose.withValues(alpha: 0.85),
+                                      color: _isPartnerVerified ? theme.success : theme.textTertiary,
                                       size: 13,
                                     ),
                                   ),
@@ -1269,31 +1230,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                               ],
                             ],
                           ),
-                          if (_isPartnerTyping)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 1),
-                              child: Text(
-                                'typing...',
-                                style: TextStyle(
-                                  color: Colors.greenAccent,
-                                  fontSize: 11,
-                                  fontStyle: FontStyle.italic,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            )
-                          else
-                            Padding(
-                              padding: const EdgeInsets.only(top: 1),
-                              child: Text(
-                                _isOnline ? 'Online' : 'Offline',
-                                style: TextStyle(
-                                  color: _isOnline ? Colors.greenAccent.withValues(alpha: 0.85) : _sub,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 1),
+                            child: Text(
+                              _isPartnerTyping
+                                  ? 'typing…'
+                                  : (_isOnline ? 'Online' : 'Offline'),
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                color: _isPartnerTyping
+                                    ? (theme.isDark ? theme.accentBright : theme.accentFill)
+                                    : (_isOnline ? theme.success : theme.textTertiary),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
+                          ),
                         ],
                       ),
                     ),
@@ -1304,11 +1256,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
           ),
           // 1. Video call
           IconButton(
-            icon: ShaderMask(
-              shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-              blendMode: BlendMode.srcIn,
-              child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 24),
-            ),
+            icon: Icon(Icons.videocam_rounded, color: theme.textSecondary, size: 22),
+            splashRadius: 20,
+            tooltip: "Video Call",
             onPressed: () {
               CallService.startCall(
                 context: context,
@@ -1320,11 +1270,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
           ),
           // 2. Voice call
           IconButton(
-            icon: ShaderMask(
-              shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-              blendMode: BlendMode.srcIn,
-              child: const Icon(Icons.call_rounded, color: Colors.white, size: 22),
-            ),
+            icon: Icon(Icons.call_rounded, color: theme.textSecondary, size: 20),
+            splashRadius: 20,
+            tooltip: "Voice Call",
             onPressed: () {
               CallService.startCall(
                 context: context,
@@ -1336,11 +1284,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
           ),
           // 3. Search Button
           IconButton(
-            icon: ShaderMask(
-              shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-              blendMode: BlendMode.srcIn,
-              child: const Icon(Icons.search_rounded, color: Colors.white, size: 22),
-            ),
+            icon: Icon(Icons.search_rounded, color: theme.textSecondary, size: 20),
+            splashRadius: 20,
+            tooltip: "Search Messages",
             onPressed: _startSearch,
           ),
           // 4. Passcode Lock Button
@@ -1437,13 +1383,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ShaderMask(
-              shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-              blendMode: BlendMode.srcIn,
-              child: const Icon(Icons.chat_bubble_outline_rounded, size: 48, color: Colors.white),
-            ),
+            Icon(Icons.chat_bubble_outline_rounded, size: 44, color: _sub.withValues(alpha: 0.6)),
             const SizedBox(height: 12),
-            Text('Send the first message', style: TextStyle(color: _sub, fontSize: 14)),
+            Text('No messages yet', style: TextStyle(color: _text, fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Send the first message', style: TextStyle(color: _sub, fontSize: 13)),
           ],
         ),
       );
@@ -1524,6 +1468,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       return _buildCallLogBubble(msg, isMe);
     }
     final reaction = _reactions[msg.id];
+    final theme = context.appTheme;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final maxBubbleWidth = screenWidth * 0.78;
+
     return GestureDetector(
       onLongPress: () => _showMsgOptions(msg),
       child: Padding(
@@ -1537,28 +1485,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               child: Container(
                 margin: EdgeInsets.only(
                   bottom: 2,
-                  left:  isMe ? 64 : 0,
-                  right: isMe ? 0  : 64,
+                  left: isMe ? 48 : 0,
+                  right: isMe ? 0 : 48,
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                constraints: const BoxConstraints(maxWidth: 280),
+                constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                 decoration: BoxDecoration(
-                  gradient: isMe ? LinearGradient(colors: [_rose, _violet]) : null,
-                  color: isMe ? null : _msgBg,
+                  color: isMe ? theme.bubbleSent : theme.bubbleReceived,
                   borderRadius: BorderRadius.only(
-                    topLeft:     const Radius.circular(18),
-                    topRight:    const Radius.circular(18),
-                    bottomLeft:  Radius.circular(isMe ? 18 : 4),
-                    bottomRight: Radius.circular(isMe ? 4  : 18),
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isMe ? 16 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 16),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isMe
-                          ? _rose.withOpacity(0.22)
-                          : Colors.black.withOpacity(_isDark ? 0.18 : 0.06),
-                      blurRadius: 10, offset: const Offset(0, 3),
-                    ),
-                  ],
+                  border: isMe ? null : Border.all(color: theme.border, width: 1),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -1575,15 +1515,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                         msg.content,
                         _searchQuery,
                         TextStyle(
+                          fontFamily: 'Inter',
                           color: msg.content.startsWith("🔒")
-                              ? (isMe ? Colors.white70 : _sub)
-                              : (isMe ? Colors.white : _text),
+                              ? (isMe ? Colors.white70 : theme.textSecondary)
+                              : (isMe ? theme.onBubbleSent : theme.onBubbleReceived),
                           fontSize: msg.content.startsWith("🔒") ? 13 : 15,
                           fontStyle: msg.content.startsWith("🔒") ? FontStyle.italic : FontStyle.normal,
                           height: 1.4,
                         ),
                       ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     // Timestamp & Edited indicator
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1592,13 +1533,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                           Icon(
                             Icons.edit_rounded,
                             size: 10,
-                            color: isMe ? Colors.white.withOpacity(0.6) : _sub,
+                            color: isMe ? Colors.white.withOpacity(0.7) : theme.textTertiary,
                           ),
                           const SizedBox(width: 2),
                           Text(
                             "edited",
                             style: TextStyle(
-                              color: isMe ? Colors.white.withOpacity(0.6) : _sub,
+                              fontFamily: 'Inter',
+                              color: isMe ? Colors.white.withOpacity(0.7) : theme.textTertiary,
                               fontSize: 10,
                               fontStyle: FontStyle.italic,
                               fontWeight: FontWeight.w500,
@@ -1609,8 +1551,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                         Text(
                           _fmtTime(msg.createdAt),
                           style: TextStyle(
-                            color: isMe ? Colors.white.withOpacity(0.55) : _sub,
-                            fontSize: 10, fontWeight: FontWeight.w500,
+                            fontFamily: 'Inter',
+                            color: isMe ? Colors.white.withOpacity(0.7) : theme.textTertiary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],
@@ -1625,21 +1570,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
                   margin: EdgeInsets.only(
-                    bottom: 6, top: 2,
+                    bottom: 6,
+                    top: 2,
                     right: isMe ? 6 : 0,
-                    left:  isMe ? 0 : 6,
+                    left: isMe ? 0 : 6,
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: _surf,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _border),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
+                    color: theme.surfaceRaised,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: theme.border, width: 1),
                   ),
                   child: Text(reaction, style: const TextStyle(fontSize: 14)),
                 ),
               ),
-            if (reaction == null) const SizedBox(height: 6),
+            if (reaction == null) const SizedBox(height: 4),
           ],
         ),
       ),
@@ -1658,159 +1603,56 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     final durationSecs = (data['duration_seconds'] as int?) ?? 0;
     final isVideo = callType == 'video';
 
-    // Determine direction and status details
     final bool isMissed = (status == 'missed' || status == 'rejected');
     final bool isAnswered = status == 'ongoing' || status == 'ended';
 
     String title;
     String subtitle;
-    IconData iconData;
-    Color iconColor;
-    IconData directionIcon;
 
     if (isMe) {
-      // Outgoing
       if (isAnswered && durationSecs > 0) {
         title = isVideo ? "Outgoing video call" : "Outgoing voice call";
         subtitle = "${_fmtCallDuration(durationSecs)} • ${_fmtTime(msg.createdAt)}";
-        iconColor = Colors.cyanAccent;
-        directionIcon = Icons.call_made_rounded;
       } else {
         title = isVideo ? "Cancelled video call" : "Cancelled voice call";
         subtitle = "Cancelled • ${_fmtTime(msg.createdAt)}";
-        iconColor = Colors.white60;
-        directionIcon = Icons.call_made_rounded;
       }
     } else {
-      // Incoming
       if (isAnswered && durationSecs > 0) {
         title = isVideo ? "Incoming video call" : "Incoming voice call";
         subtitle = "${_fmtCallDuration(durationSecs)} • ${_fmtTime(msg.createdAt)}";
-        iconColor = Colors.greenAccent;
-        directionIcon = Icons.call_received_rounded;
       } else {
         title = isVideo ? "Missed video call" : "Missed voice call";
         subtitle = "Missed • ${_fmtTime(msg.createdAt)}";
-        iconColor = Colors.redAccent;
-        directionIcon = Icons.call_missed_rounded;
       }
     }
 
-    iconData = isVideo ? Icons.videocam_rounded : Icons.call_rounded;
+    final theme = context.appTheme;
+    final durationStr = (isAnswered && durationSecs > 0) ? _fmtCallDuration(durationSecs) : null;
 
-    return Center(
-      child: GestureDetector(
-        onLongPress: () => _showCallLogOptions(msg, isMe, title, subtitle, isVideo),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: _surf.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isMissed && !isMe ? Colors.redAccent.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.08),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Icon Badge with direction indicator
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Icon(iconData, color: iconColor, size: 20),
-                    Positioned(
-                      bottom: 4,
-                      right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: _surf,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(directionIcon, color: iconColor, size: 10),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-
-              // Call Details (Type, Duration, Time)
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: isMissed && !isMe ? Colors.redAccent : _text,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: _sub,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              // Quick Call Back action button
-              IconButton(
-                icon: Icon(
-                  isVideo ? Icons.videocam_rounded : Icons.call_rounded,
-                  color: _rose,
-                  size: 22,
-                ),
-                tooltip: "Call Back",
-                onPressed: () {
-                  CallService.startCall(
-                    context: context,
-                    partnerId: widget.partnerId,
-                    partnerName: widget.partnerName,
-                    callType: isVideo ? 'video' : 'voice',
-                  ).then((_) => _loadMessages());
-                },
-              ),
-
-              // Call Options / Delete menu
-              IconButton(
-                icon: Icon(
-                  Icons.more_vert_rounded,
-                  color: _sub,
-                  size: 18,
-                ),
-                tooltip: "Call Options",
-                onPressed: () => _showCallLogOptions(msg, isMe, title, subtitle, isVideo),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return SystemEventRow(
+      icon: isMissed && !isMe
+          ? Icons.call_missed_rounded
+          : (isVideo ? Icons.videocam_rounded : (isMe ? Icons.call_made_rounded : Icons.call_received_rounded)),
+      iconColor: isMissed && !isMe
+          ? theme.danger
+          : (isAnswered && durationSecs > 0 ? (theme.isDark ? theme.accentBright : theme.accentFill) : theme.textTertiary),
+      text: title,
+      duration: durationStr,
+      time: _fmtTime(msg.createdAt),
+      onTap: () {
+        if (!isMe && isMissed) {
+          CallService.startCall(
+            context: context,
+            partnerId: widget.partnerId,
+            partnerName: widget.partnerName,
+            callType: isVideo ? 'video' : 'voice',
+          ).then((_) => _loadMessages());
+        } else {
+          _showCallLogOptions(msg, isMe, title, subtitle, isVideo);
+        }
+      },
+      onLongPress: () => _showCallLogOptions(msg, isMe, title, subtitle, isVideo),
     );
   }
 
@@ -2096,85 +1938,104 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   }
 
   // ── Input Bar ─────────────────────────────────────────────────────────────
-  Widget _buildInputBar() => AnimatedContainer(
-    duration: const Duration(milliseconds: 300),
-    padding: const EdgeInsets.fromLTRB(8, 8, 12, 16),
-    decoration: BoxDecoration(
-      color: _surf,
-      border: Border(top: BorderSide(color: _border)),
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_selectedImage != null || _selectedFileName != null)
-          _buildMediaPreviewBar(),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Telegram Paperclip Attachment Button
-            IconButton(
-              icon: ShaderMask(
-                shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-                blendMode: BlendMode.srcIn,
-                child: const Icon(Icons.attach_file_rounded, color: Colors.white, size: 24),
+  Widget _buildInputBar() {
+    final theme = context.appTheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.fromLTRB(10, 8, 12, 14),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        border: Border(top: BorderSide(color: theme.divider, width: 1)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_selectedImage != null || _selectedFileName != null)
+            _buildMediaPreviewBar(),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Clean Paperclip Attachment Button
+              IconButton(
+                icon: Icon(Icons.attach_file_rounded, color: theme.textSecondary, size: 22),
+                onPressed: _showAttachmentSheet,
+                splashRadius: 22,
               ),
-              onPressed: _showAttachmentSheet,
-            ),
-            Expanded(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 240),
-                decoration: BoxDecoration(
-                  color: _bg,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: _border),
-                ),
-                child: TextField(
-                  controller: _msgCtrl,
-                  style: TextStyle(color: _text, fontSize: 15),
-                  maxLines: 4, minLines: 1,
-                  cursorColor: _rose,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    hintText: _editingMsg != null
-                        ? 'Edit message…'
-                        : (_selectedImage != null || _selectedFileName != null
-                            ? 'Add caption…'
-                            : 'Send a message…'),
-                    hintStyle: TextStyle(color: _sub, fontSize: 15),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: theme.surfaceRaised,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: theme.border, width: 1),
+                  ),
+                  child: TextField(
+                    controller: _msgCtrl,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: theme.textPrimary,
+                      fontSize: 15,
+                    ),
+                    maxLines: 4,
+                    minLines: 1,
+                    cursorColor: theme.focusRing,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: _editingMsg != null
+                          ? 'Edit message…'
+                          : (_selectedImage != null || _selectedFileName != null
+                              ? 'Add caption…'
+                              : 'Send a message…'),
+                      hintStyle: TextStyle(
+                        fontFamily: 'Inter',
+                        color: theme.textTertiary,
+                        fontSize: 14,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: _isSending ? null : _sendMessage,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: _isSending ? null : LinearGradient(colors: [_rose, _violet]),
-                  color: _isSending ? _surf : null,
-                  border: _isSending ? Border.all(color: _border) : null,
-                  boxShadow: _isSending ? [] : [
-                    BoxShadow(color: _rose.withOpacity(0.38), blurRadius: 12, offset: const Offset(0, 3)),
-                  ],
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _isSending ? null : _sendMessage,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isSending
+                        ? theme.surfaceRaised
+                        : theme.accentFill,
+                    border: _isSending ? Border.all(color: theme.border, width: 1) : null,
+                  ),
+                  child: _isSending
+                      ? Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              color: theme.accentFill,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          _editingMsg != null ? Icons.check_rounded : Icons.arrow_upward_rounded,
+                          color: theme.onAccent,
+                          size: 20,
+                        ),
                 ),
-                child: _isSending
-                    ? Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: _rose, strokeWidth: 2)))
-                    : Icon(
-                        _editingMsg != null ? Icons.check_rounded : Icons.send_rounded,
-                        color: Colors.white, size: 19,
-                      ),
               ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   // ── Options Bottom Sheet ───────────────────────────────────────────────────
   Widget _optionsSheet(BuildContext ctx, Message msg, bool isMe) {
@@ -2329,66 +2190,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     }
   }
 
-  Future<void> _pickMemoryPhoto(ImageSource source) async {
-    try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(source: source, imageQuality: 85);
-      if (picked != null) {
-        setState(() {
-          _memorySelectedPhoto = File(picked.path);
-        });
-      }
-    } catch (e) {
-      _toast("Failed to pick photo", isError: true);
-    }
-  }
-
-  void _removeMemoryPhoto() {
-    setState(() {
-      _memorySelectedPhoto = null;
-    });
-  }
-
   String _formatDateYMD(DateTime dt) =>
       "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
-
-  Future<void> _saveDiaryMemory() async {
-    final text = _memoryCtrl.text.trim();
-    if (text.isEmpty && _memorySelectedPhoto == null) {
-      _toast("Write a note or attach a photo first", isError: true);
-      return;
-    }
-
-    final targetDate = _selDate ?? DateTime.now();
-    final dateStr = _formatDateYMD(targetDate);
-
-    HapticFeedback.mediumImpact();
-    setState(() => _isSavingMemory = true);
-
-    final res = await ApiService.createDiaryMemory(
-      partnerId: widget.partnerId,
-      entryDate: dateStr,
-      content: text,
-      moodEmoji: _selectedMoodEmoji,
-      photo: _memorySelectedPhoto,
-      token: _userToken,
-    );
-
-    if (mounted) {
-      setState(() {
-        _isSavingMemory = false;
-        _memoryCtrl.clear();
-        _memorySelectedPhoto = null;
-      });
-
-      if (res != null) {
-        _toast("Saved to timeline for ${_fmtDateLabel(targetDate)}");
-        await _loadMemories();
-      } else {
-        _toast("Failed to save memory entry", isError: true);
-      }
-    }
-  }
 
   Future<void> _deleteMemory(int memoryId) async {
     HapticFeedback.lightImpact();
@@ -2399,62 +2202,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       });
       _toast("Memory deleted");
     }
-  }
-
-  bool _memoryMatchesDate(DiaryMemoryItem m, DateTime target) {
-    final p = m.parsedDate;
-    if (p == null) return false;
-    return _sameDay(p, target);
-  }
-
-  void _showMemoryPhotoPickerSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: _surf,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2)),
-            ),
-            Text("Attach Photo to Memory", style: TextStyle(color: _text, fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _attachOption(
-                  icon: Icons.camera_alt_rounded,
-                  label: "Camera",
-                  color: Colors.pinkAccent,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickMemoryPhoto(ImageSource.camera);
-                  },
-                ),
-                _attachOption(
-                  icon: Icons.photo_library_rounded,
-                  label: "Gallery",
-                  color: Colors.purpleAccent,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickMemoryPhoto(ImageSource.gallery);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
   }
 
   void _openMemoryImageFullScreen(DiaryMemoryItem memory) {
@@ -2492,819 +2239,71 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
 
   // ── Memory / Calendar / Diary Drawer Panel ─────────────────────────────────
   Widget _buildMemoryPanel() {
-    final photoMemories = _sharedMemories.where((m) => m.hasPhoto).toList();
-    final displayedMemories = _selDate == null
-        ? _sharedMemories
-        : _sharedMemories.where((m) => _memoryMatchesDate(m, _selDate!)).toList();
-
-    return Material(
-      color: _surf,
-      elevation: 20,
-      shadowColor: Colors.black87,
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Drawer Top Bar
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 12, 6),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [_rose, _violet]),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.auto_stories_rounded, size: 18, color: Colors.white),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Shared Timeline & Notes',
-                        style: TextStyle(color: _text, fontSize: 16, fontWeight: FontWeight.w800),
-                      ),
-                      Text(
-                        'Shared milestones & notes',
-                        style: TextStyle(color: _sub, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Refresh',
-                    icon: Icon(Icons.refresh_rounded, color: _rose, size: 20),
-                    onPressed: () {
-                      _loadMemories();
-                      _toast("Refreshed timeline entries");
-                    },
-                  ),
-                  IconButton(
-                    tooltip: 'Close',
-                    icon: Icon(Icons.close_rounded, color: _sub, size: 22),
-                    onPressed: _closeAll,
-                  ),
-                ],
-              ),
-            ),
-
-            // Tab Selector: [ 📔 Timeline Notes ] | [ 🖼️ Photo Album ]
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: _bg,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _border),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _diaryTab = 0),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(11),
-                            gradient: _diaryTab == 0 ? LinearGradient(colors: [_rose, _violet]) : null,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.edit_note_rounded, size: 16, color: _diaryTab == 0 ? Colors.white : _sub),
-                              const SizedBox(width: 6),
-                              Text(
-                                "Timeline (${_sharedMemories.length})",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: _diaryTab == 0 ? FontWeight.bold : FontWeight.w500,
-                                  color: _diaryTab == 0 ? Colors.white : _sub,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _diaryTab = 1),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(11),
-                            gradient: _diaryTab == 1 ? LinearGradient(colors: [_rose, _violet]) : null,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.photo_library_rounded, size: 16, color: _diaryTab == 1 ? Colors.white : _sub),
-                              const SizedBox(width: 6),
-                              Text(
-                                "Album (${photoMemories.length})",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: _diaryTab == 1 ? FontWeight.bold : FontWeight.w500,
-                                  color: _diaryTab == 1 ? Colors.white : _sub,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Interactive Calendar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              child: _buildCalendar(),
-            ),
-
-            Divider(color: _border, height: 12),
-
-            // Composer Area (Add memory to selected date)
-            _buildDiaryComposer(),
-
-            const SizedBox(height: 6),
-
-            // Content Area (Timeline or Photo Album)
-            Expanded(
-              child: _loadingMemories
-                  ? Center(child: CircularProgressIndicator(color: _rose, strokeWidth: 2))
-                  : _diaryTab == 0
-                      ? _buildDiaryTimelineView(displayedMemories)
-                      : _buildPhotoAlbumView(photoMemories),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDiaryComposer() {
-    final dateLabel = _selDate != null ? _fmtDateLabel(_selDate!) : 'Today';
-    const moods = ['✨', '🌟', '☕', '🔥', '🎉', '🚀', '💡', '✈️', '🏖️', '🎧', '🍕', '🌙'];
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _bg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _rose.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header of Composer
-          Row(
-            children: [
-              Icon(Icons.edit_calendar_rounded, size: 14, color: _rose),
-              const SizedBox(width: 6),
-              Text(
-                "Add Memory for $dateLabel",
-                style: TextStyle(color: _rose, fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-              const Spacer(),
-              if (_memorySelectedPhoto != null)
-                const Text(
-                  "1 Photo Attached 📷",
-                  style: TextStyle(color: Colors.greenAccent, fontSize: 10.5, fontWeight: FontWeight.bold),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // Mood Emoji Selector Ribbon
-          SizedBox(
-            height: 32,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: moods.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 6),
-              itemBuilder: (ctx, idx) {
-                final m = moods[idx];
-                final isSel = _selectedMoodEmoji == m;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedMoodEmoji = m),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isSel ? _rose.withValues(alpha: 0.25) : _surf,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isSel ? _rose : _border,
-                        width: isSel ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(m, style: TextStyle(fontSize: isSel ? 16 : 14)),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Attached Photo Preview
-          if (_memorySelectedPhoto != null) ...[
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: _surf,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
-              ),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(
-                      _memorySelectedPhoto!,
-                      width: 44,
-                      height: 44,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      "Photo ready to post",
-                      style: TextStyle(color: _text, fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close_rounded, size: 18, color: _sub),
-                    onPressed: _removeMemoryPhoto,
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // Text Field + Actions Row
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: _surf,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _border),
-                  ),
-                  child: TextField(
-                    controller: _memoryCtrl,
-                    style: TextStyle(color: _text, fontSize: 13),
-                    cursorColor: _rose,
-                    maxLines: 3,
-                    minLines: 1,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      hintText: 'Write a thought, note or memory…',
-                      hintStyle: TextStyle(color: _sub, fontSize: 12.5),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-
-              // Attach Photo Button
-              IconButton(
-                tooltip: "Attach Photo",
-                icon: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _memorySelectedPhoto != null ? _rose.withValues(alpha: 0.2) : _surf,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: _memorySelectedPhoto != null ? _rose : _border),
-                  ),
-                  child: Icon(
-                    Icons.add_a_photo_rounded,
-                    color: _memorySelectedPhoto != null ? _rose : _sub,
-                    size: 18,
-                  ),
-                ),
-                onPressed: _showMemoryPhotoPickerSheet,
-              ),
-
-              // Post Button
-              GestureDetector(
-                onTap: _isSavingMemory ? null : _saveDiaryMemory,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: [_rose, _violet]),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _rose.withValues(alpha: 0.35),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
-                  child: _isSavingMemory
-                      ? const Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                          ),
-                        )
-                      : const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiaryTimelineView(List<DiaryMemoryItem> displayedMemories) {
-    if (displayedMemories.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ShaderMask(
-                shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-                blendMode: BlendMode.srcIn,
-                child: const Icon(Icons.auto_stories_rounded, size: 40, color: Colors.white),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _selDate != null
-                    ? 'No entries for ${_fmtDateLabel(_selDate!)}'
-                    : 'No timeline entries yet',
-                style: TextStyle(color: _text, fontSize: 14, fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Write your thoughts or attach a photo to this date above!',
-                style: TextStyle(color: _sub, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
-      physics: const BouncingScrollPhysics(),
-      itemCount: displayedMemories.length,
-      itemBuilder: (ctx, i) {
-        final mem = displayedMemories[i];
-        final isMe = mem.senderId == _myId;
-        final authorLabel = isMe ? "You" : widget.partnerName;
-
-        return Dismissible(
-          key: Key('memory_${mem.id}'),
-          direction: DismissDirection.endToStart,
-          confirmDismiss: (_) async {
-            return await showDialog<bool>(
-                  context: context,
-                  builder: (c) => AlertDialog(
-                    backgroundColor: _surf,
-                    title: Text("Delete Entry?", style: TextStyle(color: _text)),
-                    content: Text("Are you sure you want to delete this timeline entry?", style: TextStyle(color: _sub)),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(c, false), child: Text("Cancel", style: TextStyle(color: _sub))),
-                      TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("Delete", style: TextStyle(color: Colors.redAccent))),
-                    ],
-                  ),
-                ) ??
-                false;
-          },
-          onDismissed: (_) => _deleteMemory(mem.id),
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 16),
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(
-              color: Colors.redAccent.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(Icons.delete_rounded, color: Colors.redAccent, size: 22),
-          ),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: _bg,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _border),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top Row: Mood Emoji + Author Badge + Date Badge
-                Row(
-                  children: [
-                    if (mem.moodEmoji != null && mem.moodEmoji!.isNotEmpty) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: _rose.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(mem.moodEmoji!, style: const TextStyle(fontSize: 14)),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: isMe ? _rose.withValues(alpha: 0.12) : _violet.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        authorLabel,
-                        style: TextStyle(
-                          color: isMe ? _rose : _lavender,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      mem.entryDate,
-                      style: TextStyle(color: _sub, fontSize: 11, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      icon: Icon(Icons.delete_outline_rounded, size: 16, color: _sub),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                      onPressed: () => _deleteMemory(mem.id),
-                    ),
-                  ],
-                ),
-
-                // Attached Photo
-                if (mem.hasPhoto && mem.fullImageUrl != null) ...[
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () => _openMemoryImageFullScreen(mem),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        children: [
-                          Container(
-                            height: 150,
-                            width: double.infinity,
-                            color: _surf,
-                            child: Image.network(
-                              mem.fullImageUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Center(
-                                child: Icon(Icons.broken_image_rounded, color: _sub, size: 32),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 6,
-                            right: 6,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Colors.black54,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 16),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-
-                // Content Note
-                if (mem.content.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    mem.content,
-                    style: TextStyle(
-                      color: _text,
-                      fontSize: 13.5,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
+    return TimelineDrawer(
+      memories: _sharedMemories,
+      isLoading: _loadingMemories,
+      selectedDate: _selDate,
+      onSelectDate: (d) => setState(() => _selDate = d),
+      onRefresh: () {
+        _loadMemories();
+        _toast("Refreshed timeline entries");
       },
-    );
-  }
-
-  Widget _buildPhotoAlbumView(List<DiaryMemoryItem> photoMemories) {
-    if (photoMemories.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ShaderMask(
-                shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-                blendMode: BlendMode.srcIn,
-                child: const Icon(Icons.photo_album_rounded, size: 42, color: Colors.white),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'No scrapbook photos yet 🖼️',
-                style: TextStyle(color: _text, fontSize: 14, fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Attach a photo to any date above and it will show up here!',
-                style: TextStyle(color: _sub, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
-      physics: const BouncingScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.9,
-      ),
-      itemCount: photoMemories.length,
-      itemBuilder: (ctx, idx) {
-        final mem = photoMemories[idx];
-        return GestureDetector(
-          onTap: () => _openMemoryImageFullScreen(mem),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  color: _surf,
-                  child: Image.network(
-                    mem.fullImageUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
-                      child: Icon(Icons.image_not_supported_rounded, color: _sub, size: 28),
-                    ),
-                  ),
-                ),
-                // Gradient overlay at bottom
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: 48,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.8),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                // Mood emoji
-                if (mem.moodEmoji != null && mem.moodEmoji!.isNotEmpty)
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.black54,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(mem.moodEmoji!, style: const TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                // Date tag at bottom
-                Positioned(
-                  bottom: 6,
-                  left: 8,
-                  right: 8,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        mem.entryDate,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
-                        ),
-                      ),
-                      Icon(Icons.zoom_in_rounded, color: Colors.white.withValues(alpha: 0.9), size: 14),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+      onClose: _closeAll,
+      onSaveMemory: (content, mood, photo) async {
+        final targetDate = _selDate ?? DateTime.now();
+        final dateStr = _formatDateYMD(targetDate);
+        HapticFeedback.mediumImpact();
+        final res = await ApiService.createDiaryMemory(
+          partnerId: widget.partnerId,
+          entryDate: dateStr,
+          content: content,
+          moodEmoji: mood,
+          photo: photo,
+          token: _userToken,
         );
+        if (mounted) {
+          if (res != null) {
+            _toast("Saved to timeline for ${_fmtDateLabel(targetDate)}");
+            await _loadMemories();
+          } else {
+            _toast("Failed to save memory entry", isError: true);
+          }
+        }
       },
-    );
-  }
-
-  Widget _buildCalendar() {
-    final m = _calMonth;
-    final first = DateTime(m.year, m.month, 1);
-    final last = DateTime(m.year, m.month + 1, 0);
-    final startWd = first.weekday % 7; // 0 = Sun
-    const dow = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-    const mons = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-
-    final cells = <Widget>[];
-    for (int i = 0; i < startWd; i++) cells.add(const SizedBox());
-
-    for (int d = 1; d <= last.day; d++) {
-      final date = DateTime(m.year, m.month, d);
-      final isSel = _selDate != null && _sameDay(_selDate!, date);
-      final hasMem = _sharedMemories.any((x) => _memoryMatchesDate(x, date));
-      final isToday = _sameDay(DateTime.now(), date);
-
-      cells.add(GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          setState(() {
-            if (_selDate != null && _sameDay(_selDate!, date)) {
-              // Tap again on selected date resets filter to all dates
-              _selDate = null;
-            } else {
-              _selDate = date;
-            }
-          });
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          margin: const EdgeInsets.all(1.5),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: isSel ? LinearGradient(colors: [_rose, _violet]) : null,
-            color: !isSel && hasMem ? _rose.withValues(alpha: 0.18) : null,
-            border: isToday && !isSel ? Border.all(color: _rose, width: 1.5) : null,
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Text(
-                '$d',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: (isToday || isSel) ? FontWeight.w800 : FontWeight.w500,
-                  color: isSel ? Colors.white : isToday ? _rose : _text,
-                ),
-              ),
-              if (hasMem && !isSel)
-                Positioned(
-                  bottom: 2,
-                  child: Container(
-                    width: 4,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _rose,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ));
-    }
-
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            IconButton(
-              icon: Icon(Icons.chevron_left_rounded, color: _rose),
-              onPressed: () => setState(() => _calMonth = DateTime(m.year, m.month - 1)),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            ),
-            GestureDetector(
-              onTap: () => setState(() {
-                _calMonth = DateTime.now();
-                _selDate = DateTime.now();
-              }),
-              child: Row(
-                children: [
-                  Text(
-                    '${mons[m.month - 1]} ${m.year}',
-                    style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.touch_app_rounded, size: 12, color: _rose),
-                ],
-              ),
-            ),
-            IconButton(
-              icon: Icon(Icons.chevron_right_rounded, color: _rose),
-              onPressed: () => setState(() => _calMonth = DateTime(m.year, m.month + 1)),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            ),
-          ],
-        ),
-        Row(
-          children: dow
-              .map((d) => Expanded(
-                    child: Center(
-                      child: Text(
-                        d,
-                        style: TextStyle(color: _sub, fontSize: 10, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ))
-              .toList(),
-        ),
-        const SizedBox(height: 2),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 7,
-          childAspectRatio: 1.15,
-          children: cells,
-        ),
-      ],
+      onDeleteMemory: _deleteMemory,
+      partnerName: widget.partnerName,
+      myId: _myId,
+      onPhotoTap: _openMemoryImageFullScreen,
     );
   }
 
   // ── Settings & Navigation Drawer Panel ───────────────────────────────────
   Widget _buildSettingsPanel() {
-    final myInitial = _myUsername.isNotEmpty ? _myUsername[0].toUpperCase() : 'U';
+    final theme = context.appTheme;
 
     return Material(
-      color: _surf,
-      elevation: 20,
-      shadowColor: Colors.black54,
+      color: theme.bg,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── 1. Top User Profile Header ────────────────────────────────
+            // Top User Profile Header
             Container(
-              padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [_violet.withOpacity(0.18), _rose.withOpacity(0.10)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                border: Border(bottom: BorderSide(color: _border)),
+                color: theme.surface,
+                border: Border(bottom: BorderSide(color: theme.border, width: 1)),
               ),
               child: Row(
                 children: [
-                  GestureDetector(
+                  AppAvatar(
+                    size: 44,
+                    name: _myUsername.isNotEmpty ? _myUsername : 'User',
+                    imageUrl: _myAvatarUrl != null && _myAvatarUrl!.isNotEmpty
+                        ? (_myAvatarUrl!.startsWith('http')
+                            ? _myAvatarUrl!
+                            : "${ApiService.baseUrl}/${_myAvatarUrl!.startsWith('/') ? _myAvatarUrl!.substring(1) : _myAvatarUrl!}")
+                        : null,
                     onTap: () async {
                       _closeAll();
                       await Navigator.push(
@@ -3313,52 +2312,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                       );
                       _loadMyProfile();
                     },
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(colors: [_rose, _violet]),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _rose.withOpacity(0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: _myAvatarUrl != null && _myAvatarUrl!.isNotEmpty
-                            ? Image.network(
-                                _myAvatarUrl!.startsWith('http')
-                                    ? _myAvatarUrl!
-                                    : "${ApiService.baseUrl}/${_myAvatarUrl!.startsWith('/') ? _myAvatarUrl!.substring(1) : _myAvatarUrl!}",
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Center(
-                                  child: Text(
-                                    myInitial,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : Center(
-                                child: Text(
-                                  myInitial,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: GestureDetector(
                       onTap: () async {
@@ -3375,35 +2330,30 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                           Text(
                             _myUsername.isNotEmpty ? _myUsername : 'My Profile',
                             style: TextStyle(
-                              color: _text,
+                              fontFamily: 'Inter',
+                              color: theme.textPrimary,
                               fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w600,
                               letterSpacing: -0.2,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 3),
-                          Row(
-                            children: [
-                              Text(
-                                'Edit Profile',
-                                style: TextStyle(
-                                  color: _rose,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 3),
-                              Icon(Icons.arrow_forward_ios_rounded, size: 10, color: _rose),
-                            ],
+                          const SizedBox(height: 2),
+                          Text(
+                            'Edit profile & account',
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              color: theme.textTertiary,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.close_rounded, color: _sub, size: 22),
+                    icon: Icon(Icons.close_rounded, color: theme.textSecondary, size: 22),
                     tooltip: 'Close',
                     onPressed: _closeAll,
                   ),
@@ -3411,437 +2361,148 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               ),
             ),
 
-            // ── 2. Scrollable Action List with Categorized Sections ───────
+            // Scrollable grouped list
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 children: [
-                  // ── SHARED SPACE ──
-                  _drawerSectionHeader("SHARED SPACE"),
-                  _drawerPartnerCard(),
-                  const SizedBox(height: 6),
-                  _drawerTile(
-                    icon: Icons.photo_library_outlined,
-                    title: "Shared Media Gallery",
-                    subtitle: "Photos, videos, audio & files",
-                    gradientColors: [_violet, _lavender],
-                    onTap: () {
-                      _closeAll();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => MediaGalleryScreen(
-                            partnerId: widget.partnerId,
-                            partnerName: widget.partnerName,
-                            token: _userToken,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // ── PREFERENCES ──
-                  _drawerSectionHeader("PREFERENCES"),
-                  _themesTile(),
-                  const SizedBox(height: 6),
-                  _notificationsToggleTile(),
-
-                  const SizedBox(height: 14),
-
-                  // ── SECURITY & PRIVACY ──
-                  _drawerSectionHeader("SECURITY & PRIVACY"),
-                  _drawerTile(
-                    icon: Icons.shield_outlined,
-                    title: "Security & Lock",
-                    subtitle: "Passcode, Biometrics & 2FA",
-                    gradientColors: [const Color(0xFF00C853), const Color(0xFF64DD17)],
-                    onTap: () {
-                      _closeAll();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SecurityScreen()),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 6),
-                  _drawerTile(
-                    icon: Icons.key_outlined,
-                    title: "Change Password",
-                    subtitle: "Update account password",
-                    gradientColors: [_rose, _violet],
-                    onTap: () {
-                      _closeAll();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // ── NETWORK & SYSTEM ──
-                  _drawerSectionHeader("NETWORK & CONNECTION"),
-                  _drawerTile(
-                    icon: Icons.dns_outlined,
-                    title: "Server Configuration",
-                    subtitle: "Custom IP, port & connection test",
-                    gradientColors: [Colors.blueAccent, Colors.cyanAccent],
-                    onTap: () {
-                      _closeAll();
-                      ServerConfigDialog.show(context);
-                    },
-                  ),
-
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-
-            // ── 3. Bottom Sign Out Button ─────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.redAccent.withOpacity(0.25)),
-                  ),
-                  child: TextButton(
-                    onPressed: _showLogoutDialog,
-                    style: TextButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.logout_rounded, color: Colors.redAccent, size: 18),
-                        SizedBox(width: 8),
-                        Text(
-                          'Sign Out',
-                          style: TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _drawerSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: _sub,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.1,
-        ),
-      ),
-    );
-  }
-
-  Widget _drawerPartnerCard() {
-    return InkWell(
-      onTap: () {
-        _closeAll();
-        _openPartnerProfile();
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _rose.withValues(alpha: 0.3)),
-          boxShadow: [
-            BoxShadow(
-              color: _rose.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: [_rose, _violet]),
-                  ),
-                  child: _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty
-                      ? ClipOval(
-                          child: Image.network(
-                            _partnerAvatarUrl!.startsWith('http')
-                                ? _partnerAvatarUrl!
-                                : '${ApiService.baseUrl}${_partnerAvatarUrl!.startsWith('/') ? '' : '/'}$_partnerAvatarUrl',
-                            fit: BoxFit.cover,
-                            headers: _userToken.isNotEmpty ? {'Authorization': 'Bearer $_userToken'} : null,
-                            errorBuilder: (_, __, ___) => _buildAvatarFallback(),
-                          ),
-                        )
-                      : _buildAvatarFallback(),
-                ),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _isOnline ? Colors.greenAccent : Colors.grey,
-                      border: Border.all(color: _bg, width: 1.5),
-                      boxShadow: _isOnline
-                          ? const [BoxShadow(color: Colors.greenAccent, blurRadius: 4, spreadRadius: 0.5)]
-                          : null,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.partnerName,
-                    style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _isOnline ? 'Active now 🟢' : 'View profile & info',
-                    style: TextStyle(
-                      color: _isOnline ? Colors.greenAccent : _rose,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_forward_ios_rounded, color: _sub, size: 13),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _drawerTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    List<Color>? gradientColors,
-  }) {
-    final colors = gradientColors ?? [_rose, _violet];
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(colors: colors),
-              ),
-              child: Icon(icon, color: Colors.white, size: 19),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    style: TextStyle(color: _sub, fontSize: 11),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_forward_ios_rounded, color: _sub, size: 13),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _notificationsToggleTile() => AnimatedContainer(
-    duration: const Duration(milliseconds: 300),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-    decoration: BoxDecoration(
-      color: _bg,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _border),
-    ),
-    child: Row(
-      children: [
-        Container(
-          width: 38, height: 38,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(colors: [_rose, _violet]),
-          ),
-          child: Icon(
-            _notificationsEnabled ? Icons.notifications_active_outlined : Icons.notifications_off_outlined,
-            color: Colors.white, size: 19,
-          ),
-        ),
-        const SizedBox(width: 13),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Notifications', style: TextStyle(color: _text, fontSize: 13.5, fontWeight: FontWeight.w700)),
-              Text(_notificationsEnabled ? 'Chat sounds & alerts active' : 'Chat alerts muted',
-                  style: TextStyle(color: _sub, fontSize: 11)),
-            ],
-          ),
-        ),
-        Switch(
-          activeColor: _rose,
-          value: _notificationsEnabled,
-          onChanged: (val) => setState(() => _notificationsEnabled = val),
-        ),
-      ],
-    ),
-  );
-
-  Widget _themesTile() {
-    return ValueListenableBuilder<AppTheme>(
-      valueListenable: ThemeController.currentTheme,
-      builder: (context, activeTheme, _) {
-        return GestureDetector(
-          onTap: () {
-            _closeAll();
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const ThemeSelectionScreen(),
-              ),
-            );
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: _bg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _border),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [activeTheme.gradientStart, activeTheme.gradientEnd],
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.palette_outlined,
-                    color: Colors.white,
-                    size: 19,
-                  ),
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  SectionGroup(
+                    title: "Shared Space",
                     children: [
-                      Text(
-                        'Themes & Palette',
-                        style: TextStyle(
-                          color: _text,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
+                      AppListTile(
+                        leading: AppAvatar(
+                          size: 36,
+                          name: widget.partnerName,
+                          imageUrl: _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty
+                              ? (_partnerAvatarUrl!.startsWith('http')
+                                  ? _partnerAvatarUrl!
+                                  : '${ApiService.baseUrl}${_partnerAvatarUrl!.startsWith('/') ? '' : '/'}$_partnerAvatarUrl')
+                              : null,
+                          isOnline: _isOnline,
+                          showOnlineIndicator: true,
                         ),
+                        title: widget.partnerName,
+                        subtitle: _isOnline ? 'Active now' : 'Partner details & encryption',
+                        showChevron: true,
+                        onTap: () {
+                          _closeAll();
+                          _openPartnerProfile();
+                        },
                       ),
-                      Text(
-                        'Customize colors & background',
-                        style: TextStyle(
-                          color: _sub,
-                          fontSize: 11,
+                      AppListTile(
+                        icon: Icons.photo_library_outlined,
+                        title: "Shared Media Gallery",
+                        subtitle: "Photos, videos, audio & files",
+                        showChevron: true,
+                        onTap: () {
+                          _closeAll();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => MediaGalleryScreen(
+                                partnerId: widget.partnerId,
+                                partnerName: widget.partnerName,
+                                token: _userToken,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  SectionGroup(
+                    title: "Preferences",
+                    children: [
+                      AppListTile(
+                        icon: Icons.palette_outlined,
+                        title: "Appearance",
+                        subtitle: "${theme.name} • ${theme.isDark ? 'Dark' : 'Light'}",
+                        showChevron: true,
+                        onTap: () {
+                          _closeAll();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ThemeSelectionScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      AppListTile(
+                        icon: _notificationsEnabled
+                            ? Icons.notifications_active_outlined
+                            : Icons.notifications_off_outlined,
+                        title: "Notifications",
+                        subtitle: _notificationsEnabled ? 'Alerts active' : 'Alerts muted',
+                        trailing: Switch.adaptive(
+                          value: _notificationsEnabled,
+                          activeColor: theme.accentFill,
+                          onChanged: (val) => setState(() => _notificationsEnabled = val),
                         ),
                       ),
                     ],
                   ),
-                ),
-                Row(
-                  children: [
-                    _smallDot(activeTheme.bg),
-                    const SizedBox(width: 3),
-                    _smallDot(activeTheme.surface),
-                    const SizedBox(width: 3),
-                    _smallDot(activeTheme.primary),
-                  ],
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: _sub,
-                  size: 13,
-                ),
-              ],
+                  SectionGroup(
+                    title: "Security & Privacy",
+                    children: [
+                      AppListTile(
+                        icon: Icons.shield_outlined,
+                        title: "Security & Lock",
+                        subtitle: "Passcode, Biometrics & 2FA",
+                        showChevron: true,
+                        onTap: () {
+                          _closeAll();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const SecurityScreen()),
+                          );
+                        },
+                      ),
+                      AppListTile(
+                        icon: Icons.key_outlined,
+                        title: "Change Password",
+                        subtitle: "Update account password",
+                        showChevron: true,
+                        onTap: () {
+                          _closeAll();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  SectionGroup(
+                    title: "Network & Connection",
+                    children: [
+                      AppListTile(
+                        icon: Icons.dns_outlined,
+                        title: "Server Configuration",
+                        subtitle: "IP, port & connection test",
+                        showChevron: true,
+                        onTap: () {
+                          _closeAll();
+                          ServerConfigDialog.show(context);
+                        },
+                      ),
+                    ],
+                  ),
+                  SectionGroup(
+                    children: [
+                      AppListTile(
+                        icon: Icons.logout_rounded,
+                        title: "Sign Out",
+                        isDestructive: true,
+                        onTap: _showLogoutDialog,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _smallDot(Color color) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        border: Border.all(color: Colors.white30, width: 0.8),
+          ],
+        ),
       ),
     );
   }
@@ -3849,80 +2510,65 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   // ── Logout Dialog ─────────────────────────────────────────────────────────
   void _showLogoutDialog() {
     _closeAll();
-    Future.delayed(const Duration(milliseconds: 320), () {
+    final theme = context.appTheme;
+    Future.delayed(const Duration(milliseconds: 200), () {
       if (!mounted) return;
       showDialog(
         context: context,
-        barrierColor: Colors.black54,
-        builder: (ctx) => Dialog(
-          backgroundColor: _surf,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ShaderMask(
-                  shaderCallback: (b) => LinearGradient(colors: [_rose, _violet]).createShader(b),
-                  blendMode: BlendMode.srcIn,
-                  child: const Icon(Icons.logout_rounded, size: 40, color: Colors.white),
-                ),
-                const SizedBox(height: 16),
-                Text('Leaving so soon?',
-                    style: TextStyle(color: _text, fontSize: 20, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 8),
-                Text("You'll need your credentials to get back.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _sub, fontSize: 14)),
-                const SizedBox(height: 28),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: _border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: Text('Stay', style: TextStyle(color: _sub, fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(colors: [_rose, _violet]),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: ElevatedButton(                        
-                            onPressed: () async {
-                            await Session.logout();
-
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const LoginScreen(),
-                              ),
-                              (route) => false,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                          child: const Text('Sign out',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+        builder: (ctx) => AlertDialog(
+          backgroundColor: theme.surfaceRaised,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: theme.border, width: 1),
+          ),
+          title: Text(
+            'Sign Out',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              color: theme.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
             ),
           ),
+          content: Text(
+            'Are you sure you want to sign out of TwoOfUs? Your local session will be closed.',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              color: theme.textSecondary,
+              fontSize: 14,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  color: theme.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            AppButton(
+              text: 'Sign Out',
+              variant: AppButtonVariant.danger,
+              size: AppButtonSize.compact,
+              onPressed: () async {
+                await Session.logout();
+                if (mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LoginScreen(),
+                    ),
+                    (route) => false,
+                  );
+                }
+              },
+            ),
+          ],
         ),
       );
     });

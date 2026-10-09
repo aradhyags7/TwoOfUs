@@ -10,6 +10,7 @@ import 'full_screen_image_viewer.dart';
 import 'video_player_dialog.dart';
 import 'view_once_badge.dart';
 import '../utils/app_feedback.dart';
+import '../theme/theme_controller.dart';
 
 class ChatMediaBubble extends StatefulWidget {
   final MediaItem media;
@@ -111,8 +112,7 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
 
   @override
   Widget build(BuildContext context) {
-    const rose = Color(0xFFFF2D75);
-    const violet = Color(0xFF9B51E0);
+    final theme = context.appTheme;
 
     // ── 1. View Once Ephemeral Presentation ──────────────────────────────────
     final isConsumed = _hasViewed || widget.media.isExpired;
@@ -125,26 +125,13 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: isConsumed
-                ? Colors.white.withValues(alpha: 0.05)
-                : (widget.isMe
-                    ? rose.withValues(alpha: 0.22)
-                    : violet.withValues(alpha: 0.22)),
-            borderRadius: BorderRadius.circular(22),
+                ? theme.surfaceRaised.withOpacity(0.5)
+                : theme.surfaceRaised,
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isConsumed
-                  ? Colors.white24
-                  : (widget.isMe ? rose.withValues(alpha: 0.8) : violet.withValues(alpha: 0.8)),
-              width: 1.5,
+              color: isConsumed ? theme.border : theme.focusRing.withOpacity(0.6),
+              width: 1,
             ),
-            boxShadow: isConsumed
-                ? null
-                : [
-                    BoxShadow(
-                      color: (widget.isMe ? rose : violet).withValues(alpha: 0.25),
-                      blurRadius: 12,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -152,7 +139,7 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
               ViewOnceBadge(
                 isActive: !isConsumed,
                 isOpened: isConsumed,
-                size: 34,
+                size: 32,
               ),
               const SizedBox(width: 12),
               Column(
@@ -165,14 +152,15 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                       Text(
                         widget.media.isVideo ? "View Once Video" : "View Once Photo",
                         style: TextStyle(
-                          color: isConsumed ? Colors.white54 : Colors.white,
+                          fontFamily: 'Inter',
+                          color: isConsumed ? theme.textTertiary : theme.textPrimary,
                           fontSize: 13,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       if (widget.media.isEncrypted) ...[
                         const SizedBox(width: 6),
-                        const Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 12),
+                        Icon(Icons.lock_rounded, color: theme.textSecondary, size: 12),
                       ],
                     ],
                   ),
@@ -180,9 +168,10 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                   Text(
                     isConsumed ? "Opened • Expired" : "Confidential • Tap to reveal",
                     style: TextStyle(
-                      color: isConsumed ? Colors.white38 : Colors.white70,
+                      fontFamily: 'Inter',
+                      color: isConsumed ? theme.textTertiary : theme.textSecondary,
                       fontSize: 11,
-                      fontWeight: isConsumed ? FontWeight.normal : FontWeight.w600,
+                      fontWeight: isConsumed ? FontWeight.normal : FontWeight.w500,
                     ),
                   ),
                 ],
@@ -214,15 +203,15 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
         },
         child: Container(
           margin: const EdgeInsets.only(top: 4, bottom: 4),
-          constraints: const BoxConstraints(maxWidth: 240, maxHeight: 220),
+          constraints: const BoxConstraints(maxWidth: 240, maxHeight: 300),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white24),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: theme.border, width: 1),
           ),
           child: Stack(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
                 child: AuthenticatedImage(
                   url: thumbUrl,
                   fallbackUrl: imageUrl,
@@ -237,10 +226,11 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
+                      color: theme.surface.withOpacity(0.85),
                       shape: BoxShape.circle,
+                      border: Border.all(color: theme.borderSubtle, width: 1),
                     ),
-                    child: const Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 12),
+                    child: Icon(Icons.lock_rounded, color: theme.textSecondary, size: 12),
                   ),
                 ),
             ],
@@ -267,12 +257,12 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
         },
         child: Container(
           margin: const EdgeInsets.only(top: 4, bottom: 4),
-          width: 220,
-          height: 140,
+          width: 240,
+          height: 150,
           decoration: BoxDecoration(
-            color: widget.isMe ? Colors.pinkAccent.withValues(alpha: 0.2) : Colors.purpleAccent.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white24),
+            color: theme.surfaceRaised,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: theme.border, width: 1),
           ),
           child: Stack(
             alignment: Alignment.center,
@@ -281,27 +271,38 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 52,
-                    height: 52,
-                    decoration: const BoxDecoration(
-                      color: Colors.white30,
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: theme.surface.withOpacity(0.9),
                       shape: BoxShape.circle,
+                      border: Border.all(color: theme.border, width: 1),
                     ),
-                    child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
+                    child: Icon(Icons.play_arrow_rounded, color: theme.textPrimary, size: 30),
                   ),
                   const SizedBox(height: 8),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
                       widget.media.originalFilename,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        color: theme.textPrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  const SizedBox(height: 2),
                   Text(
                     widget.media.formattedFileSize,
-                    style: const TextStyle(color: Colors.white70, fontSize: 10),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: theme.textTertiary,
+                      fontSize: 10,
+                    ),
                   ),
                 ],
               ),
@@ -312,10 +313,11 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
+                      color: theme.surface.withOpacity(0.85),
                       shape: BoxShape.circle,
+                      border: Border.all(color: theme.borderSubtle, width: 1),
                     ),
-                    child: const Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 12),
+                    child: Icon(Icons.lock_rounded, color: theme.textSecondary, size: 12),
                   ),
                 ),
             ],
@@ -328,9 +330,9 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
         margin: const EdgeInsets.only(top: 4, bottom: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: widget.isMe ? Colors.pinkAccent.withValues(alpha: 0.15) : Colors.purpleAccent.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white24),
+          color: theme.surfaceRaised,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: theme.border, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -338,10 +340,11 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(12),
+                color: theme.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: theme.borderSubtle, width: 1),
               ),
-              child: const Icon(Icons.insert_drive_file_rounded, color: Colors.white, size: 28),
+              child: Icon(Icons.insert_drive_file_outlined, color: theme.textSecondary, size: 24),
             ),
             const SizedBox(width: 12),
             Flexible(
@@ -353,10 +356,11 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                       Flexible(
                         child: Text(
                           widget.media.originalFilename,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            color: theme.textPrimary,
                             fontSize: 13,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -364,31 +368,40 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                       ),
                       if (widget.media.isEncrypted) ...[
                         const SizedBox(width: 4),
-                        const Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 12),
+                        Icon(Icons.lock_rounded, color: theme.textSecondary, size: 12),
                       ],
                     ],
                   ),
                   const SizedBox(height: 2),
                   Text(
                     "${widget.media.mimeType.split('/').last.toUpperCase()} • ${widget.media.formattedFileSize}",
-                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: theme.textTertiary,
+                      fontSize: 11,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   InkWell(
                     onTap: () => _openDocument(context),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           "Open / Download",
                           style: TextStyle(
-                            color: Colors.pinkAccent,
+                            fontFamily: 'Inter',
+                            color: theme.isDark ? theme.accentBright : theme.accentFill,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        SizedBox(width: 4),
-                        Icon(Icons.open_in_new_rounded, color: Colors.pinkAccent, size: 14),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.open_in_new_rounded,
+                          color: theme.isDark ? theme.accentBright : theme.accentFill,
+                          size: 14,
+                        ),
                       ],
                     ),
                   ),

@@ -28,7 +28,7 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
   Color get _bg => ThemeController.currentTheme.value.bg;
   Color get _surf => ThemeController.currentTheme.value.surface;
   Color get _rose => ThemeController.currentTheme.value.primary;
-  Color get _violet => ThemeController.currentTheme.value.secondary;
+  Color get _border => ThemeController.currentTheme.value.border;
   Color get _text => ThemeController.currentTheme.value.textPrimary;
   Color get _sub => ThemeController.currentTheme.value.textMuted;
 
@@ -111,21 +111,25 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: _surf,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: _border),
+      ),
       title: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_rose, _violet]),
+              color: _rose.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.dns_rounded, color: Colors.white, size: 20),
+            child: Icon(Icons.dns_outlined, color: _rose, size: 20),
           ),
           const SizedBox(width: 12),
           Text(
             "Backend Server",
-            style: TextStyle(color: _text, fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(color: _text, fontSize: 17, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -261,9 +265,11 @@ class _ServerConfigDialogState extends State<ServerConfigDialog> {
           onPressed: _saveAndApply,
           style: ElevatedButton.styleFrom(
             backgroundColor: _rose,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            foregroundColor: ThemeController.currentTheme.value.onAccent,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
-          child: const Text("Save & Apply", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          child: const Text("Save & Apply", style: TextStyle(fontWeight: FontWeight.w600)),
         ),
       ],
     );

@@ -2,133 +2,109 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
-import '../widgets/passcode_lock_button.dart';
+import '../widgets/design_system/design_system.dart';
 
-class ThemeSelectionScreen extends StatefulWidget {
+class ThemeSelectionScreen extends StatelessWidget {
   const ThemeSelectionScreen({super.key});
 
-  @override
-  State<ThemeSelectionScreen> createState() => _ThemeSelectionScreenState();
-}
-
-class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<AppTheme>(
       valueListenable: ThemeController.currentTheme,
       builder: (context, activeTheme, _) {
+        final isDark = activeTheme.brightness == Brightness.dark;
+        final currentMode = ThemeController.currentThemeMode.value;
+        final currentAccent = ThemeController.currentAccent.value;
+
         return Scaffold(
           backgroundColor: activeTheme.bg,
           appBar: AppBar(
-            backgroundColor: Colors.transparent,
+            backgroundColor: activeTheme.bg,
             elevation: 0,
+            scrolledUnderElevation: 0,
             leading: IconButton(
               icon: Icon(
-                Icons.arrow_back_ios_new_rounded,
+                Icons.arrow_back_rounded,
                 color: activeTheme.textPrimary,
                 size: 20,
               ),
               onPressed: () => Navigator.pop(context),
             ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.palette_rounded,
-                      color: activeTheme.primary,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Theme Gallery",
-                      style: TextStyle(
-                        color: activeTheme.textPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
-                  ],
-                ),
-                Text(
-                  "Choose a mood for both of you",
-                  style: TextStyle(
-                    color: activeTheme.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
+            title: Text(
+              "Appearance",
+              style: TextStyle(
+                color: activeTheme.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                letterSpacing: -0.2,
+              ),
             ),
-            actions: const [
-              PasscodeLockButton(),
-              SizedBox(width: 8),
-            ],
           ),
           body: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              // ── 1. Interactive Live Preview Hero ───────────────────────────
-              _buildLivePreviewHero(activeTheme),
+              // ── 1. Live Interactive Preview ─────────────────────────────────
+              _buildLivePreview(activeTheme, isDark),
               const SizedBox(height: 24),
 
-              // ── 2. Section Header ──────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    "Curated Moods (${AppTheme.allThemes.length})",
-                    style: TextStyle(
-                      color: activeTheme.textPrimary,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: activeTheme.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: activeTheme.primary.withValues(alpha: 0.3),
+              // ── 2. Mode Selector (System / Dark / Light) ────────────────────
+              Text(
+                "THEME MODE",
+                style: TextStyle(
+                  color: activeTheme.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildModeSelector(context, activeTheme, currentMode),
+              const SizedBox(height: 24),
+
+              // ── 3. Accent Color Swatches ────────────────────────────────────
+              Text(
+                "ACCENT COLOR",
+                style: TextStyle(
+                  color: activeTheme.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildAccentPicker(activeTheme, currentAccent),
+              const SizedBox(height: 24),
+
+              // ── 4. Theme Presets ───────────────────────────────────────────
+              SectionGroup(
+                title: "Curated Presets",
+                children: AppTheme.allThemes.map((theme) {
+                  final isSelected = activeTheme.id == theme.id;
+                  return AppListTile(
+                    title: theme.name,
+                    subtitle: "${theme.brightness == Brightness.dark ? 'Dark' : 'Light'} • ${theme.accent.label}",
+                    leading: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: theme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected ? activeTheme.textPrimary : Colors.transparent,
+                          width: 2,
+                        ),
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          activeTheme.moodEmoji,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          activeTheme.name,
-                          style: TextStyle(
-                            color: activeTheme.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                    trailing: isSelected
+                        ? Icon(Icons.check_rounded, color: activeTheme.primary, size: 20)
+                        : null,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      ThemeController.setTheme(theme);
+                    },
+                  );
+                }).toList(),
               ),
-              const SizedBox(height: 14),
-
-              // ── 3. Theme List Cards ────────────────────────────────────────
-              ...AppTheme.allThemes.map((theme) {
-                final isSelected = activeTheme.id == theme.id;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _buildThemeCard(theme, isSelected),
-                );
-              }),
             ],
           ),
         );
@@ -136,86 +112,210 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // LIVE PREVIEW HERO CARD (Realistic Chat & Status Mockup)
-  // ═══════════════════════════════════════════════════════════════════════════
-  Widget _buildLivePreviewHero(AppTheme theme) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOut,
-      padding: const EdgeInsets.all(18),
+  // ── Mode Selector ─────────────────────────────────────────────────────────
+  Widget _buildModeSelector(
+    BuildContext context,
+    AppTheme theme,
+    ThemeMode currentMode,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: theme.surface,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(
-          color: theme.primary.withValues(alpha: 0.5),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: theme.glow,
-            blurRadius: 28,
-            spreadRadius: 2,
-            offset: const Offset(0, 8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.border),
+      ),
+      child: Row(
+        children: [
+          _buildModeTab(
+            label: "System",
+            icon: Icons.brightness_auto_rounded,
+            isSelected: currentMode == ThemeMode.system,
+            theme: theme,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              ThemeController.setThemeConfig(mode: ThemeMode.system);
+            },
           ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+          _buildModeTab(
+            label: "Dark",
+            icon: Icons.dark_mode_rounded,
+            isSelected: currentMode == ThemeMode.dark,
+            theme: theme,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              ThemeController.setThemeConfig(mode: ThemeMode.dark);
+            },
+          ),
+          _buildModeTab(
+            label: "Light",
+            icon: Icons.light_mode_rounded,
+            isSelected: currentMode == ThemeMode.light,
+            theme: theme,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              ThemeController.setThemeConfig(mode: ThemeMode.light);
+            },
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with Live indicator
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    );
+  }
+
+  Widget _buildModeTab({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required AppTheme theme,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? theme.surfaceElevated : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isSelected ? Border.all(color: theme.border) : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: theme.primary,
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.primary,
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? theme.textPrimary : theme.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isSelected ? theme.textPrimary : theme.textMuted,
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    "LIVE PREVIEW",
-                    style: TextStyle(
-                      color: theme.primary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Accent Color Swatches ──────────────────────────────────────────────────
+  Widget _buildAccentPicker(AppTheme theme, AppAccent currentAccent) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.border),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: AppAccent.values.map((accent) {
+          final isSelected = accent == currentAccent;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                ThemeController.setThemeConfig(accent: accent);
+              },
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: accent.fillColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? theme.textPrimary : Colors.transparent,
+                        width: 2.5,
+                      ),
+                    ),
+                    child: isSelected
+                        ? Icon(
+                            Icons.check_rounded,
+                            color: accent.onAccent(theme.brightness),
+                            size: 20,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 6),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      accent.label,
+                      style: TextStyle(
+                        color: isSelected ? theme.textPrimary : theme.textMuted,
+                        fontSize: 11,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 3,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ── Live Interactive Preview Mockup ────────────────────────────────────────
+  Widget _buildLivePreview(AppTheme theme, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "PREVIEW",
+                style: TextStyle(
+                  color: theme.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8,
                 ),
-                decoration: BoxDecoration(
-                  gradient: theme.gradient,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  "${theme.moodEmoji} ${theme.name}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.surfaceElevated,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: theme.border),
+                  ),
+                  child: Text(
+                    "${theme.accent.label} • ${isDark ? 'Dark' : 'Light'}",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
@@ -223,150 +323,23 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Mini Simulated Phone Display
+          // Simulated Chat Container
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: theme.bg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: theme.border,
-                width: 1,
-              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.border),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Top App Bar in Mockup
-                Row(
-                  children: [
-                    Stack(
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: theme.gradient,
-                          ),
-                          child: Center(
-                            child: Text(
-                              theme.moodEmoji,
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFF10B981),
-                              border: Border.all(color: theme.bg, width: 2),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Partner",
-                            style: TextStyle(
-                              color: theme.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            "Online • In sync",
-                            style: TextStyle(
-                              color: theme.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Action icons
-                    Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        color: theme.surface,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: theme.border),
-                      ),
-                      child: Icon(
-                        Icons.call_rounded,
-                        color: theme.primary,
-                        size: 15,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        color: theme.surface,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: theme.border),
-                      ),
-                      child: Icon(
-                        Icons.videocam_rounded,
-                        color: theme.secondary,
-                        size: 15,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Connection Sync Banner
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.surfaceElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: theme.border),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.verified_rounded,
-                        color: theme.primary,
-                        size: 13,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        "142 Days Connected • 100% In Sync",
-                        style: TextStyle(
-                          color: theme.textPrimary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // Contact Bubble (Received)
+                // Received Bubble
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
                     constraints: const BoxConstraints(maxWidth: 240),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 9,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: theme.bubblePartner,
                       borderRadius: const BorderRadius.only(
@@ -381,80 +354,75 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Hey! Did you check out the shared notes from earlier? ☕",
+                          "Are you free this evening?",
                           style: TextStyle(
                             color: theme.textPrimary,
-                            fontSize: 12.5,
-                            height: 1.3,
+                            fontSize: 14,
+                            height: 1.35,
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          "10:42 AM",
-                          style: TextStyle(
-                            color: theme.textMuted,
-                            fontSize: 9.5,
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Text(
+                            "10:42",
+                            style: TextStyle(
+                              color: theme.textMuted,
+                              fontSize: 11,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
 
-                // Self Bubble (Sent)
+                // Sent Bubble
                 Align(
                   alignment: Alignment.centerRight,
                   child: Container(
                     constraints: const BoxConstraints(maxWidth: 240),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 9,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      gradient: theme.gradient,
+                      color: theme.bubbleSelf,
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(16),
                         topRight: Radius.circular(16),
                         bottomLeft: Radius.circular(16),
                         bottomRight: Radius.circular(4),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.glow,
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
                     ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          "Just reviewed them! Everything looks great and ready to go 👍",
+                        Text(
+                          "Yes! Let's get coffee ☕",
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
-                            height: 1.3,
+                            color: theme.onAccent,
+                            fontSize: 14,
+                            height: 1.35,
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        const Row(
+                        const SizedBox(height: 4),
+                        Row(
                           mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             Text(
-                              "10:43 AM",
+                              "10:43",
                               style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 9.5,
+                                color: theme.onAccent.withValues(alpha: 0.75),
+                                fontSize: 11,
+                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                             ),
-                            SizedBox(width: 4),
+                            const SizedBox(width: 4),
                             Icon(
                               Icons.done_all_rounded,
                               size: 13,
-                              color: Colors.white,
+                              color: theme.onAccent.withValues(alpha: 0.75),
                             ),
                           ],
                         ),
@@ -464,276 +432,31 @@ class _ThemeSelectionScreenState extends State<ThemeSelectionScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Simulated Bottom Input Row
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
-                          color: theme.surface,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: theme.border),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.sentiment_satisfied_alt_rounded,
-                              color: theme.textMuted,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "Message...",
-                              style: TextStyle(
-                                color: theme.textMuted,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const Spacer(),
-                            Icon(
-                              Icons.mic_rounded,
-                              color: theme.textMuted,
-                              size: 18,
-                            ),
-                          ],
-                        ),
+                // Action Button in preview
+                SizedBox(
+                  height: 40,
+                  child: ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.primary,
+                      foregroundColor: theme.onAccent,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        gradient: theme.gradient,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: theme.glow,
-                            blurRadius: 8,
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.send_rounded,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ],
+                    child: const Text("Primary Action Button"),
+                  ),
                 ),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // THEME ITEM CARD
-  // ═══════════════════════════════════════════════════════════════════════════
-  Widget _buildThemeCard(AppTheme theme, bool isSelected) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        ThemeController.setTheme(theme);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeInOut,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.surface,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: isSelected ? theme.primary : theme.border,
-            width: isSelected ? 2.0 : 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isSelected ? theme.glow : Colors.black.withValues(alpha: 0.18),
-              blurRadius: isSelected ? 18 : 6,
-              spreadRadius: isSelected ? 1 : 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Row 1: Mood Emoji + Title & Subtitle + Active Indicator
-            Row(
-              children: [
-                // Mood Emoji Orb
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? theme.primary.withValues(alpha: 0.2)
-                        : theme.bg,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: isSelected ? theme.primary : theme.border,
-                      width: 1.2,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      theme.moodEmoji,
-                      style: const TextStyle(fontSize: 22),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            theme.name,
-                            style: TextStyle(
-                              color: theme.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (isSelected) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: theme.primary,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                "ACTIVE",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        theme.subtitle,
-                        style: TextStyle(
-                          color: theme.textMuted,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Selection Checkmark Circle
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: isSelected ? theme.gradient : null,
-                    color: isSelected ? null : theme.bg,
-                    border: Border.all(
-                      color: isSelected ? Colors.transparent : theme.border,
-                      width: 1.5,
-                    ),
-                    boxShadow: isSelected
-                        ? [
-                            BoxShadow(
-                              color: theme.glow,
-                              blurRadius: 8,
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Center(
-                    child: Icon(
-                      isSelected ? Icons.check_rounded : Icons.circle_outlined,
-                      color: isSelected ? Colors.white : theme.textMuted,
-                      size: isSelected ? 18 : 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // Row 2: Color Palette Swatches Bar
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.bg,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: theme.border),
-              ),
-              child: Row(
-                children: [
-                  _colorSwatch(theme.bg, "Background"),
-                  const SizedBox(width: 8),
-                  _colorSwatch(theme.surface, "Surface"),
-                  const SizedBox(width: 8),
-                  _colorSwatch(theme.primary, "Primary"),
-                  const SizedBox(width: 8),
-                  _colorSwatch(theme.secondary, "Accent"),
-                  const Spacer(),
-                  // Miniature Gradient Bar
-                  Container(
-                    width: 50,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      gradient: theme.gradient,
-                      borderRadius: BorderRadius.circular(7),
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.primary.withValues(alpha: 0.3),
-                          blurRadius: 4,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _colorSwatch(Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.2),
-              width: 1,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

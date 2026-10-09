@@ -30,6 +30,7 @@ class _TwoOfUsAppState extends State<TwoOfUsApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ThemeController.updateSystemUiOverlay();
     SecurityService.refreshPasscodeState();
     SecurityService.resetInactivityTimer();
     CallService.startIncomingCallWatcher();
@@ -41,6 +42,12 @@ class _TwoOfUsAppState extends State<TwoOfUsApp> with WidgetsBindingObserver {
     SecurityService.cancelInactivityTimer();
     CallService.stopIncomingCallWatcher();
     super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    super.didChangePlatformBrightness();
+    ThemeController.handlePlatformBrightnessChange();
   }
 
   @override
@@ -62,26 +69,34 @@ class _TwoOfUsAppState extends State<TwoOfUsApp> with WidgetsBindingObserver {
       }
     } else if (state == AppLifecycleState.resumed) {
       CallNotificationService.instance.cancelActive();
+      ThemeController.updateSystemUiOverlay();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<AppTheme>(
-      valueListenable: ThemeController.currentTheme,
-      builder: (context, activeTheme, _) {
-        return Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) => SecurityService.resetInactivityTimer(),
-          onPointerMove: (_) => SecurityService.resetInactivityTimer(),
-          onPointerUp: (_) => SecurityService.resetInactivityTimer(),
-          child: MaterialApp(
-            navigatorKey: navigatorKey,
-            title: 'TwoOfUs',
-            debugShowCheckedModeBanner: false,
-            theme: ThemeController.buildThemeData(activeTheme),
-            home: const SplashScreen(),
-          ),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.currentThemeMode,
+      builder: (context, themeMode, _) {
+        return ValueListenableBuilder<AppTheme>(
+          valueListenable: ThemeController.currentTheme,
+          builder: (context, activeTheme, _) {
+            return Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) => SecurityService.resetInactivityTimer(),
+              onPointerMove: (_) => SecurityService.resetInactivityTimer(),
+              onPointerUp: (_) => SecurityService.resetInactivityTimer(),
+              child: MaterialApp(
+                navigatorKey: navigatorKey,
+                title: 'TwoOfUs',
+                debugShowCheckedModeBanner: false,
+                theme: ThemeController.buildThemeData(AppTheme.light(activeTheme.accent)),
+                darkTheme: ThemeController.buildThemeData(AppTheme.dark(activeTheme.accent)),
+                themeMode: themeMode,
+                home: const SplashScreen(),
+              ),
+            );
+          },
         );
       },
     );
