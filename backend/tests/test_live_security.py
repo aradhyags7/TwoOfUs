@@ -39,6 +39,12 @@ def make_request(
 class LiveSecurityAuditTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        try:
+            with urllib.request.urlopen(f"{BASE_URL}/", timeout=1):
+                pass
+        except Exception:
+            raise unittest.SkipTest("Live server not running at http://127.0.0.1:8000")
+
         # Create 3 isolated test users on live backend
         suffix = uuid.uuid4().hex[:6]
         cls.u1_email = f"alice_{suffix}@twoofus.app"

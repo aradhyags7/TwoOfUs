@@ -222,6 +222,8 @@ class SecurityPenetrationTests(unittest.TestCase):
                 "receiver_id": str(u2),
                 "is_encrypted": "true",
                 "is_view_once": "false",
+                "encrypted_media_key": "test_encrypted_key==",
+                "encryption_nonce": "test_nonce==",
             },
             files=[("files", (sensitive_filename, io.BytesIO(raw_ciphertext), "image/jpeg"))],
             headers=headers_sender
@@ -254,7 +256,12 @@ class SecurityPenetrationTests(unittest.TestCase):
 
         malicious_res = client.post(
             "/media/upload",
-            data={"receiver_id": str(u2)},
+            data={
+                "receiver_id": str(u2),
+                "is_encrypted": "true",
+                "encrypted_media_key": "dummy_key==",
+                "encryption_nonce": "dummy_nonce==",
+            },
             files=[("files", ("virus.exe", io.BytesIO(b"MZ..."), "application/x-msdownload"))],
             headers=headers_sender
         )
@@ -274,7 +281,12 @@ class SecurityPenetrationTests(unittest.TestCase):
         raw_ciphertext = b"TEST_PAYLOAD_FOR_MESSAGE_DELETION"
         upload_res = client.post(
             "/media/upload",
-            data={"receiver_id": str(u2), "is_encrypted": "true"},
+            data={
+                "receiver_id": str(u2),
+                "is_encrypted": "true",
+                "encrypted_media_key": "test_key==",
+                "encryption_nonce": "test_nonce==",
+            },
             files=[("files", ("test.jpg", io.BytesIO(raw_ciphertext), "image/jpeg"))],
             headers=headers_u1
         )
@@ -284,7 +296,14 @@ class SecurityPenetrationTests(unittest.TestCase):
         # Send message with media
         send_res = client.post(
             "/send-message",
-            json={"sender_id": u1, "receiver_id": u2, "content": "hi with attachment", "media_ids": [media_id]},
+            json={
+                "sender_id": u1,
+                "receiver_id": u2,
+                "content": "encrypted_ciphertext_with_attachment",
+                "is_encrypted": True,
+                "nonce": "test_nonce==",
+                "media_ids": [media_id],
+            },
             headers=headers_u1
         )
         self.assertEqual(send_res.status_code, 200)
@@ -319,10 +338,10 @@ class SecurityPenetrationTests(unittest.TestCase):
 
         headers_u1 = {"Authorization": f"Bearer {t1}"}
 
-        # Send 3 messages
-        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "msg 1"}, headers=headers_u1)
-        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "msg 2"}, headers=headers_u1)
-        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "msg 3"}, headers=headers_u1)
+        # Send 3 encrypted messages
+        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "enc 1", "is_encrypted": True, "nonce": "nonce1=="}, headers=headers_u1)
+        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "enc 2", "is_encrypted": True, "nonce": "nonce2=="}, headers=headers_u1)
+        client.post("/send-message", json={"sender_id": u1, "receiver_id": u2, "content": "enc 3", "is_encrypted": True, "nonce": "nonce3=="}, headers=headers_u1)
 
         # Clear conversation
         clear_res = client.delete(f"/messages/conversation/{u2}", headers=headers_u1)

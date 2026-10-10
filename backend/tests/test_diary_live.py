@@ -38,6 +38,12 @@ def make_request(
 class LiveDiaryMemoriesTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        try:
+            with urllib.request.urlopen(f"{BASE_URL}/", timeout=1):
+                pass
+        except Exception:
+            raise unittest.SkipTest("Live server not running at http://127.0.0.1:8000")
+
         suffix = uuid.uuid4().hex[:6]
         cls.u1_email = f"duser1_{suffix}@test.com"
         cls.u2_email = f"duser2_{suffix}@test.com"

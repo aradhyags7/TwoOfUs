@@ -1007,33 +1007,27 @@ async def upload_media(
     is_enc_bool = is_encrypted.lower() in ("true", "1") if is_encrypted is not None else False
     is_vo_bool = is_view_once.lower() in ("true", "1") if is_view_once is not None else False
 
-    # Safe server rejection of plaintext payloads for protected media types
-    if is_vo_bool and not is_enc_bool:
+    # Fail closed (server): /media/upload rejects is_encrypted=false for all user content.
+    # All media uploaded by users is user content; no plaintext media is allowed.
+    # Documented old-client behavior: Legacy clients uploading unencrypted media will receive
+    # HTTP 400 Bad Request with explanation that E2EE is required.
+    if not is_enc_bool:
         raise HTTPException(
             status_code=400,
-            detail="Protected media type 'view_once' must be end-to-end encrypted",
+            detail="Unencrypted media uploads are rejected. End-to-end encryption is required.",
         )
 
-    # Reject unencrypted media carrying encryption keys or nonces
-    if (encrypted_media_key and encrypted_media_key.strip()) or (encryption_nonce and encryption_nonce.strip()):
-        if not is_enc_bool:
-            raise HTTPException(
-                status_code=400,
-                detail="Unencrypted media cannot contain encryption keys or nonces",
-            )
-
-    # Reject encrypted media with empty whitespace keys/nonces if provided
-    if is_enc_bool:
-        if encrypted_media_key is not None and not encrypted_media_key.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Encrypted media uploads cannot have empty encrypted_media_key",
-            )
-        if encryption_nonce is not None and not encryption_nonce.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Encrypted media uploads cannot have empty encryption_nonce",
-            )
+    # Strictly require encrypted_media_key and encryption_nonce
+    if not encrypted_media_key or not encrypted_media_key.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Encrypted media uploads cannot have empty encrypted_media_key",
+        )
+    if not encryption_nonce or not encryption_nonce.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Encrypted media uploads cannot have empty encryption_nonce",
+        )
 
     responses = []
     for file in files:
@@ -1143,13 +1137,24 @@ def send_message(
         raise HTTPException(status_code=403, detail="Forbidden: You can only message your connected partner")
 
     is_enc = bool(data.is_encrypted)
-    msg_type = getattr(data, "message_type", "text") or "text"
+    raw_msg_type = getattr(data, "message_type", "text") or "text"
+    msg_type = raw_msg_type.strip()
 
-    # Reject unencrypted payloads when encrypted message type is designated
-    if msg_type in ("encrypted", "encrypted_text", "e2ee") and not is_enc:
+    # Fail closed (server): /send-message rejects is_encrypted=false for all user content.
+    # The only exception is explicitly typed system messages, allowlisted by type.
+    # Documented old-client behavior: Legacy clients attempting to post plaintext user content
+    # receive HTTP 400 Bad Request with an explanation that E2EE is required.
+    ALLOWLISTED_SYSTEM_MESSAGE_TYPES = {
+        "system",
+        "system_call_log",
+        "system_pairing_event",
+        "system_notification",
+    }
+
+    if not is_enc and msg_type not in ALLOWLISTED_SYSTEM_MESSAGE_TYPES:
         raise HTTPException(
             status_code=400,
-            detail="Payload must be encrypted for encrypted message types",
+            detail="Unencrypted user content is rejected. End-to-end encryption is required.",
         )
 
     if is_enc:

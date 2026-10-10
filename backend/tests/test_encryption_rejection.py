@@ -148,7 +148,7 @@ class EncryptionRejectionTests(unittest.TestCase):
             headers=self.headers_u1,
         )
         self.assertEqual(res.status_code, 400)
-        self.assertIn("Payload must be encrypted", res.json()["detail"])
+        self.assertIn("Unencrypted user content is rejected", res.json()["detail"])
 
     def test_04_encrypted_message_edit_requires_valid_nonce_and_content(self):
         send_res = client.post(
@@ -204,7 +204,7 @@ class EncryptionRejectionTests(unittest.TestCase):
             headers=self.headers_u1,
         )
         self.assertEqual(res.status_code, 400)
-        self.assertIn("must be end-to-end encrypted", res.json()["detail"])
+        self.assertIn("Unencrypted media uploads are rejected", res.json()["detail"])
 
     def test_06_unencrypted_media_cannot_have_keys_or_nonces(self):
         fake_bytes = b"FAKE_PHOTO_DATA"
@@ -220,7 +220,7 @@ class EncryptionRejectionTests(unittest.TestCase):
             headers=self.headers_u1,
         )
         self.assertEqual(res.status_code, 400)
-        self.assertIn("Unencrypted media cannot contain encryption keys", res.json()["detail"])
+        self.assertIn("Unencrypted media uploads are rejected", res.json()["detail"])
 
     def test_07_encrypted_media_rejects_empty_key_or_nonce(self):
         fake_bytes = b"FAKE_ENCRYPTED_PHOTO"
@@ -281,3 +281,93 @@ class EncryptionRejectionTests(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["status"], "sent")
+
+    def test_10_unencrypted_user_message_rejected_fail_closed(self):
+        # Legacy/old client attempts to send unencrypted text message
+        res1 = client.post(
+            "/send-message",
+            json={
+                "sender_id": self.u1_id,
+                "receiver_id": self.u2_id,
+                "content": "Hello in plaintext from old client",
+                "is_encrypted": False,
+                "message_type": "text",
+            },
+            headers=self.headers_u1,
+        )
+        self.assertEqual(res1.status_code, 400)
+        self.assertIn("Unencrypted user content is rejected", res1.json()["detail"])
+
+        # Defaulted is_encrypted (omitted) also rejected
+        res2 = client.post(
+            "/send-message",
+            json={
+                "sender_id": self.u1_id,
+                "receiver_id": self.u2_id,
+                "content": "Implicit plaintext",
+            },
+            headers=self.headers_u1,
+        )
+        self.assertEqual(res2.status_code, 400)
+        self.assertIn("Unencrypted user content is rejected", res2.json()["detail"])
+
+    def test_11_allowlisted_system_messages_permitted_unencrypted(self):
+        for sys_type in ["system", "system_call_log", "system_pairing_event", "system_notification"]:
+            res = client.post(
+                "/send-message",
+                json={
+                    "sender_id": self.u1_id,
+                    "receiver_id": self.u2_id,
+                    "content": f"System event payload for {sys_type}",
+                    "is_encrypted": False,
+                    "message_type": sys_type,
+                },
+                headers=self.headers_u1,
+            )
+            self.assertEqual(res.status_code, 200, f"System type {sys_type} should be allowlisted")
+            self.assertEqual(res.json()["status"], "sent")
+
+    def test_12_non_allowlisted_system_types_rejected(self):
+        res = client.post(
+            "/send-message",
+            json={
+                "sender_id": self.u1_id,
+                "receiver_id": self.u2_id,
+                "content": "Spoofed system message",
+                "is_encrypted": False,
+                "message_type": "unauthorized_custom_system",
+            },
+            headers=self.headers_u1,
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Unencrypted user content is rejected", res.json()["detail"])
+
+    def test_13_all_unencrypted_media_uploads_rejected_fail_closed(self):
+        fake_bytes = b"STANDARD_UNENCRYPTED_PHOTO"
+        res = client.post(
+            "/media/upload",
+            data={
+                "receiver_id": str(self.u2_id),
+                "is_encrypted": "false",
+                "is_view_once": "false",
+            },
+            files=[("files", ("photo.jpg", io.BytesIO(fake_bytes), "image/jpeg"))],
+            headers=self.headers_u1,
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Unencrypted media uploads are rejected", res.json()["detail"])
+
+    def test_14_encrypted_media_upload_requires_key_and_nonce(self):
+        fake_bytes = b"ENCRYPTED_MEDIA_WITHOUT_KEY"
+        res = client.post(
+            "/media/upload",
+            data={
+                "receiver_id": str(self.u2_id),
+                "is_encrypted": "true",
+            },
+            files=[("files", ("photo.jpg", io.BytesIO(fake_bytes), "image/jpeg"))],
+            headers=self.headers_u1,
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("cannot have empty encrypted_media_key", res.json()["detail"])
+
