@@ -14,10 +14,29 @@ services:
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
+
+      # Neon PostgreSQL connection string (secret: configure in Render dashboard)
       - key: DATABASE_URL
-        fromDatabase:
-          name: twoofus-postgres
-          property: connectionString
+        sync: false
+      # Optional: direct unpooled connection for migrations/admin (fallback to DATABASE_URL if unset)
+      - key: DATABASE_URL_DIRECT
+        sync: false
+
+      # Persistent S3-compatible object storage (Cloudflare R2)
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: S3_ENDPOINT_URL
+        value: "https://<account_id>.r2.cloudflarestorage.com"
+      - key: S3_BUCKET
+        value: twoofus-media
+      - key: S3_REGION
+        value: auto
+      # Cloudflare R2 API Token credentials (secret: configure in Render dashboard)
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+
       # WebRTC STUN/TURN credentials (optional: set in Render dashboard or leave blank for public STUN)
       - key: TURN_HOST
         sync: false
@@ -29,6 +48,7 @@ services:
         sync: false
       - key: TURN_URLS
         sync: false
+
       # Email / SMTP configuration for OTP & notifications
       - key: SMTP_HOST
         value: smtp.gmail.com
@@ -43,9 +63,3 @@ services:
       # SMTP Password / Google App Password (secret: configure in Render dashboard)
       - key: SMTP_PASSWORD
         sync: false
-
-databases:
-  - name: twoofus-postgres
-    databaseName: twoofus
-    user: twoofus_user
-    plan: free

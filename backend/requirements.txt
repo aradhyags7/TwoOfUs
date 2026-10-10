@@ -12,3 +12,4 @@ pillow==12.3.0
 httpx==0.28.1
 psycopg2-binary==2.9.9
 websockets==17.0.1
+boto3==1.43.111

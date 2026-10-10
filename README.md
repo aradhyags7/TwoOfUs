@@ -321,19 +321,93 @@ flutter test
 
 ---
 
-## 🌐 Cloud Deployment (Render.com)
+## 🌐 Cloud Deployment (Render.com + Neon + Cloudflare R2)
 
-The repository includes a ready-to-deploy [`render.yaml`](render.yaml) blueprint:
+The backend runs on **Render.com** with **Neon Serverless PostgreSQL** and persistent **Cloudflare R2** object storage.
 
-1. Connect your GitHub repository to **[Render.com](https://dashboard.render.com)**.
-2. Provision a **Web Service** with:
-   - **Root Directory**: `backend`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-3. Provision a **Render Managed PostgreSQL Database** and link `DATABASE_URL`.
-4. Configure SMTP credentials (`SMTP_USER`, `SMTP_PASSWORD`) for live email delivery.
+### 1. Database Configuration (Neon PostgreSQL)
+Neon provides serverless PostgreSQL that scales to zero and drops idle connections. The backend is hardened with `pool_pre_ping=True`, `pool_recycle=300`, connect timeout, and initial cold-start retries.
 
-Live Production API: **`https://twoofus.onrender.com`**
+* **Pooled Connection (`-pooler`)**:
+  - In your [Neon Console](https://console.neon.tech), copy the **Pooled connection string** (`-pooler.us-east-2.aws.neon.tech`).
+  - Neon's PgBouncer pooler efficiently handles concurrent web requests and cold starts.
+  - In Render Dashboard (**twoofus-backend** -> **Environment**), set:
+    ```env
+    DATABASE_URL=postgresql://<user>:<password>@<endpoint>-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
+    ```
+* **Direct Connection (Optional for Migrations)**:
+  - If desired for heavy administrative DDL operations, set `DATABASE_URL_DIRECT` to your direct (unpooled) Neon URL. If omitted, startup auto-migrations safely run over `DATABASE_URL`.
+* **SSL and Channel Binding**:
+  - Keep `sslmode=require` in the query string.
+  - If `channel_binding=require` is present and unsupported by the client libpq or pooler, the backend automatically strips the parameter and falls back to standard SCRAM-SHA-256 over TLS without crashing.
+
+---
+
+### 2. Persistent Storage (Cloudflare R2 S3-Compatible Bucket)
+Render containers use ephemeral disks that wipe `./uploads` on every deploy. Cloudflare R2 provides zero-egress-fee, persistent object storage.
+
+1. **Create Bucket**:
+   - In your [Cloudflare Dashboard](https://dash.cloudflare.com), navigate to **R2** -> **Create bucket** (e.g. `twoofus-media`).
+2. **Create API Token**:
+   - Go to **R2** -> **Manage R2 API Tokens** -> **Create API Token**.
+   - Permissions: **Object Read & Write**.
+   - Specify bucket: Apply to `twoofus-media`.
+   - Copy the **Access Key ID**, **Secret Access Key**, and the account's **S3 Endpoint URL** (`https://<account_id>.r2.cloudflarestorage.com`).
+3. **Configure Render Environment Variables**:
+   ```env
+   STORAGE_BACKEND=s3
+   S3_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com
+   S3_BUCKET=twoofus-media
+   S3_REGION=auto
+   S3_ACCESS_KEY_ID=<your_r2_access_key_id>
+   S3_SECRET_ACCESS_KEY=<your_r2_secret_access_key>
+   ```
+   *Note: If `STORAGE_BACKEND=s3` is set but credentials are missing, the server logs a loud warning and falls back to ephemeral `LocalStorage` instead of crashing.*
+
+---
+
+### 3. Health Check & Monitoring
+The `/health` endpoint checks all critical dependencies and always returns HTTP 200 so Render does not terminate the container during third-party blips:
+```bash
+curl https://twoofus.onrender.com/health
+```
+**Healthy Response:**
+```json
+{
+  "status": "ok",
+  "app": "TwoOfUs",
+  "version": "1.0.0",
+  "db": "ok",
+  "storage": "ok",
+  "time": "2026-10-10T19:15:24.796074Z"
+}
+```
+* Status values:
+  - `db`: `"ok"` (successful `SELECT 1`) | `"error"` (connection probe failed)
+  - `storage`: `"ok"` (S3 bucket accessible) | `"local"` (LocalStorage active) | `"error"` (S3 check failed)
+
+---
+
+### 4. Rollback Path
+* **Instant Dashboard Rollback**:
+  - In [Render Dashboard](https://dashboard.render.com), go to **twoofus-backend** -> **Deploys**.
+  - Locate the previous successful deploy, click **...**, and choose **Rollback to this deploy**.
+* **Git Rollback**:
+  - `git revert <commit-hash>` followed by `git push origin main`.
+
+---
+
+### 5. Legacy Client Rejection Notice (Fail-Closed E2EE)
+Clients running older application builds that attempt to transmit unencrypted user content receive an **HTTP 400 Bad Request** error:
+* **Messages** (`POST /send-message`):
+  `{"detail": "Unencrypted user content is rejected. End-to-end encryption is required."}`
+* **Media** (`POST /media/upload`):
+  `{"detail": "Unencrypted media uploads are rejected. End-to-end encryption is required."}`
+* **Missing Keys/Nonces**:
+  `{"detail": "Encrypted messages must include a nonce"}`
+  `{"detail": "Encrypted media uploads cannot have empty encrypted_media_key"}`
+
+The Flutter application automatically catches these 400 responses and displays an "Update Required" dialog directing users to download the latest client release.
 
 ---
 
