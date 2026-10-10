@@ -137,6 +137,49 @@ graph TD
 
 ---
 
+## 🛡️ Security Model
+
+TwoOfUs is architected from the ground up under a **Zero-Knowledge, Fail-Closed Security Model**. The application strictly isolates cryptographic trust to user device hardware, enforcing non-repudiable boundaries between end-to-end encrypted user content and operational server metadata.
+
+### 1. Exact End-to-End Encryption (E2EE) Scope
+
+| Domain | Cryptographic Primitive / Info Tag | Ciphertext Storage | Decryption Key Ownership |
+| :--- | :--- | :--- | :--- |
+| **Chat Messages** | X25519 ECDH + HKDF-SHA256 (`TwoOfUs-KeyExchange-v1`) + AES-256-GCM | Encrypted ciphertext + 96-bit unique nonce in `messages` table | Communicating devices only (derived from local private key + peer public key) |
+| **Media Attachments (Images, Videos, Audio, Docs)** | Client-side AES-256-GCM (`TwoOfUs-Media-v1`) before upload | Ciphertext binary payload stored on disk; nonce and metadata in `media` table | Communicating devices only. Server receives encrypted bytes and cannot read media contents |
+| **Shared Timeline & Diary Content** | Client-side AES-256-GCM (`TwoOfUs-Timeline-v1`) before upload | Ciphertext body + nonce stored in `diary_memories` table | Paired partners only. Legacy unencrypted memories are flagged `is_encrypted=false` for backward migration |
+| **Timeline Photos** | Client-side AES-256-GCM (`TwoOfUs-Timeline-v1`) before upload | Ciphertext binary file on disk; photo nonce in `diary_memories` table | Paired partners only. Server cannot render or parse uploaded timeline photos |
+| **Calling Audio & Video Streams** | WebRTC Unified Plan, DTLS 1.2 handshake, SRTP AES-128-CM/AEAD media plane | Ephemeral; media never touches server disk | Peer devices only via direct peer-to-peer WebRTC connection |
+
+### 2. Non-E2EE Operational Metadata (Server-Visible)
+
+To enable 1-to-1 routing, notification dispatch, and connection establishment, the server processes minimal, strictly segregated metadata:
+* **User Identity & Pairing Directory**: User IDs (`int`), usernames, emails, bcrypt-hashed passwords, TOTP secrets, public keys (Curve25519 identity keys published for peer key agreement), and pairing mappings (`pairs` table).
+* **Routing & Envelope Headers**: Sender ID, receiver ID, UTC created timestamps, message IDs, and payload byte sizes.
+* **Call Session Records**: Caller ID, receiver ID, call type (`voice` / `video`), session status (`initiated`, `ongoing`, `ended`, `rejected`, `missed`), started/ended timestamps, and call duration in seconds. All call history resides strictly in the `call_sessions` table. **Plaintext `CALL_LOG` messages are completely prohibited and never written to the `messages` table.**
+* **Connection & Presence**: Device push tokens, client platform (`android` / `ios`), heartbeat `last_seen` timestamps, and ephemeral typing indicators.
+
+### 3. Fail-Closed Guarantees
+
+* **Client-Side Fail Closed**: Plaintext fallbacks are strictly eliminated in `chat_screen.dart` and `media_composer_modal.dart`. If peer public keys are missing, corrupted, or cryptographic encapsulation fails, sending is blocked immediately with an inline error and manual retry action. Unencrypted user content is never transmitted across the wire.
+* **Server-Side Fail Closed**: The FastAPI endpoints `/send-message` and `/media/upload` reject (`HTTP 400`) any user message or media upload where `is_encrypted=false`. Unencrypted transport is allowlisted exclusively for typed system event rows (`system`, `system_call_log`, `system_pairing_event`, `system_notification`).
+
+### 4. Key-Change UX & Storage Migration
+
+* **Hardware Pinned Storage**: Peer public keys are migrated from insecure SharedPreferences to hardware-backed secure storage (`FlutterSecureStorage` with Android Keystore / iOS Keychain).
+* **Key-Change Detection**: If a partner's public key changes (e.g. after a device reinstall), the client detects the mismatch and renders an explicit, non-dismissible warning banner at the top of the chat:  
+  `"Safety number changed. Tap to verify."`
+* **Out-of-Band Safety Numbers**: Users can verify 60-digit numeric fingerprints or scan camera QR codes to cryptographically confirm their partner's identity and defeat Active Man-in-the-Middle (MITM) attacks.
+
+### 5. Known Limitations & Threat Model (Based on Tests)
+
+* **Traffic & Timing Analysis**: A state-level network adversary or compromised server operator can observe packet frequency, message timing, and ciphertext file sizes between the two communicating endpoints. TwoOfUs does not currently inject chaff or fixed-rate dummy packet padding.
+* **Single-Device Cryptographic Identity**: Each account's private key is bound to local device storage. There is no cloud key escrow or multi-device message replication; re-logging into a new device without key export creates a fresh keypair and triggers safety number alerts for the partner.
+* **Endpoint Compromise**: If an attacker achieves root access, physical passcode compromise, or memory inspection on an unlocked user device, plaintext can be extracted from memory. TwoOfUs mitigates this locally through biometric app locks (`local_auth`), background screen blurring, and automatic inactivity timeouts.
+* **WebRTC NAT Relay Visibility**: When peer-to-peer connection cannot be established directly due to symmetric NATs, traffic relays through TURN servers. While DTLS-SRTP ensures TURN relays cannot decrypt audio/video packets, the relay operator can observe IP addresses, call timestamps, and data volume.
+
+---
+
 ## 📁 Repository Structure
 
 ```
@@ -241,16 +284,19 @@ TwoOfUs includes a test suite covering zero-knowledge encryption, IDOR vulnerabi
 
 ```bash
 cd backend
-python -m pytest tests/test_call_signaling_ws.py tests/test_security_audit.py tests/test_two_factor_auth.py tests/test_diary_memories.py -v
+py -3.11 -m pytest tests -v
 ```
 
 | Test Suite | Test Cases | Status | Scope |
 | :--- | :---: | :---: | :--- |
+| `test_encryption_rejection.py` | 14 | ✅ **Passed** | Server-side fail-closed rejection of unencrypted messages and media |
 | `test_security_audit.py` | 10 | ✅ **Passed** | IDOR protection, View-Once shredding, E2EE key registry, password lifecycle |
 | `test_two_factor_auth.py` | 10 | ✅ **Passed** | TOTP enrollment, email OTPs, backup recovery codes, 2FA login intercepts |
-| `test_call_signaling_ws.py` | 7 | ✅ **Passed** | WebSocket auth, ICE candidate routing, SDP exchange, turn credentials |
-| `test_diary_memories.py` | 5 | ✅ **Passed** | Timeline entry creation, photo attachments, pair isolation, deletion |
-| **Total Backend Coverage** | **32** | ✅ **32/32 Passed (100%)** | Comprehensive automated backend security & functionality tests |
+| `test_diary_memories.py` | 8 | ✅ **Passed** | E2EE diary content and photo encryption, pair isolation, migration |
+| `test_call_signaling_ws.py` | 7 | ✅ **Passed** | WebSocket auth, ICE candidate routing, SDP exchange, TURN credentials |
+| `test_media_roundtrip.py` | 5 | ✅ **Passed** | Two-account media upload, decryption, tamper MAC validation |
+| `test_call_signaling.py` | 3 | ✅ **Passed** | Call lifecycle, zero CALL_LOG in messages, history in call_sessions |
+| **Total Backend Coverage** | **57** | ✅ **57 Passed (100%)** | Full automated backend test suite under Python 3.11 |
 
 ---
 
@@ -263,11 +309,15 @@ flutter test
 
 | Test Suite | Tests | Status | Scope |
 | :--- | :---: | :---: | :--- |
-| `call_security_test.dart` | 4 | ✅ **Passed** | Safety code determinism, avalanche effect, signaling integrity, state zeroization |
+| `layout_responsiveness_test.dart` | 55 | ✅ **Passed** | Multi-screen responsive layout & zero text/overflow across phone & tablet |
+| `visual_golden_test.dart` | 6 | ✅ **Passed** | Visual pixel-level golden tests for dark/light themes and components |
+| `e2ee_security_test.dart` | 6 | ✅ **Passed** | X25519 HKDF derivation, AES-256-GCM fresh nonces, timeline encryption |
+| `media_roundtrip_test.dart` | 6 | ✅ **Passed** | Two-account media roundtrip, partner key resolution, third-party tamper rejection |
 | `call_signaling_test.dart` | 5 | ✅ **Passed** | Signaling deserialization, audio/speaker state toggles, Opus SDP sanitization |
-| `e2ee_security_test.dart` | 4 | ✅ **Passed** | X25519 HKDF derivation, AES-256-GCM fresh nonces, tamper detection |
+| `call_security_test.dart` | 4 | ✅ **Passed** | Safety code determinism, avalanche effect, signaling integrity, zeroization |
+| `key_change_banner_test.dart` | 2 | ✅ **Passed** | FlutterSecureStorage peer key pinning, warning banner on key change |
 | `widget_test.dart` | 1 | ✅ **Passed** | Application smoke test and dependency tree validation |
-| **Total Frontend Coverage** | **14** | ✅ **14/14 Passed (100%)** | Full client test suite covering cryptography and audio/video state |
+| **Total Frontend Coverage** | **85** | ✅ **85/85 Passed (100%)** | Full client test suite covering cryptography, UI, and call states |
 
 ---
 
