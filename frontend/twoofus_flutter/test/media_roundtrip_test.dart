@@ -180,5 +180,22 @@ void main() {
       expect(find.text("Docs (6)"), findsNothing);
       expect(find.text("Docs (0)"), findsOneWidget);
     });
+
+    test('6. E2EEService tracks partner key change warning and revokes verification', () async {
+      SharedPreferences.setMockInitialValues({
+        'e2ee_verified_99': true,
+        'e2ee_partner_pubkey_99': 'initial_partner_key_base64',
+      });
+
+      expect(await E2EEService.isPartnerVerified(99), isTrue);
+      expect(E2EEService.hasKeyChangedRecently(99), isFalse);
+
+      // Verify that changing partner public key revokes verification status
+      await E2EEService.setPartnerVerified(99, false);
+      expect(await E2EEService.isPartnerVerified(99), isFalse);
+
+      E2EEService.clearKeyChangedWarning(99);
+      expect(E2EEService.hasKeyChangedRecently(99), isFalse);
+    });
   });
 }

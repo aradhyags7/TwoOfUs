@@ -8,6 +8,7 @@ class MessageCreate(BaseModel):
     nonce: Optional[str] = None
     is_encrypted: Optional[bool] = False
     media_ids: Optional[List[int]] = []
+    message_type: Optional[str] = "text"
 
 class EditMessageRequest(BaseModel):
     content: str

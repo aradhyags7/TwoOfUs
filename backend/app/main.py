@@ -1007,6 +1007,34 @@ async def upload_media(
     is_enc_bool = is_encrypted.lower() in ("true", "1") if is_encrypted is not None else False
     is_vo_bool = is_view_once.lower() in ("true", "1") if is_view_once is not None else False
 
+    # Safe server rejection of plaintext payloads for protected media types
+    if is_vo_bool and not is_enc_bool:
+        raise HTTPException(
+            status_code=400,
+            detail="Protected media type 'view_once' must be end-to-end encrypted",
+        )
+
+    # Reject unencrypted media carrying encryption keys or nonces
+    if (encrypted_media_key and encrypted_media_key.strip()) or (encryption_nonce and encryption_nonce.strip()):
+        if not is_enc_bool:
+            raise HTTPException(
+                status_code=400,
+                detail="Unencrypted media cannot contain encryption keys or nonces",
+            )
+
+    # Reject encrypted media with empty whitespace keys/nonces if provided
+    if is_enc_bool:
+        if encrypted_media_key is not None and not encrypted_media_key.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted media uploads cannot have empty encrypted_media_key",
+            )
+        if encryption_nonce is not None and not encryption_nonce.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted media uploads cannot have empty encryption_nonce",
+            )
+
     responses = []
     for file in files:
         file.file.seek(0, os.SEEK_END)
@@ -1114,12 +1142,35 @@ def send_message(
     if not pair:
         raise HTTPException(status_code=403, detail="Forbidden: You can only message your connected partner")
 
+    is_enc = bool(data.is_encrypted)
+    msg_type = getattr(data, "message_type", "text") or "text"
+
+    # Reject unencrypted payloads when encrypted message type is designated
+    if msg_type in ("encrypted", "encrypted_text", "e2ee") and not is_enc:
+        raise HTTPException(
+            status_code=400,
+            detail="Payload must be encrypted for encrypted message types",
+        )
+
+    if is_enc:
+        if not data.nonce or not str(data.nonce).strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted messages must include a valid encryption nonce",
+            )
+        if not data.content or not str(data.content).strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted messages must include ciphertext content",
+            )
+
+
     message = Message(
         sender_id=data.sender_id,
         receiver_id=data.receiver_id,
         content=data.content,
-        nonce=data.nonce,
-        is_encrypted=data.is_encrypted if data.is_encrypted is not None else False
+        nonce=data.nonce if is_enc else None,
+        is_encrypted=is_enc
     )
 
     db.add(message)
@@ -1612,6 +1663,25 @@ def edit_message(
             raise HTTPException(
                 status_code=400,
                 detail="Messages can only be edited within 15 minutes of sending",
+            )
+
+    # Cryptographic integrity checks on edit
+    if msg.is_encrypted and data.is_encrypted is False:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot downgrade an encrypted message to plaintext",
+        )
+
+    if data.is_encrypted:
+        if not data.nonce or not str(data.nonce).strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted messages must include a valid encryption nonce",
+            )
+        if not data.content or not str(data.content).strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted messages must include ciphertext content",
             )
 
     msg.content = data.content

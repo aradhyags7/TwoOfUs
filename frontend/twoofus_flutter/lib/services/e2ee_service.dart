@@ -46,6 +46,7 @@ class E2EEService {
   static KeyPair? _myKeyPair;
   static String? _myPublicKeyHex;
   static final Map<int, String> _partnerPubKeyCache = {};
+  static final Map<int, bool> _keyChangedRecently = {};
 
   // ── Initialize Keypair & Register Public Key ─────────────────────────────
   static Future<void> initialize() async {
@@ -118,12 +119,22 @@ class E2EEService {
   static String? get myPublicKey => _myPublicKeyHex;
 
   // ── Partner Public Key Fetching & Caching ────────────────────────────────
-  static Future<String?> getPartnerPublicKey(int partnerId, {String? token}) async {
-    if (_partnerPubKeyCache.containsKey(partnerId)) {
+  static Future<String?> getPartnerPublicKey(int partnerId, {String? token, bool forceRefresh = false}) async {
+    if (!forceRefresh && _partnerPubKeyCache.containsKey(partnerId)) {
       return _partnerPubKeyCache[partnerId];
     }
     final pubKey = await ApiService.fetchPublicKey(partnerId, token: token);
     if (pubKey != null && pubKey.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final persistedKey = prefs.getString('e2ee_partner_pubkey_$partnerId');
+      if (persistedKey != null && persistedKey != pubKey) {
+        // SECURITY ALERT: Partner public key unexpectedly changed!
+        debugPrint("SECURITY ALERT: Partner public key changed for partner $partnerId!");
+        _keyChangedRecently[partnerId] = true;
+        // Invalidate safety verification because key fingerprint has changed
+        await setPartnerVerified(partnerId, false);
+      }
+      await prefs.setString('e2ee_partner_pubkey_$partnerId', pubKey);
       _partnerPubKeyCache[partnerId] = pubKey;
       return pubKey;
     }
@@ -337,9 +348,19 @@ class E2EEService {
     await prefs.setBool('e2ee_verified_$partnerId', verified);
   }
 
+  // ── Key Change Detection & Warning State ─────────────────────────────────
+  static bool hasKeyChangedRecently(int partnerId) {
+    return _keyChangedRecently[partnerId] ?? false;
+  }
+
+  static void clearKeyChangedWarning(int partnerId) {
+    _keyChangedRecently[partnerId] = false;
+  }
+
   // ── Session Cache Invalidation ──────────────────────────────────────────
   static void clearSessionCaches() {
     _partnerPubKeyCache.clear();
+    _keyChangedRecently.clear();
     _myKeyPair = null;
     _myPublicKeyHex = null;
   }
