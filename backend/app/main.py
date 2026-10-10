@@ -9,14 +9,14 @@ from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from .core.config import settings
-from .core.database import Base, SessionLocal, engine
+from .core.database import Base, SessionLocal, engine, migration_engine, check_db_health
 from .core.security import (
     create_access_token,
     decode_access_token,
@@ -55,6 +55,8 @@ from .services.totp import (
     hash_backup_code,
 )
 from .services.storage import (
+    storage_backend,
+    get_storage_health,
     validate_file,
     save_upload_file,
     delete_physical_file,
@@ -71,7 +73,7 @@ from sqlalchemy import inspect
 def run_auto_migrations(target_engine=None):
     """Creates missing tables and runs inspect-based ALTER TABLE migrations idempotently."""
     if target_engine is None:
-        target_engine = engine
+        target_engine = migration_engine
     Base.metadata.create_all(bind=target_engine)
     inspector = inspect(target_engine)
     is_sqlite = target_engine.url.drivername.startswith("sqlite")
@@ -153,7 +155,7 @@ def run_auto_migrations(target_engine=None):
 
 # Create tables and auto-migrate missing columns on module load
 try:
-    run_auto_migrations(engine)
+    run_auto_migrations(migration_engine)
 except Exception as e:
     print("\n" + "=" * 60)
     print(" [DATABASE INITIALIZATION NOTICE]")
@@ -193,21 +195,35 @@ os.makedirs("uploads/avatars", exist_ok=True)
 os.makedirs("uploads/memories", exist_ok=True)
 ensure_media_dirs()
 
-app.mount(
-    "/uploads",
-    StaticFiles(directory="uploads"),
-    name="uploads"
-)
+@app.get("/uploads/{file_path:path}")
+def serve_uploaded_file(file_path: str):
+    """Streams uploaded files from StorageBackend (local disk or S3/R2)."""
+    stream_res = storage_backend.get_stream(file_path)
+    if stream_res is None:
+        raise HTTPException(status_code=404, detail="File no longer available")
+    stream, content_type, content_len = stream_res
+    headers = {}
+    if content_len:
+        headers["Content-Length"] = str(content_len)
+    return StreamingResponse(
+        stream,
+        media_type=content_type or "application/octet-stream",
+        headers=headers
+    )
 
 
 @app.get("/")
 @app.get("/health")
 @app.get("/ping")
 def health_check():
+    db_status = check_db_health()
+    storage_status = get_storage_health()
     return {
         "status": "ok",
         "app": "TwoOfUs",
         "version": "1.0.0",
+        "db": db_status,
+        "storage": storage_status,
         "time": datetime.now(timezone.utc).isoformat()
     }
 
@@ -1459,7 +1475,7 @@ def get_media_info(
     verify_media_access(db, media, user_id)
 
     # Server-side View Once expiration enforcement
-    if media.is_view_once and (media.is_expired or not os.path.exists(str(media.storage_path))):
+    if media.is_view_once and (media.is_expired or not storage_backend.exists(str(media.storage_path))):
         raise HTTPException(
             status_code=410,
             detail="This View Once media has expired and has been securely purged."
@@ -1495,19 +1511,23 @@ def download_media_file(
         })
         db.commit()
 
-        if rows_updated == 0 or not os.path.exists(storage_p):
+        if rows_updated == 0 or not storage_backend.exists(storage_p):
             raise HTTPException(
                 status_code=410,
                 detail="This View Once media has expired and has been securely purged."
             )
 
-        try:
-            with open(storage_p, "rb") as f:
-                content_bytes = f.read()
-        except Exception:
-            raise HTTPException(status_code=500, detail="Failed to read media payload")
+        stream_res = storage_backend.get_stream(storage_p)
+        if stream_res is None:
+            raise HTTPException(
+                status_code=410,
+                detail="This View Once media has expired and has been securely purged."
+            )
 
-        # Shred physical files from disk immediately
+        stream, _, _ = stream_res
+        content_bytes = b"".join(stream)
+
+        # Shred physical file / bucket object immediately
         delete_physical_file(storage_p, str(media.thumbnail_path) if media.thumbnail_path else None)
 
         from fastapi.responses import Response
@@ -1521,13 +1541,21 @@ def download_media_file(
             }
         )
 
-    if not os.path.exists(storage_p):
-        raise HTTPException(status_code=404, detail="Physical media file not found")
+    stream_res = storage_backend.get_stream(storage_p)
+    if stream_res is None:
+        raise HTTPException(status_code=404, detail="File no longer available")
 
-    return FileResponse(
-        path=storage_p,
+    stream, _, content_len = stream_res
+    headers = {
+        "Content-Disposition": f'attachment; filename="{media.original_filename}"'
+    }
+    if content_len:
+        headers["Content-Length"] = str(content_len)
+
+    return StreamingResponse(
+        stream,
         media_type=str(media.mime_type),
-        filename=str(media.original_filename)
+        headers=headers
     )
 
 
@@ -1544,21 +1572,28 @@ def download_media_thumbnail(
 
     verify_media_access(db, media, user_id)
 
-    if media.is_view_once and (media.is_expired or not os.path.exists(str(media.storage_path))):
+    if media.is_view_once and (media.is_expired or not storage_backend.exists(str(media.storage_path))):
         raise HTTPException(
             status_code=410,
             detail="This View Once media has expired and has been securely purged."
         )
 
     thumb_p = str(media.thumbnail_path) if media.thumbnail_path else None
-    target_path = thumb_p if (thumb_p and os.path.exists(thumb_p)) else str(media.storage_path)
+    target_key = thumb_p if (thumb_p and storage_backend.exists(thumb_p)) else str(media.storage_path)
 
-    if not os.path.exists(target_path):
-        raise HTTPException(status_code=404, detail="Thumbnail file not found")
+    stream_res = storage_backend.get_stream(target_key)
+    if stream_res is None:
+        raise HTTPException(status_code=404, detail="File no longer available")
 
-    return FileResponse(
-        path=target_path,
-        media_type="image/jpeg" if media.thumbnail_path else str(media.mime_type)
+    stream, _, content_len = stream_res
+    headers = {}
+    if content_len:
+        headers["Content-Length"] = str(content_len)
+
+    return StreamingResponse(
+        stream,
+        media_type="image/jpeg" if (thumb_p and target_key == thumb_p) else str(media.mime_type),
+        headers=headers
     )
 
 
@@ -1951,11 +1986,15 @@ def upload_avatar(
     if file_size > 5 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Avatar image exceeds maximum size of 5 MB")
 
-    os.makedirs("uploads/avatars", exist_ok=True)
-    file_path = f"uploads/avatars/{user_id}{ext}"
+    import uuid
+    avatar_key = f"avatars/{uuid.uuid4().hex}{ext}"
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # Remove previous avatar from storage if it exists
+    if user.avatar_url:
+        storage_backend.delete(str(user.avatar_url))
+
+    storage_backend.put(avatar_key, file.file, content_type=file.content_type)
+    file_path = f"uploads/{avatar_key}"
 
     user.avatar_url = file_path
     db.commit()
@@ -2086,13 +2125,12 @@ def create_memory_entry(
         if photo_size > settings.MAX_IMAGE_SIZE_BYTES:
             raise HTTPException(status_code=413, detail=f"Image size exceeds maximum allowed limit of {settings.MAX_IMAGE_SIZE_BYTES // (1024*1024)}MB")
 
-        os.makedirs("uploads/memories", exist_ok=True)
         prefix = "enc_" if is_enc_bool else ""
-        unique_name = f"{prefix}{user_id}_{int(datetime.now(timezone.utc).timestamp())}_{''.join(choices(string.ascii_lowercase + string.digits, k=6))}{ext}"
-        saved_path = os.path.join("uploads", "memories", unique_name)
-        with open(saved_path, "wb") as buffer:
-            shutil.copyfileobj(photo.file, buffer)
-        image_url = f"uploads/memories/{unique_name}"
+        import uuid
+        unique_name = f"{prefix}{uuid.uuid4().hex}{ext}"
+        memory_key = f"memories/{unique_name}"
+        storage_backend.put(memory_key, photo.file, content_type=photo.content_type)
+        image_url = f"uploads/{memory_key}"
 
     entry = DiaryMemory(
         sender_id=user_id,
@@ -2140,12 +2178,7 @@ def delete_memory_entry(
         raise HTTPException(status_code=403, detail="Forbidden: You cannot delete this entry")
 
     if entry.image_url:
-        img_path = str(entry.image_url)
-        if os.path.exists(img_path):
-            try:
-                os.remove(img_path)
-            except Exception:
-                pass
+        storage_backend.delete(str(entry.image_url))
 
     db.delete(entry)
     db.commit()
