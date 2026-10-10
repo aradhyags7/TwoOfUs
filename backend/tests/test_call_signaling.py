@@ -154,15 +154,23 @@ class CallSignalingTests(unittest.TestCase):
         self.assertEqual(active_res.status_code, 200)
         self.assertIsNone(active_res.json())
 
-        # 4. Check conversation messages contains CALL_LOG
+        # 4. Check conversation messages does NOT contain plaintext CALL_LOG (fail-closed security)
         msg_res = client.get(f"/messages/{u1}/{u2}", headers=h1)
         self.assertEqual(msg_res.status_code, 200)
         msgs = msg_res.json()
         call_logs = [m for m in msgs if m["content"].startswith("CALL_LOG:")]
-        self.assertTrue(len(call_logs) >= 1)
-        self.assertIn('"status": "rejected"', call_logs[0]["content"])
-        self.assertIn('"call_type": "video"', call_logs[0]["content"])
-        print("  [PASS] Video call rejection lifecycle & chat log verified")
+        self.assertEqual(len(call_logs), 0, "No plaintext CALL_LOG records should leak into the messages table")
+
+        # 5. Verify call history is recorded strictly in call_sessions
+        hist_res = client.get(f"/call/history/{u2}", headers=h1)
+        self.assertEqual(hist_res.status_code, 200)
+        history = hist_res.json()
+        self.assertTrue(len(history) >= 1)
+        rejected_call = next((c for c in history if c["id"] == call_id), None)
+        self.assertIsNotNone(rejected_call)
+        self.assertEqual(rejected_call["status"], "rejected")
+        self.assertEqual(rejected_call["call_type"], "video")
+        print("  [PASS] Video call rejection lifecycle & call_sessions history verified")
 
 
 if __name__ == "__main__":

@@ -92,6 +92,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   Timer? _messagePollingTimer;
   final Map<int, String> _decryptedCache = {};
   DateTime? _lastTypingSentTime;
+  int _lastRawMsgCount = -1;
+  int _lastCallLogCount = -1;
 
   // ── Panels ────────────────────────────────────────────────────────────────
   bool _leftOpen  = false;   // memories  (swipe →)
@@ -302,7 +304,50 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     } catch (_) {}
   }
 
-    Future<void> _loadMessages() async {
+  List<Message> _synthesizeCallLogMessages(List<dynamic> history) {
+    List<Message> logs = [];
+    for (var item in history) {
+      if (item is! Map<String, dynamic>) continue;
+      final callId = item['id'] as int? ?? 0;
+      final callerId = item['caller_id'] as int? ?? 0;
+      final receiverId = item['receiver_id'] as int? ?? 0;
+      final callType = item['call_type'] as String? ?? 'voice';
+      final status = item['status'] as String? ?? 'ended';
+      final duration = item['duration_seconds'] as int? ?? 0;
+      final endedAt = item['ended_at'] as String?;
+      final createdAtStr = item['created_at'] as String?;
+
+      DateTime dt = DateTime.now();
+      if (createdAtStr != null) {
+        dt = DateTime.tryParse(createdAtStr) ?? dt;
+      }
+
+      final payload = {
+        'call_id': callId,
+        'caller_id': callerId,
+        'receiver_id': receiverId,
+        'call_type': callType,
+        'status': status,
+        'duration_seconds': duration,
+        'ended_at': endedAt,
+      };
+
+      logs.add(Message(
+        id: -callId,
+        senderId: callerId,
+        receiverId: receiverId,
+        content: 'CALL_LOG:${jsonEncode(payload)}',
+        nonce: null,
+        isEncrypted: false,
+        isEdited: false,
+        createdAt: dt,
+        mediaAttachments: const [],
+      ));
+    }
+    return logs;
+  }
+
+  Future<void> _loadMessages() async {
     if (_myId == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -382,6 +427,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         }
       }
 
+      final callHistoryRaw = await ApiService.getCallHistory(widget.partnerId, token: _userToken);
+      final callLogs = _synthesizeCallLogMessages(callHistoryRaw);
+      decryptedMessages.addAll(callLogs);
+      decryptedMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _lastRawMsgCount = rawMessages.length;
+      _lastCallLogCount = callHistoryRaw.length;
+
       if (mounted) {
         setState(() => _messages = decryptedMessages);
       }
@@ -393,20 +445,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     try {
       final result = await ApiService.getMessages(_myId!, widget.partnerId);
       final rawMessages = result.map<Message>((e) => Message.fromJson(e)).toList();
+      final callHistoryRaw = await ApiService.getCallHistory(widget.partnerId, token: _userToken);
 
-      // Check for changes (length, last message ID, or edited flag)
-      bool hasChanges = rawMessages.length != _messages.length;
+      // Check for changes (length of messages, call history count, or edited flag)
+      bool hasChanges = (rawMessages.length != _lastRawMsgCount) || (callHistoryRaw.length != _lastCallLogCount);
       if (!hasChanges && rawMessages.isNotEmpty) {
-        if (rawMessages.last.id != _messages.last.id) {
-          hasChanges = true;
-        } else {
-          for (int i = 0; i < rawMessages.length; i++) {
-            if (rawMessages[i].id != _messages[i].id ||
-                rawMessages[i].isEdited != _messages[i].isEdited ||
-                rawMessages[i].content != _messages[i].content) {
-              hasChanges = true;
-              break;
-            }
+        for (int i = 0; i < rawMessages.length; i++) {
+          final m = rawMessages[i];
+          if (m.isEdited) {
+            hasChanges = true;
+            break;
           }
         }
       }
@@ -487,10 +535,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         }
       }
 
+      final callLogs = _synthesizeCallLogMessages(callHistoryRaw);
+      decryptedMessages.addAll(callLogs);
+      decryptedMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _lastRawMsgCount = rawMessages.length;
+      _lastCallLogCount = callHistoryRaw.length;
+
       if (mounted) {
         final wasAtBottom = !_scrollCtrl.hasClients ||
             (_scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels < 120);
         final bool isNewIncoming = decryptedMessages.length > _messages.length &&
+            decryptedMessages.isNotEmpty &&
             decryptedMessages.last.senderId != _myId;
 
         setState(() {
@@ -1845,7 +1900,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                   _deletedIds.add(msg.id);
                   _messages.removeWhere((m) => m.id == msg.id);
                 });
-                await ApiService.deleteMessage(msg.id, token: _userToken);
+                if (msg.id < 0) {
+                  await ApiService.deleteCallSession(-msg.id, token: _userToken);
+                } else {
+                  await ApiService.deleteMessage(msg.id, token: _userToken);
+                }
                 _toast("Call log deleted");
               },
               color: Colors.redAccent,
@@ -1860,7 +1919,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                   _deletedIds.add(msg.id);
                   _messages.removeWhere((m) => m.id == msg.id);
                 });
-                final success = await ApiService.deleteMessage(msg.id, token: _userToken);
+                bool success = false;
+                if (msg.id < 0) {
+                  success = await ApiService.deleteCallSession(-msg.id, token: _userToken);
+                } else {
+                  success = await ApiService.deleteMessage(msg.id, token: _userToken);
+                }
                 if (success) {
                   await _loadMessages();
                   _toast("Call log deleted from database");

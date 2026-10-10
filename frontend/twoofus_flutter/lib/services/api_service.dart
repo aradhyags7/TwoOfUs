@@ -1440,6 +1440,19 @@ class ApiService {
     }
   }
 
+  static Future<bool> deleteCallSession(int callId, {String? token}) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.delete(
+        Uri.parse('$baseUrl/call/session/$callId'),
+        headers: headers,
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<Map<String, dynamic>?> getTurnCredentials({String? token}) async {
     try {
       final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');

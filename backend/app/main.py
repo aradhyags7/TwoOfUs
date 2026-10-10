@@ -1229,29 +1229,6 @@ def get_messages(
     if not pair:
         raise HTTPException(status_code=403, detail="Forbidden: Conversation access restricted to paired partners")
 
-    # Auto-sync any call sessions that ended but don't have a chat log yet
-    past_calls = (
-        db.query(CallSession)
-        .filter(
-            ((CallSession.caller_id == user1) & (CallSession.receiver_id == user2)) |
-            ((CallSession.caller_id == user2) & (CallSession.receiver_id == user1))
-        )
-        .filter(CallSession.status.in_(["ended", "rejected", "missed"]))
-        .all()
-    )
-    for pc in past_calls:
-        existing_log = (
-            db.query(Message)
-            .filter(
-                ((Message.sender_id == pc.caller_id) & (Message.receiver_id == pc.receiver_id)) |
-                ((Message.sender_id == pc.receiver_id) & (Message.receiver_id == pc.caller_id))
-            )
-            .filter(Message.content.like(f'CALL_LOG:%"call_id": {pc.id}%'))
-            .first()
-        )
-        if not existing_log:
-            _create_call_log_message(db, pc)
-
     messages = (
         db.query(Message)
         .filter(
@@ -1424,7 +1401,7 @@ def clear_call_history(
     for msg in call_logs:
         db.delete(msg)
 
-    db.query(CallSession).filter(
+    deleted_sessions = db.query(CallSession).filter(
         ((CallSession.caller_id == auth_user_id) & (CallSession.receiver_id == partner_id)) |
         ((CallSession.caller_id == partner_id) & (CallSession.receiver_id == auth_user_id))
     ).delete()
@@ -1432,8 +1409,25 @@ def clear_call_history(
     db.commit()
     return {
         "message": "Call history cleared successfully",
-        "deleted_count": len(call_logs)
+        "deleted_count": deleted_sessions + len(call_logs)
     }
+
+
+@app.delete("/call/session/{call_id}")
+def delete_call_session(
+    call_id: int,
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    user_id = int(current_user_payload.get("sub"))
+    session = db.query(CallSession).filter(CallSession.id == call_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Call session not found")
+    if session.caller_id != user_id and session.receiver_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only delete your own call sessions")
+    db.delete(session)
+    db.commit()
+    return {"message": "Call session deleted successfully"}
 
 
 # ==========================
@@ -2250,36 +2244,8 @@ async def initiate_call(
 
 
 def _create_call_log_message(db: Session, session: CallSession):
-    import json
-    try:
-        caller_id = int(getattr(session, "caller_id"))
-        receiver_id = int(getattr(session, "receiver_id"))
-        call_id = int(getattr(session, "id"))
-        call_type = str(getattr(session, "call_type"))
-        status = str(getattr(session, "status"))
-        duration_seconds = int(getattr(session, "duration_seconds", 0))
-
-        call_payload = {
-            "call_id": call_id,
-            "caller_id": caller_id,
-            "receiver_id": receiver_id,
-            "call_type": call_type,
-            "status": status,
-            "duration_seconds": duration_seconds,
-            "ended_at": to_utc_iso(session.ended_at) if session.ended_at else to_utc_iso(datetime.now(timezone.utc))
-        }
-        content_str = f"CALL_LOG:{json.dumps(call_payload)}"
-        msg = Message(
-            sender_id=caller_id,
-            receiver_id=receiver_id,
-            content=content_str,
-            is_encrypted=False,
-            created_at=datetime.now(timezone.utc)
-        )
-        db.add(msg)
-        db.commit()
-    except Exception as e:
-        print("Error logging call message:", e)
+    """No-op: Call history resides strictly in call_sessions table to preserve zero plaintext leakage in messages."""
+    pass
 
 
 @app.post("/call/respond", response_model=CallSessionResponse)

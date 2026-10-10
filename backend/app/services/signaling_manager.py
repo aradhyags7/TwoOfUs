@@ -131,36 +131,8 @@ class SecureSignalingManager:
         return pair is not None
 
     def _create_call_log_message(self, db: Session, session: CallSession):
-        """Creates a CALL_LOG message in chat history so both partners see the record."""
-        try:
-            caller_id = int(getattr(session, "caller_id"))
-            receiver_id = int(getattr(session, "receiver_id"))
-            call_id = int(getattr(session, "id"))
-            call_type = str(getattr(session, "call_type", "voice"))
-            status = str(getattr(session, "status", "ended"))
-            duration_seconds = int(getattr(session, "duration_seconds", 0))
-
-            call_payload = {
-                "call_id": call_id,
-                "caller_id": caller_id,
-                "receiver_id": receiver_id,
-                "call_type": call_type,
-                "status": status,
-                "duration_seconds": duration_seconds,
-                "ended_at": _to_utc_iso(session.ended_at) if session.ended_at else _to_utc_iso(datetime.now(timezone.utc)),
-            }
-            content_str = f"CALL_LOG:{json.dumps(call_payload)}"
-            msg = Message(
-                sender_id=caller_id,
-                receiver_id=receiver_id,
-                content=content_str,
-                is_encrypted=False,
-                created_at=datetime.now(timezone.utc),
-            )
-            db.add(msg)
-            db.commit()
-        except Exception as e:
-            print(f"[CALL_LOG ERROR]: {e}")
+        """No-op: Call history resides strictly in call_sessions table to preserve zero plaintext leakage in messages."""
+        pass
 
     async def handle_signaling_event(
         self,
