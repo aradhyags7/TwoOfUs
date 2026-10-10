@@ -125,8 +125,24 @@ class E2EEService {
     }
     final pubKey = await ApiService.fetchPublicKey(partnerId, token: token);
     if (pubKey != null && pubKey.isNotEmpty) {
+      String? persistedKey;
+      try {
+        persistedKey = await _storage.read(key: 'e2ee_peer_pubkey_$partnerId');
+      } catch (_) {}
+
+      // Migration: Check legacy SharedPreferences if not found in secure storage
       final prefs = await SharedPreferences.getInstance();
-      final persistedKey = prefs.getString('e2ee_partner_pubkey_$partnerId');
+      if (persistedKey == null) {
+        final legacyKey = prefs.getString('e2ee_partner_pubkey_$partnerId');
+        if (legacyKey != null && legacyKey.isNotEmpty) {
+          persistedKey = legacyKey;
+          try {
+            await _storage.write(key: 'e2ee_peer_pubkey_$partnerId', value: legacyKey);
+            await prefs.remove('e2ee_partner_pubkey_$partnerId');
+          } catch (_) {}
+        }
+      }
+
       if (persistedKey != null && persistedKey != pubKey) {
         // SECURITY ALERT: Partner public key unexpectedly changed!
         debugPrint("SECURITY ALERT: Partner public key changed for partner $partnerId!");
@@ -134,7 +150,9 @@ class E2EEService {
         // Invalidate safety verification because key fingerprint has changed
         await setPartnerVerified(partnerId, false);
       }
-      await prefs.setString('e2ee_partner_pubkey_$partnerId', pubKey);
+      try {
+        await _storage.write(key: 'e2ee_peer_pubkey_$partnerId', value: pubKey);
+      } catch (_) {}
       _partnerPubKeyCache[partnerId] = pubKey;
       return pubKey;
     }
@@ -363,5 +381,13 @@ class E2EEService {
     _keyChangedRecently.clear();
     _myKeyPair = null;
     _myPublicKeyHex = null;
+  }
+
+  static void simulatePartnerKeyChangeForTesting(int partnerId) {
+    _keyChangedRecently[partnerId] = true;
+  }
+
+  static void resetCachesForTesting() {
+    clearSessionCaches();
   }
 }

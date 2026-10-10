@@ -313,12 +313,16 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                                 size: 16,
                                 color: _activeTab == 0 ? Colors.white : Colors.white60),
                             const SizedBox(width: 6),
-                            Text(
-                              "60-Digit Code",
-                              style: TextStyle(
-                                color: _activeTab == 0 ? Colors.white : Colors.white60,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                            Flexible(
+                              child: Text(
+                                "60-Digit Code",
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _activeTab == 0 ? Colors.white : Colors.white60,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
@@ -345,12 +349,16 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                                 size: 16,
                                 color: _activeTab == 1 ? Colors.white : Colors.white60),
                             const SizedBox(width: 6),
-                            Text(
-                              "QR Scan Code",
-                              style: TextStyle(
-                                color: _activeTab == 1 ? Colors.white : Colors.white60,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                            Flexible(
+                              child: Text(
+                                "QR Scan Code",
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _activeTab == 1 ? Colors.white : Colors.white60,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
@@ -887,12 +895,16 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
-        Text(
-          value,
-          style: TextStyle(
-            color: highlight ? Colors.greenAccent : Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 12,
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            value,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: highlight ? Colors.greenAccent : Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
           ),
         ),
       ],

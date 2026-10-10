@@ -1033,6 +1033,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
               child: Column(
                 children: [
                   _buildAppBar(),
+                  _buildKeyChangedBanner(activeTheme),
                   Expanded(child: _buildMsgList()),
                   _buildFloatingTypingIndicator(),
                   AnimatedSwitcher(
@@ -1174,7 +1175,64 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     );
   }
 
-  // ── App Bar ───────────────────────────────────────────────────────────────
+  Widget _buildKeyChangedBanner(AppTheme theme) {
+    if (!E2EEService.hasKeyChangedRecently(widget.partnerId)) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      key: const Key('key_changed_banner'),
+      width: double.infinity,
+      color: Colors.amber.shade900.withOpacity(0.9),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              "Safety number changed. Verify.",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            key: const Key('key_changed_verify_button'),
+            onPressed: () async {
+              E2EEService.clearKeyChangedWarning(widget.partnerId);
+              if (mounted) setState(() {});
+              await EncryptionVerificationModal.show(
+                context,
+                partnerId: widget.partnerId,
+                partnerName: widget.partnerName,
+                partnerPubKey: _partnerPubKey,
+              );
+              final v = await E2EEService.isPartnerVerified(widget.partnerId);
+              if (mounted) {
+                setState(() => _isPartnerVerified = v);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black87,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            child: const Text(
+              "Verify",
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── App Bar ───────────────────────────────────────────────────────────────
   Widget _buildAppBar() {
     if (_isSearching) {

@@ -314,13 +314,17 @@ class _TimelineDrawerState extends State<TimelineDrawer> {
                                 color: _diaryTab == 0 ? theme.accentFill : theme.textSecondary,
                               ),
                               const SizedBox(width: 6),
-                              Text(
-                                "Timeline (${widget.memories.length})",
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 12,
-                                  fontWeight: _diaryTab == 0 ? FontWeight.w600 : FontWeight.w500,
-                                  color: _diaryTab == 0 ? theme.textPrimary : theme.textSecondary,
+                              Flexible(
+                                child: Text(
+                                  "Timeline (${widget.memories.length})",
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 12,
+                                    fontWeight: _diaryTab == 0 ? FontWeight.w600 : FontWeight.w500,
+                                    color: _diaryTab == 0 ? theme.textPrimary : theme.textSecondary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -347,13 +351,17 @@ class _TimelineDrawerState extends State<TimelineDrawer> {
                                 color: _diaryTab == 1 ? theme.accentFill : theme.textSecondary,
                               ),
                               const SizedBox(width: 6),
-                              Text(
-                                "Album (${photoMemories.length})",
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 12,
-                                  fontWeight: _diaryTab == 1 ? FontWeight.w600 : FontWeight.w500,
-                                  color: _diaryTab == 1 ? theme.textPrimary : theme.textSecondary,
+                              Flexible(
+                                child: Text(
+                                  "Album (${photoMemories.length})",
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 12,
+                                    fontWeight: _diaryTab == 1 ? FontWeight.w600 : FontWeight.w500,
+                                    color: _diaryTab == 1 ? theme.textPrimary : theme.textSecondary,
+                                  ),
                                 ),
                               ),
                             ],
