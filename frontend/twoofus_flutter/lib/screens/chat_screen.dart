@@ -102,6 +102,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   Message?    _editingMsg;
   final Set<int>    _deletedIds  = {};
   final Map<int, String> _reactions = {};
+  String? _sendErrorMessage;
+  String? _lastFailedSendText;
 
   // ── Calendar & Shared Timeline State ───────────────────────────────────────
   List<DiaryMemoryItem> _sharedMemories = [];
@@ -630,25 +632,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
           partnerPubKey: _partnerPubKey,
           onSendComplete: (uploadedMediaIds, caption) async {
             if (_myId != null) {
-              String sendContent = caption;
-              String? sendNonce;
-              bool isEncrypted = false;
+              if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+                _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
+              }
+              if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+                setState(() {
+                  _sendErrorMessage = "Cannot send media: Partner security key unavailable.";
+                });
+                return; // FAIL CLOSED: Send nothing!
+              }
 
-              if (caption.isNotEmpty && _partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
-                final payload = await E2EEService.encryptText(caption, _partnerPubKey!);
-                if (payload != null) {
-                  sendContent = payload.ciphertext;
-                  sendNonce = payload.nonce;
-                  isEncrypted = true;
-                }
+              // Encrypt caption (or encrypt empty placeholder for strict encrypted envelope)
+              final payload = await E2EEService.encryptText(caption, _partnerPubKey!);
+              if (payload == null) {
+                setState(() {
+                  _sendErrorMessage = "Cannot send media: Encryption failed.";
+                });
+                return; // FAIL CLOSED: Send nothing!
               }
 
               final ok = await ApiService.sendMessage(
                 _myId!,
                 widget.partnerId,
-                sendContent,
-                nonce: sendNonce,
-                isEncrypted: isEncrypted,
+                payload.ciphertext,
+                nonce: payload.nonce,
+                isEncrypted: true,
                 mediaIds: uploadedMediaIds,
               );
               if (ok) {
@@ -839,25 +847,42 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       text = text.isNotEmpty ? "📁 [File] $_selectedFileName\n$text" : "📁 [File] $_selectedFileName";
     }
 
-    if (_editingMsg != null) {
-      String editContent = text;
-      String? editNonce;
-      bool isEncrypted = false;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && _selectedImage == null && _selectedFileName == null) return;
+    setState(() {
+      _isSending = true;
+      _sendErrorMessage = null;
+    });
 
-      if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
-        final payload = await E2EEService.encryptText(text, _partnerPubKey!);
-        if (payload != null) {
-          editContent = payload.ciphertext;
-          editNonce = payload.nonce;
-          isEncrypted = true;
-        }
+    // FAIL CLOSED: Ensure partner public key is available before sending any user text
+    if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+      _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
+    }
+    if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+      setState(() {
+        _isSending = false;
+        _sendErrorMessage = "Cannot send: Partner security key unavailable.";
+        _lastFailedSendText = trimmed;
+      });
+      return; // FAIL CLOSED: Send nothing!
+    }
+
+    if (_editingMsg != null) {
+      final payload = await E2EEService.encryptText(trimmed, _partnerPubKey!);
+      if (payload == null) {
+        setState(() {
+          _isSending = false;
+          _sendErrorMessage = "Cannot edit: Encryption failed.";
+          _lastFailedSendText = trimmed;
+        });
+        return; // FAIL CLOSED: Send nothing!
       }
 
       final success = await ApiService.editMessage(
         _editingMsg!.id,
-        editContent,
-        nonce: editNonce,
-        isEncrypted: isEncrypted,
+        payload.ciphertext,
+        nonce: payload.nonce,
+        isEncrypted: true,
       );
       if (success) {
         _toast("Message updated");
@@ -866,27 +891,38 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         setState(() {
           _editingMsg = null;
           _replyingTo = null;
+          _sendErrorMessage = null;
         });
         await _loadMessages();
+      } else {
+        setState(() {
+          _sendErrorMessage = "Failed to update message on server.";
+          _lastFailedSendText = trimmed;
+        });
       }
       setState(() => _isSending = false);
       return;
     } else {
-      String sendContent = text;
-      String? sendNonce;
-      bool isEncrypted = false;
+      final payload = await E2EEService.encryptText(trimmed, _partnerPubKey!);
+      if (payload == null) {
+        setState(() {
+          _isSending = false;
+          _sendErrorMessage = "Cannot send: Encryption failed.";
+          _lastFailedSendText = trimmed;
+        });
+        return; // FAIL CLOSED: Send nothing!
+      }
 
-      // Optimistic instant local rendering (0ms lag)
       final tempId = -DateTime.now().millisecondsSinceEpoch;
       final optimisticMsg = Message(
         id: tempId,
         senderId: _myId!,
         receiverId: widget.partnerId,
-        content: text,
+        content: trimmed,
         isEncrypted: true,
         createdAt: DateTime.now(),
       );
-      _decryptedCache[tempId] = text;
+      _decryptedCache[tempId] = trimmed;
 
       _msgCtrl.clear();
       _removeSelectedMedia();
@@ -901,27 +937,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       });
       _scrollToBottom();
 
-      if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
-        _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
-      }
-      if (_partnerPubKey != null && _partnerPubKey!.isNotEmpty) {
-        final payload = await E2EEService.encryptText(text, _partnerPubKey!);
-        if (payload != null) {
-          sendContent = payload.ciphertext;
-          sendNonce = payload.nonce;
-          isEncrypted = true;
-        }
-      }
-
       final ok = await ApiService.sendMessage(
         _myId!,
         widget.partnerId,
-        sendContent,
-        nonce: sendNonce,
-        isEncrypted: isEncrypted,
+        payload.ciphertext,
+        nonce: payload.nonce,
+        isEncrypted: true,
       );
       if (ok) {
         await _syncMessagesLive();
+      } else {
+        setState(() {
+          _sendErrorMessage = "Message delivery failed. Tap to retry.";
+          _lastFailedSendText = trimmed;
+        });
       }
     }
     if (mounted) setState(() => _isSending = false);
@@ -1937,6 +1966,55 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     );
   }
 
+  Widget _buildInlineSendErrorBar(AppTheme theme) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.redAccent.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _sendErrorMessage ?? "Encryption failed. Message not sent.",
+              style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+          if (_lastFailedSendText != null)
+            TextButton(
+              onPressed: () {
+                final retryText = _lastFailedSendText!;
+                setState(() {
+                  _sendErrorMessage = null;
+                  _lastFailedSendText = null;
+                  _msgCtrl.text = retryText;
+                });
+                _sendMessage();
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text("Retry", style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+            ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 16),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            splashRadius: 16,
+            onPressed: () => setState(() => _sendErrorMessage = null),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Input Bar ─────────────────────────────────────────────────────────────
   Widget _buildInputBar() {
     final theme = context.appTheme;
@@ -1951,6 +2029,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_sendErrorMessage != null) _buildInlineSendErrorBar(theme),
           if (_selectedImage != null || _selectedFileName != null)
             _buildMediaPreviewBar(),
           Row(

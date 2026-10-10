@@ -203,63 +203,70 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
     });
 
     List<int> allMediaIds = [];
-    final tempEncFiles = <File>[];
     final effectiveToken = widget.token.isNotEmpty ? widget.token : (await Session.getToken() ?? '');
+    String? effectivePartnerKey = widget.partnerPubKey;
+    if (effectivePartnerKey == null || effectivePartnerKey.isEmpty) {
+      effectivePartnerKey = await E2EEService.getPartnerPublicKey(widget.receiverId, token: effectiveToken);
+    }
 
+    if (effectivePartnerKey == null || effectivePartnerKey.isEmpty) {
+      setState(() {
+        _isUploading = false;
+        _hasError = true;
+        _errorMessage = "Partner security key unavailable. Cannot send media.";
+      });
+      return;
+    }
+
+    final tempEncFiles = <File>[];
     try {
-      if (widget.partnerPubKey != null && widget.partnerPubKey!.isNotEmpty) {
-        // E2EE Media Encryption Mode
-        for (int i = 0; i < _files.length; i++) {
-          final originalFile = _files[i];
-          final encPayload = await E2EEService.encryptFile(originalFile, widget.partnerPubKey!);
+      // E2EE Media Encryption Mode Only - Fail Closed with Zero Plaintext Fallback
+      for (int i = 0; i < _files.length; i++) {
+        final originalFile = _files[i];
+        final encPayload = await E2EEService.encryptFile(originalFile, effectivePartnerKey);
 
-          if (encPayload != null) {
-            final tempDir = Directory.systemTemp;
-            final origName = originalFile.path.split(Platform.pathSeparator).last;
-            final encTempPath = "${tempDir.path}/enc_${DateTime.now().millisecondsSinceEpoch}_$origName";
-            final encTempFile = File(encTempPath);
-            await encTempFile.writeAsBytes(encPayload.encryptedBytes);
-            tempEncFiles.add(encTempFile);
-
-            final results = await ApiService.uploadMediaFiles(
-              widget.receiverId,
-              [encTempFile],
-              effectiveToken,
-              isEncrypted: true,
-              isViewOnce: _isViewOnce,
-              encryptedMediaKey: encPayload.encryptedMediaKey,
-              encryptionNonce: encPayload.nonce,
-              onProgress: (p) => setState(() => _uploadProgress = ((i + p) / _files.length).clamp(0.0, 1.0)),
-            );
-
-            if (results != null && results.isNotEmpty) {
-              allMediaIds.addAll(results.map<int>((e) => e['media_id'] as int));
-            }
-          } else {
-            // Fallback for single file if encryption had an issue
-            final results = await ApiService.uploadMediaFiles(
-              widget.receiverId,
-              [originalFile],
-              effectiveToken,
-              isViewOnce: _isViewOnce,
-              onProgress: (p) => setState(() => _uploadProgress = ((i + p) / _files.length).clamp(0.0, 1.0)),
-            );
-            if (results != null && results.isNotEmpty) {
-              allMediaIds.addAll(results.map<int>((e) => e['media_id'] as int));
-            }
+        if (encPayload == null) {
+          for (var f in tempEncFiles) {
+            try { f.deleteSync(); } catch (_) {}
           }
+          setState(() {
+            _isUploading = false;
+            _hasError = true;
+            _errorMessage = "Encryption failed for ${originalFile.path.split(Platform.pathSeparator).last}. Upload cancelled.";
+          });
+          return;
         }
-      } else {
-        // Standard Upload Mode
+
+        final tempDir = Directory.systemTemp;
+        final origName = originalFile.path.split(Platform.pathSeparator).last;
+        final encTempPath = "${tempDir.path}/enc_${DateTime.now().millisecondsSinceEpoch}_$origName";
+        final encTempFile = File(encTempPath);
+        await encTempFile.writeAsBytes(encPayload.encryptedBytes);
+        tempEncFiles.add(encTempFile);
+
         final results = await ApiService.uploadMediaFiles(
           widget.receiverId,
-          _files,
+          [encTempFile],
           effectiveToken,
+          isEncrypted: true,
           isViewOnce: _isViewOnce,
-          onProgress: (p) => setState(() => _uploadProgress = p),
+          encryptedMediaKey: encPayload.encryptedMediaKey,
+          encryptionNonce: encPayload.nonce,
+          onProgress: (p) => setState(() => _uploadProgress = ((i + p) / _files.length).clamp(0.0, 1.0)),
         );
+
         if (results != null && results.isNotEmpty) {
           allMediaIds.addAll(results.map<int>((e) => e['media_id'] as int));
+        } else {
+          for (var f in tempEncFiles) {
+            try { f.deleteSync(); } catch (_) {}
+          }
+          setState(() {
+            _isUploading = false;
+            _hasError = true;
+            _errorMessage = "Upload failed for ${originalFile.path.split(Platform.pathSeparator).last}.";
+          });
+          return;
         }
       }
 
@@ -660,6 +667,15 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                     _errorMessage.isNotEmpty ? _errorMessage : "Upload failed. Please retry.",
                     style: const TextStyle(color: Colors.redAccent, fontSize: 12),
                   ),
+                ),
+                TextButton(
+                  onPressed: _isUploading ? null : _startUpload,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text("Retry", style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
