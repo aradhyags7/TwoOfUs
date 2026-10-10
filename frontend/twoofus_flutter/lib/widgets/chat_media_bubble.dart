@@ -49,7 +49,12 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
       Uint8List fileBytesToSave = rawBytes;
       if (widget.media.isEncrypted && widget.media.encryptedMediaKey != null && widget.media.encryptionNonce != null) {
         final myId = await Session.getUserId();
-        final partnerId = (widget.media.senderId == myId) ? widget.media.receiverId : widget.media.senderId;
+        final cachedPartnerId = await Session.getCachedPartnerId();
+        final partnerId = (myId != null && widget.media.senderId == myId)
+            ? widget.media.receiverId
+            : ((cachedPartnerId != null && widget.media.receiverId == cachedPartnerId)
+                ? cachedPartnerId
+                : widget.media.senderId);
         final partnerPubKey = await E2EEService.getPartnerPublicKey(partnerId, token: effectiveToken);
 
         if (partnerPubKey != null && partnerPubKey.isNotEmpty) {
@@ -478,7 +483,12 @@ class _AuthenticatedImageState extends State<AuthenticatedImage> {
         try {
           final media = widget.media!;
           final myId = await Session.getUserId();
-          final partnerId = (media.senderId == myId) ? media.receiverId : media.senderId;
+          final cachedPartnerId = await Session.getCachedPartnerId();
+          final partnerId = (myId != null && media.senderId == myId)
+              ? media.receiverId
+              : ((cachedPartnerId != null && media.receiverId == cachedPartnerId)
+                  ? cachedPartnerId
+                  : media.senderId);
           final partnerPubKey = await E2EEService.getPartnerPublicKey(partnerId, token: effectiveToken);
 
           if (partnerPubKey != null && partnerPubKey.isNotEmpty) {

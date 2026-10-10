@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import '../utils/session.dart';
 
 class E2EETextPayload {
   final String ciphertext;
@@ -45,25 +46,46 @@ class E2EEService {
 
   static KeyPair? _myKeyPair;
   static String? _myPublicKeyHex;
+  static int? _activeUserId;
   static final Map<int, String> _partnerPubKeyCache = {};
   static final Map<int, bool> _keyChangedRecently = {};
 
   // ── Initialize Keypair & Register Public Key ─────────────────────────────
-  static Future<void> initialize() async {
+  static Future<void> initialize({int? userId}) async {
     try {
+      final currentUserId = userId ?? await Session.getUserId();
+      if (_activeUserId != null && currentUserId != null && _activeUserId != currentUserId) {
+        _myKeyPair = null;
+        _myPublicKeyHex = null;
+      }
+      _activeUserId = currentUserId;
+
       final prefs = await SharedPreferences.getInstance();
+      final privStorageKey = currentUserId != null ? '${_privKeyStorageKey}_$currentUserId' : _privKeyStorageKey;
+      final pubStorageKey = currentUserId != null ? '${_pubKeyStorageKey}_$currentUserId' : _pubKeyStorageKey;
+
       String? storedPrivBytesStr;
       String? storedPubBytesStr;
 
       try {
-        storedPrivBytesStr = await _storage.read(key: _privKeyStorageKey);
-        storedPubBytesStr = await _storage.read(key: _pubKeyStorageKey);
+        storedPrivBytesStr = await _storage.read(key: privStorageKey);
+        storedPubBytesStr = await _storage.read(key: pubStorageKey);
       } catch (_) {
         // Fallback if secure storage platform channel is unavailable
       }
 
-      // Fallback: Restore from persistent SharedPreferences backup if Android KeyStore lost it
+      // Fallback: Check SharedPreferences with user-scoped key
       if (storedPrivBytesStr == null || storedPubBytesStr == null) {
+        storedPrivBytesStr ??= prefs.getString(privStorageKey);
+        storedPubBytesStr ??= prefs.getString(pubStorageKey);
+      }
+
+      // Migration: Check legacy non-namespaced keys if user-scoped key is not yet set
+      if (storedPrivBytesStr == null || storedPubBytesStr == null) {
+        try {
+          storedPrivBytesStr ??= await _storage.read(key: _privKeyStorageKey);
+          storedPubBytesStr ??= await _storage.read(key: _pubKeyStorageKey);
+        } catch (_) {}
         storedPrivBytesStr ??= prefs.getString(_privKeyStorageKey);
         storedPubBytesStr ??= prefs.getString(_pubKeyStorageKey);
       }
@@ -79,13 +101,13 @@ class E2EEService {
         );
         _myPublicKeyHex = base64Encode(pubBytes);
 
-        // Ensure both storage engines are in sync
+        // Ensure both storage engines are in sync under namespaced key
         try {
-          await _storage.write(key: _privKeyStorageKey, value: storedPrivBytesStr);
-          await _storage.write(key: _pubKeyStorageKey, value: storedPubBytesStr);
+          await _storage.write(key: privStorageKey, value: storedPrivBytesStr);
+          await _storage.write(key: pubStorageKey, value: storedPubBytesStr);
         } catch (_) {}
-        await prefs.setString(_privKeyStorageKey, storedPrivBytesStr);
-        await prefs.setString(_pubKeyStorageKey, storedPubBytesStr);
+        await prefs.setString(privStorageKey, storedPrivBytesStr);
+        await prefs.setString(pubStorageKey, storedPubBytesStr);
       } else {
         final newKeyPair = await _keyExchangeAlgorithm.newKeyPair();
         final pubKey = await newKeyPair.extractPublicKey();
@@ -96,11 +118,11 @@ class E2EEService {
         final pubB64 = base64Encode(pubBytes);
 
         try {
-          await _storage.write(key: _privKeyStorageKey, value: privB64);
-          await _storage.write(key: _pubKeyStorageKey, value: pubB64);
+          await _storage.write(key: privStorageKey, value: privB64);
+          await _storage.write(key: pubStorageKey, value: pubB64);
         } catch (_) {}
-        await prefs.setString(_privKeyStorageKey, privB64);
-        await prefs.setString(_pubKeyStorageKey, pubB64);
+        await prefs.setString(privStorageKey, privB64);
+        await prefs.setString(pubStorageKey, pubB64);
 
         _myKeyPair = newKeyPair;
         _myPublicKeyHex = pubB64;
@@ -381,6 +403,17 @@ class E2EEService {
     _keyChangedRecently.clear();
     _myKeyPair = null;
     _myPublicKeyHex = null;
+    _activeUserId = null;
+  }
+
+  static void setKeyPairForTesting({
+    required KeyPair keyPair,
+    required String publicKeyBase64,
+    int? userId,
+  }) {
+    _myKeyPair = keyPair;
+    _myPublicKeyHex = publicKeyBase64;
+    _activeUserId = userId;
   }
 
   static void simulatePartnerKeyChangeForTesting(int partnerId) {

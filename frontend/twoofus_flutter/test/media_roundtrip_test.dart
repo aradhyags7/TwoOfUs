@@ -58,6 +58,65 @@ void main() {
       }
     });
 
+    test('1b. Real two-account key encapsulation and decapsulation roundtrip', () async {
+      // 1. Initialize Alice (User 1)
+      await E2EEService.initialize(userId: 1);
+      final alicePubKey = E2EEService.myPublicKey!;
+      expect(alicePubKey, isNotEmpty);
+
+      // 2. Initialize Bob (User 2)
+      await E2EEService.initialize(userId: 2);
+      final bobPubKey = E2EEService.myPublicKey!;
+      expect(bobPubKey, isNotEmpty);
+      expect(alicePubKey, isNot(equals(bobPubKey)), reason: 'Two separate accounts must have distinct keypairs');
+
+      // Temporary file for encryption
+      final tempDir = Directory.systemTemp;
+      final testFile = File('${tempDir.path}/two_account_test.png');
+      await testFile.writeAsBytes(kValidPngBytes);
+
+      // Alice sends to Bob: switch to Alice session and encrypt for Bob
+      await E2EEService.initialize(userId: 1);
+      final payload = await E2EEService.encryptFile(testFile, bobPubKey);
+      expect(payload, isNotNull);
+
+      // Bob receives and decrypts payload from Alice: switch to Bob session
+      await E2EEService.initialize(userId: 2);
+      final bobDecrypted = await E2EEService.decryptMediaBytes(
+        encryptedFileBytes: Uint8List.fromList(payload!.encryptedBytes),
+        encryptedMediaKeyBundleJson: payload.encryptedMediaKey,
+        nonceBase64: payload.nonce,
+        remotePublicKeyBase64: alicePubKey,
+      );
+      expect(bobDecrypted, isNotNull);
+      expect(bobDecrypted, equals(kValidPngBytes));
+
+      // Alice views her own sent message in chat: switch to Alice session
+      await E2EEService.initialize(userId: 1);
+      final aliceDecrypted = await E2EEService.decryptMediaBytes(
+        encryptedFileBytes: Uint8List.fromList(payload.encryptedBytes),
+        encryptedMediaKeyBundleJson: payload.encryptedMediaKey,
+        nonceBase64: payload.nonce,
+        remotePublicKeyBase64: bobPubKey,
+      );
+      expect(aliceDecrypted, isNotNull);
+      expect(aliceDecrypted, equals(kValidPngBytes));
+
+      // Attempting to decrypt with an attacker/unrelated key (User 3) returns null
+      await E2EEService.initialize(userId: 3);
+      final charlieDecrypted = await E2EEService.decryptMediaBytes(
+        encryptedFileBytes: Uint8List.fromList(payload.encryptedBytes),
+        encryptedMediaKeyBundleJson: payload.encryptedMediaKey,
+        nonceBase64: payload.nonce,
+        remotePublicKeyBase64: alicePubKey,
+      );
+      expect(charlieDecrypted, isNull);
+
+      if (testFile.existsSync()) {
+        testFile.deleteSync();
+      }
+    });
+
     test('2. Decryption with invalid/corrupted key returns null', () async {
       await E2EEService.initialize();
       final senderPubKey = E2EEService.myPublicKey!;

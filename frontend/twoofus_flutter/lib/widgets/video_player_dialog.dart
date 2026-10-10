@@ -61,7 +61,12 @@ class _VideoPlayerDialogState extends State<VideoPlayerDialog> {
           widget.media!.encryptedMediaKey != null && widget.media!.encryptionNonce != null) {
         final media = widget.media!;
         final myId = await Session.getUserId();
-        final partnerId = (media.senderId == myId) ? media.receiverId : media.senderId;
+        final cachedPartnerId = await Session.getCachedPartnerId();
+        final partnerId = (myId != null && media.senderId == myId)
+            ? media.receiverId
+            : ((cachedPartnerId != null && media.receiverId == cachedPartnerId)
+                ? cachedPartnerId
+                : media.senderId);
         final partnerPubKey = await E2EEService.getPartnerPublicKey(partnerId, token: effectiveToken);
 
         if (partnerPubKey != null && partnerPubKey.isNotEmpty) {
