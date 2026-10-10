@@ -18,6 +18,7 @@ services:
         fromDatabase:
           name: twoofus-postgres
           property: connectionString
+      # WebRTC STUN/TURN credentials (optional: set in Render dashboard or leave blank for public STUN)
       - key: TURN_HOST
         sync: false
       - key: TURN_SECRET
@@ -28,6 +29,7 @@ services:
         sync: false
       - key: TURN_URLS
         sync: false
+      # Email / SMTP configuration for OTP & notifications
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
@@ -38,6 +40,7 @@ services:
         value: "TwoOfUs <twoofus.app@gmail.com>"
       - key: SMTP_USE_TLS
         value: "true"
+      # SMTP Password / Google App Password (secret: configure in Render dashboard)
       - key: SMTP_PASSWORD
         sync: false
 

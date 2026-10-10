@@ -68,19 +68,24 @@ from .services.email_service import (
 from sqlalchemy import inspect
 
 # Create tables and auto-migrate missing columns
-try:
-    Base.metadata.create_all(bind=engine)
-    inspector = inspect(engine)
-    with engine.connect() as conn:
+def run_auto_migrations(target_engine=None):
+    """Creates missing tables and runs inspect-based ALTER TABLE migrations idempotently."""
+    if target_engine is None:
+        target_engine = engine
+    Base.metadata.create_all(bind=target_engine)
+    inspector = inspect(target_engine)
+    is_sqlite = target_engine.url.drivername.startswith("sqlite")
+    bool_default = "0" if is_sqlite else "FALSE"
+    with target_engine.connect() as conn:
         # Message columns
         if inspector.has_table("messages"):
             msg_cols = [c["name"] for c in inspector.get_columns("messages")]
             if "is_edited" not in msg_cols:
-                conn.execute(text("ALTER TABLE messages ADD COLUMN is_edited BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text(f"ALTER TABLE messages ADD COLUMN is_edited BOOLEAN DEFAULT {bool_default};"))
             if "nonce" not in msg_cols:
                 conn.execute(text("ALTER TABLE messages ADD COLUMN nonce TEXT;"))
             if "is_encrypted" not in msg_cols:
-                conn.execute(text("ALTER TABLE messages ADD COLUMN is_encrypted BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text(f"ALTER TABLE messages ADD COLUMN is_encrypted BOOLEAN DEFAULT {bool_default};"))
 
         # User columns
         if inspector.has_table("users"):
@@ -94,7 +99,7 @@ try:
             if "reset_otp_expires_at" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN reset_otp_expires_at TIMESTAMP;"))
             if "is_2fa_enabled" not in user_cols:
-                conn.execute(text("ALTER TABLE users ADD COLUMN is_2fa_enabled BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN is_2fa_enabled BOOLEAN DEFAULT {bool_default};"))
             if "two_factor_method" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN two_factor_method TEXT DEFAULT 'totp';"))
             if "totp_secret" not in user_cols:
@@ -112,11 +117,11 @@ try:
         if inspector.has_table("media"):
             media_cols = [c["name"] for c in inspector.get_columns("media")]
             if "is_encrypted" not in media_cols:
-                conn.execute(text("ALTER TABLE media ADD COLUMN is_encrypted BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text(f"ALTER TABLE media ADD COLUMN is_encrypted BOOLEAN DEFAULT {bool_default};"))
             if "is_view_once" not in media_cols:
-                conn.execute(text("ALTER TABLE media ADD COLUMN is_view_once BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text(f"ALTER TABLE media ADD COLUMN is_view_once BOOLEAN DEFAULT {bool_default};"))
             if "is_expired" not in media_cols:
-                conn.execute(text("ALTER TABLE media ADD COLUMN is_expired BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text(f"ALTER TABLE media ADD COLUMN is_expired BOOLEAN DEFAULT {bool_default};"))
             if "viewed_at" not in media_cols:
                 conn.execute(text("ALTER TABLE media ADD COLUMN viewed_at TIMESTAMP;"))
             if "encrypted_media_key" not in media_cols:
@@ -126,6 +131,16 @@ try:
             if "ciphertext_hash" not in media_cols:
                 conn.execute(text("ALTER TABLE media ADD COLUMN ciphertext_hash TEXT;"))
 
+        # Diary Memories columns
+        if inspector.has_table("diary_memories"):
+            dm_cols = [c["name"] for c in inspector.get_columns("diary_memories")]
+            if "is_encrypted" not in dm_cols:
+                conn.execute(text(f"ALTER TABLE diary_memories ADD COLUMN is_encrypted BOOLEAN DEFAULT {bool_default};"))
+            if "content_nonce" not in dm_cols:
+                conn.execute(text("ALTER TABLE diary_memories ADD COLUMN content_nonce TEXT;"))
+            if "photo_nonce" not in dm_cols:
+                conn.execute(text("ALTER TABLE diary_memories ADD COLUMN photo_nonce TEXT;"))
+
         # Call session columns
         if inspector.has_table("call_sessions"):
             call_cols = [c["name"] for c in inspector.get_columns("call_sessions")]
@@ -134,6 +149,11 @@ try:
             if "ended_reason" not in call_cols:
                 conn.execute(text("ALTER TABLE call_sessions ADD COLUMN ended_reason TEXT;"))
         conn.commit()
+
+
+# Create tables and auto-migrate missing columns on module load
+try:
+    run_auto_migrations(engine)
 except Exception as e:
     print("\n" + "=" * 60)
     print(" [DATABASE INITIALIZATION NOTICE]")
@@ -960,14 +980,6 @@ def pair_status(
     }
 
 
-# ==========================
-# Health Check
-# ==========================
-@app.get("/health")
-def health():
-    return {
-        "status": "ok"
-    }
 
 
 @app.get("/me")

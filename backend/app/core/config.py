@@ -16,12 +16,10 @@ class Settings:
         "HS256"
     )
 
-    ACCESS_TOKEN_EXPIRE_MINUTES = int(
-        os.getenv(
-            "ACCESS_TOKEN_EXPIRE_MINUTES",
-            "60"
-        )
-    )
+    try:
+        ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60") or "60")
+    except (ValueError, TypeError):
+        ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
     # WebRTC STUN/TURN Configuration
     TURN_SECRET = os.getenv("TURN_SECRET", "")
