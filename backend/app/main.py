@@ -5,7 +5,7 @@ import shutil
 import string
 from random import choices
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -2036,6 +2036,9 @@ def get_pair_memories(
             "content": m.content,
             "mood_emoji": m.mood_emoji,
             "image_url": m.image_url,
+            "is_encrypted": bool(getattr(m, "is_encrypted", False)),
+            "content_nonce": getattr(m, "content_nonce", None),
+            "photo_nonce": getattr(m, "photo_nonce", None),
             "created_at": m.created_at.isoformat() if m.created_at else None
         }
         for m in memories
@@ -2048,6 +2051,9 @@ def create_memory_entry(
     entry_date: str = Form(...),
     content: str = Form(""),
     mood_emoji: Optional[str] = Form(None),
+    is_encrypted: Union[bool, str] = Form(False),
+    content_nonce: Optional[str] = Form(None),
+    photo_nonce: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user_payload = Depends(get_current_user)
@@ -2057,12 +2063,16 @@ def create_memory_entry(
     if not pair:
         raise HTTPException(status_code=403, detail="Forbidden: You are not paired with this user")
 
+    is_enc_bool = is_encrypted if isinstance(is_encrypted, bool) else (str(is_encrypted).lower() in ("true", "1", "t"))
+
     image_url = None
     if photo and photo.filename:
         filename = photo.filename
         ext = os.path.splitext(filename)[1].lower()
-        if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        if not is_enc_bool and ext not in {".jpg", ".jpeg", ".png", ".webp"}:
             raise HTTPException(status_code=415, detail="Only JPG, PNG, and WebP images are supported for diary memories")
+        elif is_enc_bool and ext not in {".jpg", ".jpeg", ".png", ".webp", ".bin", ".enc"}:
+            ext = ".enc"
 
         photo.file.seek(0, os.SEEK_END)
         photo_size = photo.file.tell()
@@ -2071,7 +2081,8 @@ def create_memory_entry(
             raise HTTPException(status_code=413, detail=f"Image size exceeds maximum allowed limit of {settings.MAX_IMAGE_SIZE_BYTES // (1024*1024)}MB")
 
         os.makedirs("uploads/memories", exist_ok=True)
-        unique_name = f"{user_id}_{int(datetime.now(timezone.utc).timestamp())}_{''.join(choices(string.ascii_lowercase + string.digits, k=6))}{ext}"
+        prefix = "enc_" if is_enc_bool else ""
+        unique_name = f"{prefix}{user_id}_{int(datetime.now(timezone.utc).timestamp())}_{''.join(choices(string.ascii_lowercase + string.digits, k=6))}{ext}"
         saved_path = os.path.join("uploads", "memories", unique_name)
         with open(saved_path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
@@ -2083,7 +2094,10 @@ def create_memory_entry(
         entry_date=entry_date.strip(),
         content=content.strip(),
         mood_emoji=mood_emoji.strip() if mood_emoji else None,
-        image_url=image_url
+        image_url=image_url,
+        is_encrypted=is_enc_bool,
+        content_nonce=content_nonce.strip() if content_nonce else None,
+        photo_nonce=photo_nonce.strip() if photo_nonce else None
     )
 
     db.add(entry)
@@ -2098,6 +2112,9 @@ def create_memory_entry(
         "content": entry.content,
         "mood_emoji": entry.mood_emoji,
         "image_url": entry.image_url,
+        "is_encrypted": entry.is_encrypted,
+        "content_nonce": entry.content_nonce,
+        "photo_nonce": entry.photo_nonce,
         "created_at": entry.created_at.isoformat() if entry.created_at else None
     }
 

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:twoofus_flutter/services/e2ee_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -112,6 +114,96 @@ void main() {
         () async => await aesGcm.decrypt(secretBox, secretKey: keyEve),
         throwsA(isA<SecretBoxAuthenticationError>()),
       );
+    });
+
+    test('5. Timeline content E2EE roundtrip with domain separation (TwoOfUs-Timeline-v1)', () async {
+      SharedPreferences.setMockInitialValues({});
+      // Alice (user 1)
+      await E2EEService.initialize(userId: 1);
+      final alicePubKey = E2EEService.myPublicKey!;
+
+      // Bob (user 2)
+      await E2EEService.initialize(userId: 2);
+      final bobPubKey = E2EEService.myPublicKey!;
+
+      // Alice encrypts timeline entry for Bob
+      await E2EEService.initialize(userId: 1);
+      const plaintext = "Our romantic stargazing memory 🌟";
+      final encPayload = await E2EEService.encryptTimelineContent(plaintext, bobPubKey);
+      expect(encPayload, isNotNull);
+      expect(encPayload!.ciphertext, isNot(equals(plaintext)));
+      expect(encPayload.nonce, isNotEmpty);
+
+      // Bob decrypts Alice's timeline entry
+      await E2EEService.initialize(userId: 2);
+      final decryptedBob = await E2EEService.decryptTimelineContent(
+        ciphertextBase64: encPayload.ciphertext,
+        nonceBase64: encPayload.nonce,
+        remotePublicKeyBase64: alicePubKey,
+      );
+      expect(decryptedBob, equals(plaintext));
+
+      // Alice decrypts her own sent timeline entry
+      await E2EEService.initialize(userId: 1);
+      final decryptedAlice = await E2EEService.decryptTimelineContent(
+        ciphertextBase64: encPayload.ciphertext,
+        nonceBase64: encPayload.nonce,
+        remotePublicKeyBase64: bobPubKey,
+      );
+      expect(decryptedAlice, equals(plaintext));
+
+      // Eve (user 3) fails to decrypt
+      await E2EEService.initialize(userId: 3);
+      final decryptedEve = await E2EEService.decryptTimelineContent(
+        ciphertextBase64: encPayload.ciphertext,
+        nonceBase64: encPayload.nonce,
+        remotePublicKeyBase64: alicePubKey,
+      );
+      expect(decryptedEve, equals("🔒 Encrypted timeline entry"));
+    });
+
+    test('6. Timeline photo E2EE roundtrip with domain separation', () async {
+      SharedPreferences.setMockInitialValues({});
+      await E2EEService.initialize(userId: 1);
+      final alicePubKey = E2EEService.myPublicKey!;
+
+      await E2EEService.initialize(userId: 2);
+      final bobPubKey = E2EEService.myPublicKey!;
+
+      final samplePhotoBytes = Uint8List.fromList([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+
+      // Alice encrypts photo for Bob
+      await E2EEService.initialize(userId: 1);
+      final encPhoto = await E2EEService.encryptTimelinePhoto(samplePhotoBytes, bobPubKey);
+      expect(encPhoto, isNotNull);
+      expect(encPhoto!.encryptedBytes, isNot(equals(samplePhotoBytes)));
+
+      // Bob decrypts photo from Alice
+      await E2EEService.initialize(userId: 2);
+      final decPhotoBob = await E2EEService.decryptTimelinePhoto(
+        encryptedPhotoBytes: Uint8List.fromList(encPhoto.encryptedBytes),
+        nonceBase64: encPhoto.nonce,
+        remotePublicKeyBase64: alicePubKey,
+      );
+      expect(decPhotoBob, equals(samplePhotoBytes));
+
+      // Alice decrypts her own photo
+      await E2EEService.initialize(userId: 1);
+      final decPhotoAlice = await E2EEService.decryptTimelinePhoto(
+        encryptedPhotoBytes: Uint8List.fromList(encPhoto.encryptedBytes),
+        nonceBase64: encPhoto.nonce,
+        remotePublicKeyBase64: bobPubKey,
+      );
+      expect(decPhotoAlice, equals(samplePhotoBytes));
+
+      // Eve (user 3) fails to decrypt photo
+      await E2EEService.initialize(userId: 3);
+      final decPhotoEve = await E2EEService.decryptTimelinePhoto(
+        encryptedPhotoBytes: Uint8List.fromList(encPhoto.encryptedBytes),
+        nonceBase64: encPhoto.nonce,
+        remotePublicKeyBase64: alicePubKey,
+      );
+      expect(decPhotoEve, isNull);
     });
   });
 }

@@ -178,6 +178,73 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
         )
         self.assertTrue(all(e["id"] != mem_id for e in fetch_res.json()))
 
+    def test_06_create_encrypted_diary_entry(self):
+        # Alice creates an end-to-end encrypted diary entry
+        res = client.post(
+            "/memories/create",
+            headers={"Authorization": f"Bearer {self.token_a}"},
+            data={
+                "partner_id": str(self.user_b.id),
+                "entry_date": "2026-10-10",
+                "content": "ZW5jcnlwdGVkX3RleHRfY2lwaGVydGV4dA==",
+                "is_encrypted": "true",
+                "content_nonce": "bm9uY2VfMTJfYnl0ZXM=",
+                "mood_emoji": "🔐"
+            }
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["is_encrypted"])
+        self.assertEqual(data["content_nonce"], "bm9uY2VfMTJfYnl0ZXM=")
+        self.assertEqual(data["content"], "ZW5jcnlwdGVkX3RleHRfY2lwaGVydGV4dA==")
+        self.assertIsNone(data["photo_nonce"])
+
+    def test_07_create_encrypted_photo_memory(self):
+        # Bob uploads an encrypted diary entry with an encrypted photo attachment
+        enc_photo_bytes = b"\x00\x01\x02ENCRYPTED_TIMELINE_PHOTO_CIPHERTEXT\x03\x04\x05"
+        res = client.post(
+            "/memories/create",
+            headers={"Authorization": f"Bearer {self.token_b}"},
+            data={
+                "partner_id": str(self.user_a.id),
+                "entry_date": "2026-10-11",
+                "content": "ZW5jcnlwdGVkX21lbW9yeV9waG90b19jYXB0aW9u",
+                "is_encrypted": "true",
+                "content_nonce": "Y29udGVudE5vbmNlQjY0",
+                "photo_nonce": "cGhvdG9Ob25jZUI2NA==",
+                "mood_emoji": "📸"
+            },
+            files={"photo": ("enc_photo.bin", io.BytesIO(enc_photo_bytes), "application/octet-stream")}
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["is_encrypted"])
+        self.assertEqual(data["content_nonce"], "Y29udGVudE5vbmNlQjY0")
+        self.assertEqual(data["photo_nonce"], "cGhvdG9Ob25jZUI2NA==")
+        self.assertIsNotNone(data["image_url"])
+        self.assertTrue("enc_" in data["image_url"])
+
+    def test_08_legacy_and_encrypted_memories_coexist(self):
+        # Alice fetches all memories and verifies both legacy unencrypted and E2EE entries coexist
+        res = client.get(
+            f"/memories/pair/{self.user_b.id}",
+            headers={"Authorization": f"Bearer {self.token_a}"}
+        )
+        self.assertEqual(res.status_code, 200)
+        entries = res.json()
+        self.assertGreaterEqual(len(entries), 3)
+
+        # Legacy entry: is_encrypted is False, content_nonce is None
+        legacy_entries = [e for e in entries if not e["is_encrypted"]]
+        self.assertGreaterEqual(len(legacy_entries), 1)
+        self.assertIsNone(legacy_entries[0]["content_nonce"])
+
+        # Encrypted entry: is_encrypted is True, content_nonce is present
+        encrypted_entries = [e for e in entries if e["is_encrypted"]]
+        self.assertGreaterEqual(len(encrypted_entries), 2)
+        self.assertIsNotNone(encrypted_entries[0]["content_nonce"])
+
+
     @classmethod
     def tearDownClass(cls):
         app.dependency_overrides.clear()

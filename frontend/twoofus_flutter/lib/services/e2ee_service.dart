@@ -43,6 +43,7 @@ class E2EEService {
   static const String infoTextEncryption = 'TwoOfUs-Text-v1';
   static const String infoMediaKeyEncryption = 'TwoOfUs-MediaKey-v1';
   static const String infoSafetyCode = 'TwoOfUs-SafetyCode-v1';
+  static const String infoTimelineEncryption = 'TwoOfUs-Timeline-v1';
 
   static KeyPair? _myKeyPair;
   static String? _myPublicKeyHex;
@@ -280,6 +281,116 @@ class E2EEService {
     } catch (e) {
       debugPrint("E2EE TEXT DECRYPT ERROR: $e");
       return "🔒 Encrypted with previous security key";
+    }
+  }
+
+  // ── Encrypt Timeline / Diary Content with AES-256-GCM ────────────────────
+  static Future<E2EETextPayload?> encryptTimelineContent(String plaintext, String partnerPublicKeyBase64) async {
+    try {
+      final key = await _deriveSymmetricKey(
+        remotePublicKeyBase64: partnerPublicKeyBase64,
+        infoTag: infoTimelineEncryption,
+      );
+      final nonce = _algorithm.newNonce();
+      final secretBox = await _algorithm.encrypt(
+        utf8.encode(plaintext),
+        secretKey: key,
+        nonce: nonce,
+      );
+
+      final combinedCiphertext = secretBox.concatenation();
+      return E2EETextPayload(
+        ciphertext: base64Encode(combinedCiphertext),
+        nonce: base64Encode(nonce),
+      );
+    } catch (e) {
+      debugPrint("E2EE TIMELINE CONTENT ENCRYPT ERROR: $e");
+      return null;
+    }
+  }
+
+  // ── Decrypt Timeline / Diary Content with AES-256-GCM ────────────────────
+  static Future<String> decryptTimelineContent({
+    required String ciphertextBase64,
+    required String nonceBase64,
+    required String remotePublicKeyBase64,
+  }) async {
+    try {
+      final key = await _deriveSymmetricKey(
+        remotePublicKeyBase64: remotePublicKeyBase64,
+        infoTag: infoTimelineEncryption,
+      );
+      final nonce = base64Decode(nonceBase64);
+      final concatenation = base64Decode(ciphertextBase64);
+
+      final secretBox = SecretBox.fromConcatenation(
+        concatenation,
+        nonceLength: nonce.length,
+        macLength: _algorithm.macAlgorithm.macLength,
+      );
+
+      final decryptedBytes = await _algorithm.decrypt(
+        secretBox,
+        secretKey: key,
+      );
+      return utf8.decode(decryptedBytes);
+    } catch (e) {
+      debugPrint("E2EE TIMELINE CONTENT DECRYPT ERROR: $e");
+      return "🔒 Encrypted timeline entry";
+    }
+  }
+
+  // ── Encrypt Timeline Photo Bytes with AES-256-GCM ────────────────────────
+  static Future<E2EEMediaPayload?> encryptTimelinePhoto(List<int> photoBytes, String partnerPublicKeyBase64) async {
+    try {
+      final key = await _deriveSymmetricKey(
+        remotePublicKeyBase64: partnerPublicKeyBase64,
+        infoTag: infoTimelineEncryption,
+      );
+      final nonce = _algorithm.newNonce();
+      final secretBox = await _algorithm.encrypt(
+        photoBytes,
+        secretKey: key,
+        nonce: nonce,
+      );
+
+      return E2EEMediaPayload(
+        encryptedBytes: secretBox.concatenation(),
+        encryptedMediaKey: '',
+        nonce: base64Encode(nonce),
+      );
+    } catch (e) {
+      debugPrint("E2EE TIMELINE PHOTO ENCRYPT ERROR: $e");
+      return null;
+    }
+  }
+
+  // ── Decrypt Timeline Photo Bytes with AES-256-GCM ────────────────────────
+  static Future<Uint8List?> decryptTimelinePhoto({
+    required Uint8List encryptedPhotoBytes,
+    required String nonceBase64,
+    required String remotePublicKeyBase64,
+  }) async {
+    try {
+      final key = await _deriveSymmetricKey(
+        remotePublicKeyBase64: remotePublicKeyBase64,
+        infoTag: infoTimelineEncryption,
+      );
+      final nonce = base64Decode(nonceBase64);
+      final secretBox = SecretBox.fromConcatenation(
+        encryptedPhotoBytes,
+        nonceLength: nonce.length,
+        macLength: _algorithm.macAlgorithm.macLength,
+      );
+
+      final decryptedBytes = await _algorithm.decrypt(
+        secretBox,
+        secretKey: key,
+      );
+      return Uint8List.fromList(decryptedBytes);
+    } catch (e) {
+      debugPrint("E2EE TIMELINE PHOTO DECRYPT ERROR: $e");
+      return null;
     }
   }
 

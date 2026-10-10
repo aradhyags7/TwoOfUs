@@ -7,6 +7,9 @@ class MemoryCreateRequest(BaseModel):
     entry_date: str
     content: str
     mood_emoji: Optional[str] = None
+    is_encrypted: bool = False
+    content_nonce: Optional[str] = None
+    photo_nonce: Optional[str] = None
 
 
 class MemoryResponse(BaseModel):
@@ -17,7 +20,11 @@ class MemoryResponse(BaseModel):
     content: str
     mood_emoji: Optional[str] = None
     image_url: Optional[str] = None
+    is_encrypted: bool = False
+    content_nonce: Optional[str] = None
+    photo_nonce: Optional[str] = None
     created_at: str
 
     class Config:
         from_attributes = True
+

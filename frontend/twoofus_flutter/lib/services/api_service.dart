@@ -1271,6 +1271,9 @@ class ApiService {
     required String content,
     String? moodEmoji,
     File? photo,
+    bool isEncrypted = false,
+    String? contentNonce,
+    String? photoNonce,
     String? token,
   }) async {
     try {
@@ -1282,6 +1285,13 @@ class ApiService {
       request.fields['partner_id'] = partnerId.toString();
       request.fields['entry_date'] = entryDate;
       request.fields['content'] = content;
+      request.fields['is_encrypted'] = isEncrypted ? 'true' : 'false';
+      if (contentNonce != null && contentNonce.isNotEmpty) {
+        request.fields['content_nonce'] = contentNonce;
+      }
+      if (photoNonce != null && photoNonce.isNotEmpty) {
+        request.fields['photo_nonce'] = photoNonce;
+      }
       if (moodEmoji != null && moodEmoji.isNotEmpty) {
         request.fields['mood_emoji'] = moodEmoji;
       }

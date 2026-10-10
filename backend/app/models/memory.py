@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import Integer, String, Text, DateTime
+from sqlalchemy import Integer, String, Text, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
@@ -49,7 +49,24 @@ class DiaryMemory(Base):
         nullable=True
     )
 
+    is_encrypted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
+
+    content_nonce: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True
+    )
+
+    photo_nonce: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
     )
+

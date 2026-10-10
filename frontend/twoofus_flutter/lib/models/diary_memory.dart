@@ -9,6 +9,9 @@ class DiaryMemoryItem {
   final String content;
   final String? moodEmoji;
   final String? imageUrl;
+  final bool isEncrypted;
+  final String? contentNonce;
+  final String? photoNonce;
   final DateTime? createdAt;
 
   DiaryMemoryItem({
@@ -19,6 +22,9 @@ class DiaryMemoryItem {
     required this.content,
     this.moodEmoji,
     this.imageUrl,
+    this.isEncrypted = false,
+    this.contentNonce,
+    this.photoNonce,
     this.createdAt,
   });
 
@@ -31,7 +37,38 @@ class DiaryMemoryItem {
       content: json['content'] ?? '',
       moodEmoji: json['mood_emoji'],
       imageUrl: json['image_url'],
+      isEncrypted: json['is_encrypted'] == true,
+      contentNonce: json['content_nonce'],
+      photoNonce: json['photo_nonce'],
       createdAt: json['created_at'] != null ? DateTimeUtils.parseToLocal(json['created_at']) : null,
+    );
+  }
+
+  DiaryMemoryItem copyWith({
+    int? id,
+    int? senderId,
+    int? receiverId,
+    String? entryDate,
+    String? content,
+    String? moodEmoji,
+    String? imageUrl,
+    bool? isEncrypted,
+    String? contentNonce,
+    String? photoNonce,
+    DateTime? createdAt,
+  }) {
+    return DiaryMemoryItem(
+      id: id ?? this.id,
+      senderId: senderId ?? this.senderId,
+      receiverId: receiverId ?? this.receiverId,
+      entryDate: entryDate ?? this.entryDate,
+      content: content ?? this.content,
+      moodEmoji: moodEmoji ?? this.moodEmoji,
+      imageUrl: imageUrl ?? this.imageUrl,
+      isEncrypted: isEncrypted ?? this.isEncrypted,
+      contentNonce: contentNonce ?? this.contentNonce,
+      photoNonce: photoNonce ?? this.photoNonce,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 

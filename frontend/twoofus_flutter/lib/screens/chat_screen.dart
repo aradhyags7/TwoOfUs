@@ -2315,10 +2315,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     try {
       final token = await Session.getToken() ?? _userToken;
       final raw = await ApiService.getPairMemories(widget.partnerId, token: token);
-      final list = raw.map((e) => DiaryMemoryItem.fromJson(e)).toList();
+      final rawList = raw.map((e) => DiaryMemoryItem.fromJson(e)).toList();
+
+      final effectivePartnerKey = _partnerPubKey ?? await E2EEService.getPartnerPublicKey(widget.partnerId, token: token);
+
+      final decryptedList = <DiaryMemoryItem>[];
+      for (final m in rawList) {
+        if (m.isEncrypted && m.contentNonce != null && effectivePartnerKey != null && effectivePartnerKey.isNotEmpty) {
+          final dec = await E2EEService.decryptTimelineContent(
+            ciphertextBase64: m.content,
+            nonceBase64: m.contentNonce!,
+            remotePublicKeyBase64: effectivePartnerKey,
+          );
+          decryptedList.add(m.copyWith(content: dec));
+        } else {
+          decryptedList.add(m);
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _sharedMemories = list;
+          _sharedMemories = decryptedList;
           _loadingMemories = false;
         });
       }
@@ -2360,12 +2377,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
             child: InteractiveViewer(
               minScale: 0.8,
               maxScale: 4.0,
-              child: Image.network(
-                memory.fullImageUrl!,
+              child: TimelineMemoryImage(
+                memory: memory,
+                partnerPublicKey: _partnerPubKey,
+                token: _userToken,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
-                ),
               ),
             ),
           ),
@@ -2380,6 +2396,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       memories: _sharedMemories,
       isLoading: _loadingMemories,
       selectedDate: _selDate,
+      partnerPublicKey: _partnerPubKey,
+      token: _userToken,
       onSelectDate: (d) => setState(() => _selDate = d),
       onRefresh: () {
         _loadMemories();
@@ -2390,20 +2408,59 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         final targetDate = _selDate ?? DateTime.now();
         final dateStr = _formatDateYMD(targetDate);
         HapticFeedback.mediumImpact();
-        final res = await ApiService.createDiaryMemory(
-          partnerId: widget.partnerId,
-          entryDate: dateStr,
-          content: content,
-          moodEmoji: mood,
-          photo: photo,
-          token: _userToken,
-        );
-        if (mounted) {
-          if (res != null) {
-            _toast("Saved to timeline for ${_fmtDateLabel(targetDate)}");
-            await _loadMemories();
-          } else {
-            _toast("Failed to save memory entry", isError: true);
+
+        final effectivePartnerKey = _partnerPubKey ?? await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
+
+        if (effectivePartnerKey == null || effectivePartnerKey.isEmpty) {
+          if (mounted) _toast("Partner security key unavailable. Cannot encrypt timeline entry.", isError: true);
+          return;
+        }
+
+        final encContent = await E2EEService.encryptTimelineContent(content, effectivePartnerKey);
+        if (encContent == null) {
+          if (mounted) _toast("Encryption failed for timeline content", isError: true);
+          return;
+        }
+
+        File? encPhotoFile;
+        String? photoNonce;
+        if (photo != null && await photo.exists()) {
+          final photoBytes = await photo.readAsBytes();
+          final encPhoto = await E2EEService.encryptTimelinePhoto(photoBytes, effectivePartnerKey);
+          if (encPhoto == null) {
+            if (mounted) _toast("Encryption failed for timeline photo", isError: true);
+            return;
+          }
+          final tempDir = Directory.systemTemp;
+          final encPath = "${tempDir.path}/enc_mem_${DateTime.now().millisecondsSinceEpoch}.enc";
+          encPhotoFile = File(encPath);
+          await encPhotoFile.writeAsBytes(encPhoto.encryptedBytes);
+          photoNonce = encPhoto.nonce;
+        }
+
+        try {
+          final res = await ApiService.createDiaryMemory(
+            partnerId: widget.partnerId,
+            entryDate: dateStr,
+            content: encContent.ciphertext,
+            moodEmoji: mood,
+            photo: encPhotoFile,
+            isEncrypted: true,
+            contentNonce: encContent.nonce,
+            photoNonce: photoNonce,
+            token: _userToken,
+          );
+          if (mounted) {
+            if (res != null) {
+              _toast("Saved encrypted memory for ${_fmtDateLabel(targetDate)}");
+              await _loadMemories();
+            } else {
+              _toast("Failed to save memory entry", isError: true);
+            }
+          }
+        } finally {
+          if (encPhotoFile != null && encPhotoFile.existsSync()) {
+            try { encPhotoFile.deleteSync(); } catch (_) {}
           }
         }
       },

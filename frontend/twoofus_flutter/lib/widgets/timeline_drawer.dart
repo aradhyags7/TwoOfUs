@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/diary_memory.dart';
+import '../services/api_service.dart';
+import '../services/e2ee_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import '../utils/session.dart';
 import 'design_system/design_system.dart';
 
 class TimelineDrawer extends StatefulWidget {
@@ -18,6 +22,8 @@ class TimelineDrawer extends StatefulWidget {
   final ValueChanged<int> onDeleteMemory;
   final String partnerName;
   final int? myId;
+  final String? partnerPublicKey;
+  final String? token;
   final void Function(DiaryMemoryItem memory)? onPhotoTap;
 
   const TimelineDrawer({
@@ -32,6 +38,8 @@ class TimelineDrawer extends StatefulWidget {
     required this.onDeleteMemory,
     required this.partnerName,
     this.myId,
+    this.partnerPublicKey,
+    this.token,
     this.onPhotoTap,
   });
 
@@ -868,12 +876,11 @@ class _TimelineDrawerState extends State<TimelineDrawer> {
                             height: 150,
                             width: double.infinity,
                             color: theme.surface,
-                            child: Image.network(
-                              mem.fullImageUrl!,
+                            child: TimelineMemoryImage(
+                              memory: mem,
+                              partnerPublicKey: widget.partnerPublicKey,
+                              token: widget.token,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => Center(
-                                child: Icon(Icons.broken_image_rounded, color: theme.textTertiary, size: 32),
-                              ),
                             ),
                           ),
                           Positioned(
@@ -945,12 +952,11 @@ class _TimelineDrawerState extends State<TimelineDrawer> {
               children: [
                 Container(
                   color: theme.surfaceRaised,
-                  child: Image.network(
-                    mem.fullImageUrl!,
+                  child: TimelineMemoryImage(
+                    memory: mem,
+                    partnerPublicKey: widget.partnerPublicKey,
+                    token: widget.token,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Center(
-                      child: Icon(Icons.image_not_supported_rounded, color: theme.textTertiary, size: 28),
-                    ),
                   ),
                 ),
                 Positioned(
@@ -1009,6 +1015,115 @@ class _TimelineDrawerState extends State<TimelineDrawer> {
           ),
         );
       },
+    );
+  }
+}
+
+class TimelineMemoryImage extends StatefulWidget {
+  final DiaryMemoryItem memory;
+  final String? partnerPublicKey;
+  final String? token;
+  final BoxFit fit;
+
+  const TimelineMemoryImage({
+    super.key,
+    required this.memory,
+    this.partnerPublicKey,
+    this.token,
+    this.fit = BoxFit.cover,
+  });
+
+  @override
+  State<TimelineMemoryImage> createState() => _TimelineMemoryImageState();
+}
+
+class _TimelineMemoryImageState extends State<TimelineMemoryImage> {
+  Uint8List? _decryptedBytes;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant TimelineMemoryImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.memory.id != widget.memory.id || oldWidget.memory.imageUrl != widget.memory.imageUrl) {
+      _loadImage();
+    }
+  }
+
+  Future<void> _loadImage() async {
+    if (!widget.memory.isEncrypted || widget.memory.photoNonce == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final token = widget.token ?? (await Session.getToken() ?? '');
+      final url = widget.memory.fullImageUrl;
+      if (url == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      final rawBytes = await ApiService.fetchAuthenticatedBytes(url, token);
+      if (rawBytes != null) {
+        final myId = await Session.getUserId();
+        final cachedPartnerId = await Session.getCachedPartnerId();
+        final partnerId = (myId != null && widget.memory.senderId == myId)
+            ? widget.memory.receiverId
+            : ((cachedPartnerId != null && widget.memory.receiverId == cachedPartnerId)
+                ? cachedPartnerId
+                : widget.memory.senderId);
+        final partnerKey = widget.partnerPublicKey ?? await E2EEService.getPartnerPublicKey(partnerId, token: token);
+        if (partnerKey != null && partnerKey.isNotEmpty) {
+          final decrypted = await E2EEService.decryptTimelinePhoto(
+            encryptedPhotoBytes: rawBytes,
+            nonceBase64: widget.memory.photoNonce!,
+            remotePublicKeyBase64: partnerKey,
+          );
+          if (mounted) {
+            setState(() {
+              _decryptedBytes = decrypted;
+              _isLoading = false;
+            });
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.appTheme;
+    if (widget.memory.isEncrypted && widget.memory.photoNonce != null) {
+      if (_isLoading) {
+        return Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2, color: theme.accentFill),
+          ),
+        );
+      }
+      if (_decryptedBytes != null) {
+        return Image.memory(_decryptedBytes!, fit: widget.fit);
+      }
+      return Center(
+        child: Icon(Icons.lock_outline_rounded, color: theme.textTertiary, size: 32),
+      );
+    }
+
+    return Image.network(
+      widget.memory.fullImageUrl ?? '',
+      fit: widget.fit,
+      errorBuilder: (context, error, stackTrace) => Center(
+        child: Icon(Icons.broken_image_rounded, color: theme.textTertiary, size: 32),
+      ),
     );
   }
 }
