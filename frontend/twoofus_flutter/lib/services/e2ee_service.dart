@@ -51,8 +51,15 @@ class E2EEService {
   static Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      var storedPrivBytesStr = await _storage.read(key: _privKeyStorageKey);
-      var storedPubBytesStr = await _storage.read(key: _pubKeyStorageKey);
+      String? storedPrivBytesStr;
+      String? storedPubBytesStr;
+
+      try {
+        storedPrivBytesStr = await _storage.read(key: _privKeyStorageKey);
+        storedPubBytesStr = await _storage.read(key: _pubKeyStorageKey);
+      } catch (_) {
+        // Fallback if secure storage platform channel is unavailable
+      }
 
       // Fallback: Restore from persistent SharedPreferences backup if Android KeyStore lost it
       if (storedPrivBytesStr == null || storedPubBytesStr == null) {
@@ -72,8 +79,10 @@ class E2EEService {
         _myPublicKeyHex = base64Encode(pubBytes);
 
         // Ensure both storage engines are in sync
-        await _storage.write(key: _privKeyStorageKey, value: storedPrivBytesStr);
-        await _storage.write(key: _pubKeyStorageKey, value: storedPubBytesStr);
+        try {
+          await _storage.write(key: _privKeyStorageKey, value: storedPrivBytesStr);
+          await _storage.write(key: _pubKeyStorageKey, value: storedPubBytesStr);
+        } catch (_) {}
         await prefs.setString(_privKeyStorageKey, storedPrivBytesStr);
         await prefs.setString(_pubKeyStorageKey, storedPubBytesStr);
       } else {
@@ -85,8 +94,10 @@ class E2EEService {
         final privB64 = base64Encode(privBytes);
         final pubB64 = base64Encode(pubBytes);
 
-        await _storage.write(key: _privKeyStorageKey, value: privB64);
-        await _storage.write(key: _pubKeyStorageKey, value: pubB64);
+        try {
+          await _storage.write(key: _privKeyStorageKey, value: privB64);
+          await _storage.write(key: _pubKeyStorageKey, value: pubB64);
+        } catch (_) {}
         await prefs.setString(_privKeyStorageKey, privB64);
         await prefs.setString(_pubKeyStorageKey, pubB64);
 

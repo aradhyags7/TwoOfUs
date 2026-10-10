@@ -133,7 +133,6 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
     );
 
     List<String> links = [];
-    List<Message> docs = [];
 
     for (var m in widget.messages) {
       // Check for web links
@@ -145,17 +144,16 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
         }
       }
 
-      // Check for docs / long notes / code attachments
-      if (m.content.length > 120 ||
-          m.content.contains("```") ||
-          m.content.contains("http://") ||
-          m.content.contains("https://")) {
-        docs.add(m);
+      // Check for document file attachments in message media
+      for (var attachment in m.mediaAttachments) {
+        if (attachment.isFile && !_docs.any((d) => d.id == attachment.id)) {
+          _docs.add(attachment);
+        }
       }
     }
 
     _sharedLinks = links;
-    _docMessages = docs;
+    _docMessages = const [];
   }
 
   void _toast(String msg, {bool isError = false}) {
@@ -414,7 +412,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
                       tabs: [
                         Tab(text: "Media ($totalMediaCount)"),
                         Tab(text: "Links (${_sharedLinks.length})"),
-                        Tab(text: "Docs (${_docs.length + _docMessages.length})"),
+                        Tab(text: "Docs (${_docs.length})"),
                         Tab(text: "Memories (${widget.memories.length})"),
                       ],
                     ),
@@ -714,7 +712,7 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
   }
 
   Widget _buildDocsTab() {
-    final combinedDocs = [..._docs, ..._docMessages];
+    final combinedDocs = _docs;
 
     if (combinedDocs.isEmpty) {
       return _emptyTabState(
@@ -730,54 +728,28 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
       separatorBuilder: (context, index) => Divider(height: 12, color: _border),
       itemBuilder: (ctx, index) {
         final doc = combinedDocs[index];
-        if (doc is MediaItem) {
-          return ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _lavender.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.description_rounded, color: _lavender, size: 18),
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: _lavender.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
             ),
-            title: Text(
-              doc.originalFilename,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: _text, fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              doc.formattedFileSize,
-              style: TextStyle(color: _sub, fontSize: 11),
-            ),
-          );
-        } else if (doc is Message) {
-          return ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _lavender.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.article_outlined, color: _lavender, size: 18),
-            ),
-            title: Text(
-              doc.content,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: _text, fontSize: 13),
-            ),
-            subtitle: Text(
-              "${doc.createdAt.day}/${doc.createdAt.month}/${doc.createdAt.year}",
-              style: TextStyle(color: _sub, fontSize: 11),
-            ),
-          );
-        }
-        return const SizedBox.shrink();
+            child: Icon(Icons.description_rounded, color: _lavender, size: 18),
+          ),
+          title: Text(
+            doc.originalFilename,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: _text, fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            doc.formattedFileSize,
+            style: TextStyle(color: _sub, fontSize: 11),
+          ),
+        );
       },
     );
   }

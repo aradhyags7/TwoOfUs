@@ -10,6 +10,7 @@ import 'full_screen_image_viewer.dart';
 import 'video_player_dialog.dart';
 import 'view_once_badge.dart';
 import '../utils/app_feedback.dart';
+import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 
 class ChatMediaBubble extends StatefulWidget {
@@ -438,6 +439,7 @@ class AuthenticatedImage extends StatefulWidget {
 class _AuthenticatedImageState extends State<AuthenticatedImage> {
   Uint8List? _bytes;
   bool _isLoading = true;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -471,27 +473,37 @@ class _AuthenticatedImageState extends State<AuthenticatedImage> {
       data = await ApiService.fetchAuthenticatedBytes(widget.fallbackUrl!, effectiveToken);
     }
 
-    if (data != null && widget.media != null && widget.media!.isEncrypted &&
-        widget.media!.encryptedMediaKey != null && widget.media!.encryptionNonce != null) {
-      try {
-        final media = widget.media!;
-        final myId = await Session.getUserId();
-        final partnerId = (media.senderId == myId) ? media.receiverId : media.senderId;
-        final partnerPubKey = await E2EEService.getPartnerPublicKey(partnerId, token: effectiveToken);
+    if (data != null && widget.media != null && widget.media!.isEncrypted) {
+      if (widget.media!.encryptedMediaKey != null && widget.media!.encryptionNonce != null) {
+        try {
+          final media = widget.media!;
+          final myId = await Session.getUserId();
+          final partnerId = (media.senderId == myId) ? media.receiverId : media.senderId;
+          final partnerPubKey = await E2EEService.getPartnerPublicKey(partnerId, token: effectiveToken);
 
-        if (partnerPubKey != null && partnerPubKey.isNotEmpty) {
-          final decrypted = await E2EEService.decryptMediaBytes(
-            encryptedFileBytes: data,
-            encryptedMediaKeyBundleJson: media.encryptedMediaKey!,
-            nonceBase64: media.encryptionNonce!,
-            remotePublicKeyBase64: partnerPubKey,
-          );
-          if (decrypted != null) {
-            data = decrypted;
+          if (partnerPubKey != null && partnerPubKey.isNotEmpty) {
+            final decrypted = await E2EEService.decryptMediaBytes(
+              encryptedFileBytes: data,
+              encryptedMediaKeyBundleJson: media.encryptedMediaKey!,
+              nonceBase64: media.encryptionNonce!,
+              remotePublicKeyBase64: partnerPubKey,
+            );
+            if (decrypted != null) {
+              data = decrypted;
+            } else {
+              // Decryption failure - do not render raw ciphertext
+              data = null;
+            }
+          } else {
+            // Partner public key unavailable
+            data = null;
           }
+        } catch (e) {
+          debugPrint("E2EE IMAGE DECRYPT IN BUBBLE ERROR: $e");
+          data = null;
         }
-      } catch (e) {
-        debugPrint("E2EE IMAGE DECRYPT IN BUBBLE ERROR: $e");
+      } else {
+        data = null;
       }
     }
 
@@ -499,30 +511,102 @@ class _AuthenticatedImageState extends State<AuthenticatedImage> {
       setState(() {
         _bytes = data;
         _isLoading = false;
+        _hasError = (data == null);
       });
     }
   }
 
+  Widget _buildLoadingSkeleton(AppTheme theme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.surfaceRaised,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: theme.isDark ? theme.accentBright : theme.accentFill,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(AppTheme theme) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isLoading = true;
+          _hasError = false;
+        });
+        _loadImage();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.surfaceRaised,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.border, width: 1),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.refresh_rounded,
+                color: theme.textSecondary,
+                size: 26,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "Couldn't load",
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  color: theme.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                "Tap to retry",
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  color: theme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = context.appTheme;
+
     if (_isLoading) {
-      return Container(
-        color: Colors.white10,
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.pinkAccent, strokeWidth: 2),
-        ),
-      );
+      return _buildLoadingSkeleton(theme);
     }
 
-    if (_bytes == null) {
-      return Container(
-        color: Colors.white10,
-        child: const Center(
-          child: Icon(Icons.broken_image_rounded, color: Colors.white38, size: 32),
-        ),
-      );
+    if (_hasError || _bytes == null) {
+      return _buildErrorState(theme);
     }
 
-    return Image.memory(_bytes!, fit: widget.fit);
+    return Image.memory(
+      _bytes!,
+      fit: widget.fit,
+      errorBuilder: (context, error, stackTrace) {
+        return _buildErrorState(theme);
+      },
+    );
   }
 }

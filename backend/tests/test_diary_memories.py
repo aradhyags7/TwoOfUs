@@ -33,13 +33,13 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
 class DiaryMemoriesUnitTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        app.dependency_overrides[get_db] = override_get_db
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
 
@@ -178,6 +178,17 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
         )
         self.assertTrue(all(e["id"] != mem_id for e in fetch_res.json()))
 
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        if os.path.exists("./test_diary_memories.db"):
+            try:
+                os.remove("./test_diary_memories.db")
+            except Exception:
+                pass
+
 
 if __name__ == "__main__":
     unittest.main()
+
