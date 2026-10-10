@@ -6,6 +6,10 @@ import 'package:twoofus_flutter/screens/login_screen.dart';
 import 'package:twoofus_flutter/screens/partner_profile_screen.dart';
 import 'package:twoofus_flutter/screens/theme_selection_screen.dart';
 import 'package:twoofus_flutter/widgets/design_system/design_system.dart';
+import 'package:twoofus_flutter/widgets/timeline_drawer.dart';
+import 'package:twoofus_flutter/models/diary_memory.dart';
+import 'package:twoofus_flutter/widgets/chat_media_bubble.dart';
+import 'package:twoofus_flutter/models/media.dart';
 
 Widget createTestApp({
   required Widget child,
@@ -97,56 +101,46 @@ void main() {
           expect(find.byType(PartnerProfileScreen), findsOneWidget);
         });
 
-        testWidgets('Drawer Settings Panel renders at width $width textScale $textScale with zero overflow',
+        testWidgets('TimelineDrawer renders at width $width textScale $textScale with zero overflow',
             (tester) async {
           tester.view.physicalSize = Size(width, 844);
           tester.view.devicePixelRatio = 1.0;
           addTearDown(tester.view.resetPhysicalSize);
 
-          final drawerWidget = Material(
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Row(
-                  children: [
-                    const AppAvatar(name: 'My Profile', size: 44),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text('My Profile', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          Text('Online', style: TextStyle(fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                SectionGroup(
-                  title: 'Preferences',
-                  children: [
-                    AppListTile(
-                      icon: Icons.palette_outlined,
-                      title: 'Appearance',
-                      subtitle: 'Dark • Indigo',
-                      onTap: () {},
-                    ),
-                    AppListTile(
-                      icon: Icons.security_rounded,
-                      title: 'Security',
-                      subtitle: 'Passcode & 2FA',
-                      onTap: () {},
-                    ),
-                  ],
-                ),
-              ],
+          final sampleMemories = [
+            DiaryMemoryItem(
+              id: 1,
+              senderId: 1,
+              receiverId: 2,
+              entryDate: '2026-10-11',
+              content: 'A wonderful shared memory from our trip to the coast!',
+              moodEmoji: '✨',
+              imageUrl: null,
             ),
-          );
+            DiaryMemoryItem(
+              id: 2,
+              senderId: 2,
+              receiverId: 1,
+              entryDate: '2026-10-10',
+              content: 'Evening planning session for TwoOfUs application.',
+              moodEmoji: '☕',
+              imageUrl: null,
+            ),
+          ];
 
           await tester.pumpWidget(
             createTestApp(
-              child: drawerWidget,
+              child: TimelineDrawer(
+                memories: sampleMemories,
+                isLoading: false,
+                onSelectDate: (_) {},
+                onRefresh: () {},
+                onClose: () {},
+                onSaveMemory: (content, mood, photo) async {},
+                onDeleteMemory: (_) {},
+                partnerName: 'Alex River',
+                myId: 1,
+              ),
               width: width,
               textScale: textScale,
             ),
@@ -154,6 +148,7 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(tester.takeException(), isNull);
+          expect(find.byType(TimelineDrawer), findsOneWidget);
         });
 
         testWidgets('Chat Messages & Bubble Layout renders at width $width textScale $textScale with zero overflow',
@@ -162,13 +157,55 @@ void main() {
           tester.view.devicePixelRatio = 1.0;
           addTearDown(tester.view.resetPhysicalSize);
 
+          final docMedia = MediaItem(
+            id: 1,
+            senderId: 1,
+            receiverId: 2,
+            originalFilename: 'Project_Specification.pdf',
+            storedFilename: 'spec_uuid.pdf',
+            mediaType: 'file',
+            mimeType: 'application/pdf',
+            fileSize: 1024 * 345,
+            storagePath: 'media/spec_uuid.pdf',
+            isEncrypted: true,
+          );
+
+          final voMedia = MediaItem(
+            id: 2,
+            senderId: 2,
+            receiverId: 1,
+            originalFilename: 'secret_snapshot.jpg',
+            storedFilename: 'snap_uuid.jpg',
+            mediaType: 'image',
+            mimeType: 'image/jpeg',
+            fileSize: 1024 * 850,
+            storagePath: 'media/snap_uuid.jpg',
+            isEncrypted: true,
+            isViewOnce: true,
+          );
+
+          final videoMedia = MediaItem(
+            id: 3,
+            senderId: 1,
+            receiverId: 2,
+            originalFilename: 'anniversary_video.mp4',
+            storedFilename: 'vid_uuid.mp4',
+            mediaType: 'video',
+            mimeType: 'video/mp4',
+            fileSize: 1024 * 1024 * 4,
+            storagePath: 'media/vid_uuid.mp4',
+            isEncrypted: true,
+          );
+
+          final maxBubbleWidth = width * 0.78;
+
           final chatPreview = Scaffold(
             appBar: AppBar(
               title: Row(
                 children: const [
-                  AppAvatar(name: 'Partner', size: 36, isOnline: true),
+                  AppAvatar(name: 'Alex River', size: 36, isOnline: true),
                   SizedBox(width: 10),
-                  Text('Partner', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('Alex River', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -187,7 +224,7 @@ void main() {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Container(
-                          constraints: BoxConstraints(maxWidth: width * 0.78),
+                          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
                             color: AppColors.darkSurface,
@@ -199,14 +236,26 @@ void main() {
                             ),
                             border: Border.all(color: AppColors.darkBorder),
                           ),
-                          child: const Text('Hey! How is everything going today with the project?'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ChatMediaBubble(
+                                media: voMedia,
+                                token: 'test-token',
+                                isMe: false,
+                              ),
+                              const SizedBox(height: 4),
+                              const Text('Hey! Sent you a confidential snapshot and documents.'),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       Align(
                         alignment: Alignment.centerRight,
                         child: Container(
-                          constraints: BoxConstraints(maxWidth: width * 0.78),
+                          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           decoration: const BoxDecoration(
                             color: Color(0xFF4F46E5),
@@ -217,9 +266,27 @@ void main() {
                               bottomRight: Radius.circular(4),
                             ),
                           ),
-                          child: const Text(
-                            'All going great! Zero layout overflows measured.',
-                            style: TextStyle(color: Colors.white),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ChatMediaBubble(
+                                media: docMedia,
+                                token: 'test-token',
+                                isMe: true,
+                              ),
+                              const SizedBox(height: 6),
+                              ChatMediaBubble(
+                                media: videoMedia,
+                                token: 'test-token',
+                                isMe: true,
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Received! Reviewing the project specifications now.',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -253,9 +320,10 @@ void main() {
               textScale: textScale,
             ),
           );
-          await tester.pumpAndSettle();
+          await tester.pump();
 
           expect(tester.takeException(), isNull);
+          expect(find.byType(ChatMediaBubble), findsNWidgets(3));
         });
       }
     }

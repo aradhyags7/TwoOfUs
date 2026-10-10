@@ -115,6 +115,7 @@ client = TestClient(app)
 class StorageAbstractionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        app.dependency_overrides[get_db] = override_get_db
         Base.metadata.create_all(bind=test_engine)
         db = TestingSessionLocal()
 
@@ -167,6 +168,7 @@ class StorageAbstractionTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=test_engine)
         test_engine.dispose()
         if os.path.exists(TEST_DB_PATH):
@@ -174,6 +176,9 @@ class StorageAbstractionTests(unittest.TestCase):
                 os.remove(TEST_DB_PATH)
             except Exception:
                 pass
+
+    def setUp(self):
+        app.dependency_overrides[get_db] = override_get_db
 
     def test_01_s3_storage_unit_roundtrip_and_delete(self):
         fake_client = FakeS3Client()

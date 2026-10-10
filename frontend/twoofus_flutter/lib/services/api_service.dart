@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../main.dart';
 import '../utils/session.dart';
 
 class ApiService {
@@ -12,6 +14,80 @@ class ApiService {
   static String? _customBaseUrl;
   static String? _discoveredBaseUrl;
   static bool _isDiscovering = false;
+
+  /// Exact fail-closed HTTP 400 error strings from backend main.py requiring an app update
+  static const List<String> failClosedErrorStrings = [
+    "Unencrypted media uploads are rejected. End-to-end encryption is required.",
+    "Unencrypted user content is rejected. End-to-end encryption is required.",
+    "Encrypted media uploads cannot have empty encrypted_media_key",
+    "Encrypted media uploads cannot have empty encryption_nonce",
+    "Encrypted messages must include a valid encryption nonce",
+    "Encrypted messages must include ciphertext content",
+  ];
+
+  static void Function()? onUpdateRequired;
+  static bool _isUpdateDialogShowing = false;
+
+  /// Determines if a response body indicates that legacy/unencrypted client behavior was rejected
+  static bool isUpdateRequiredError(String responseBody) {
+    for (final err in failClosedErrorStrings) {
+      if (responseBody.contains(err)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Inspects response for fail-closed 400 rejection and triggers the update dialog
+  static void checkFailClosedError(int statusCode, String body, [BuildContext? context]) {
+    if (statusCode == 400 && isUpdateRequiredError(body)) {
+      if (onUpdateRequired != null) {
+        onUpdateRequired!();
+      }
+      showUpdateRequiredDialog(context);
+    }
+  }
+
+  /// Displays a non-dismissible or clear Update Required dialog informing the user to update
+  static Future<void> showUpdateRequiredDialog([BuildContext? context]) async {
+    final ctx = context ?? navigatorKey.currentContext;
+    if (ctx == null || _isUpdateDialogShowing) return;
+
+    _isUpdateDialogShowing = true;
+    try {
+      await showDialog<void>(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (BuildContext dCtx) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.system_update_rounded, color: Color(0xFFFF2D75)),
+                SizedBox(width: 10),
+                Text('Update Required', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ],
+            ),
+            content: const Text(
+              'This version of TwoOfUs is outdated. Secure end-to-end encryption is strictly required by the server to send messages and media.\n\nPlease update to the latest version of the app to continue.',
+              style: TextStyle(fontSize: 14, height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  _isUpdateDialogShowing = false;
+                  Navigator.of(dCtx).pop();
+                },
+                child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      _isUpdateDialogShowing = false;
+    }
+  }
 
   /// Loads configured custom server address on app startup and triggers background discovery
   static Future<void> initServerConfig() async {
@@ -834,6 +910,10 @@ class ApiService {
         }),
       );
 
+      if (response.statusCode == 400) {
+        checkFailClosedError(response.statusCode, response.body);
+      }
+
       return response.statusCode == 200;
     } catch (e) {
       return false;
@@ -884,6 +964,10 @@ class ApiService {
         final List<dynamic> list = jsonDecode(responseBody);
         return list.cast<Map<String, dynamic>>();
       } else {
+        if (streamedResponse.statusCode == 400) {
+          final responseBody = await streamedResponse.stream.bytesToString();
+          checkFailClosedError(streamedResponse.statusCode, responseBody);
+        }
         return null;
       }
     } catch (e) {

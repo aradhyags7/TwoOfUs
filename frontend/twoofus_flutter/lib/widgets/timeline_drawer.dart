@@ -494,25 +494,32 @@ class _TimelineDrawerState extends State<TimelineDrawer> {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             ),
-            GestureDetector(
-              onTap: () => setState(() {
-                _calMonth = DateTime.now();
-                widget.onSelectDate(DateTime.now());
-              }),
-              child: Row(
-                children: [
-                  Text(
-                    '${mons[m.month - 1]} ${m.year}',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      color: theme.textPrimary,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
+            Flexible(
+              child: GestureDetector(
+                onTap: () => setState(() {
+                  _calMonth = DateTime.now();
+                  widget.onSelectDate(DateTime.now());
+                }),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${mons[m.month - 1]} ${m.year}',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          color: theme.textPrimary,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.touch_app_rounded, size: 12, color: theme.textTertiary),
-                ],
+                    const SizedBox(width: 4),
+                    Icon(Icons.touch_app_rounded, size: 12, color: theme.textTertiary),
+                  ],
+                ),
               ),
             ),
             IconButton(
@@ -830,20 +837,24 @@ class _TimelineDrawerState extends State<TimelineDrawer> {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isMe ? theme.accentFill.withValues(alpha: 0.12) : theme.surface,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: isMe ? theme.accentFill.withValues(alpha: 0.25) : theme.border),
-                      ),
-                      child: Text(
-                        authorLabel,
-                        style: TextStyle(
-                          fontFamily: 'Inter',
-                          color: isMe ? theme.accentFill : theme.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isMe ? theme.accentFill.withValues(alpha: 0.12) : theme.surface,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: isMe ? theme.accentFill.withValues(alpha: 0.25) : theme.border),
+                        ),
+                        child: Text(
+                          authorLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            color: isMe ? theme.accentFill : theme.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),

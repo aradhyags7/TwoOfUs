@@ -148,39 +148,47 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                 size: 32,
               ),
               const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.media.isVideo ? "View Once Video" : "View Once Photo",
-                        style: TextStyle(
-                          fontFamily: 'Inter',
-                          color: isConsumed ? theme.textTertiary : theme.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.media.isVideo ? "View Once Video" : "View Once Photo",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              color: isConsumed ? theme.textTertiary : theme.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
-                      if (widget.media.isEncrypted) ...[
-                        const SizedBox(width: 6),
-                        Icon(Icons.lock_rounded, color: theme.textSecondary, size: 12),
+                        if (widget.media.isEncrypted) ...[
+                          const SizedBox(width: 6),
+                          Icon(Icons.lock_rounded, color: theme.textSecondary, size: 12),
+                        ],
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    isConsumed ? "Opened • Expired" : "Confidential • Tap to reveal",
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      color: isConsumed ? theme.textTertiary : theme.textSecondary,
-                      fontSize: 11,
-                      fontWeight: isConsumed ? FontWeight.normal : FontWeight.w500,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      isConsumed ? "Opened • Expired" : "Confidential • Tap to reveal",
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        color: isConsumed ? theme.textTertiary : theme.textSecondary,
+                        fontSize: 11,
+                        fontWeight: isConsumed ? FontWeight.normal : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -393,13 +401,17 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          "Open / Download",
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            color: theme.isDark ? theme.accentBright : theme.accentFill,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            "Open / Download",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              color: theme.isDark ? theme.accentBright : theme.accentFill,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 4),
