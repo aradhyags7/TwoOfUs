@@ -19,9 +19,18 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES = int(
         os.getenv(
             "ACCESS_TOKEN_EXPIRE_MINUTES",
-            525600  # 1 year validity for couple sessions
+            "60"
         )
     )
+
+    # WebRTC STUN/TURN Configuration
+    TURN_SECRET = os.getenv("TURN_SECRET", "")
+    TURN_HOST = os.getenv("TURN_HOST", "")
+    TURN_PORT = os.getenv("TURN_PORT", "3478")
+    TURN_TLS_PORT = os.getenv("TURN_TLS_PORT", "5349")
+    TURN_USERNAME = os.getenv("TURN_USERNAME", "")
+    TURN_PASSWORD = os.getenv("TURN_PASSWORD", "")
+    TURN_URLS = os.getenv("TURN_URLS", "")
 
     MEDIA_DIR = os.getenv("MEDIA_DIR", "media")
     MAX_IMAGE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB

@@ -2,10 +2,15 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./twoofus.db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Enforce PostgreSQL in production
+if not DATABASE_URL:
+    if os.getenv("RENDER") or os.getenv("ENV") == "production":
+        raise RuntimeError("DATABASE_URL environment variable is required in production (PostgreSQL required, SQLite prohibited).")
+    DATABASE_URL = "sqlite:///./twoofus.db"
+elif (os.getenv("RENDER") or os.getenv("ENV") == "production") and DATABASE_URL.startswith("sqlite"):
+    raise RuntimeError("PostgreSQL DATABASE_URL is required in production. SQLite is not permitted on ephemeral cloud instances.")
 
 # Render / Heroku compatibility: convert postgres:// to postgresql://
 if DATABASE_URL.startswith("postgres://"):

@@ -8,12 +8,26 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: ENV
+        value: production
       - key: SECRET_KEY
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "525600"
+        value: "60"
       - key: DATABASE_URL
-        value: sqlite:///./twoofus.db
+        fromDatabase:
+          name: twoofus-postgres
+          property: connectionString
+      - key: TURN_HOST
+        sync: false
+      - key: TURN_SECRET
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_PASSWORD
+        sync: false
+      - key: TURN_URLS
+        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
@@ -26,3 +40,9 @@ services:
         value: "true"
       - key: SMTP_PASSWORD
         sync: false
+
+databases:
+  - name: twoofus-postgres
+    databaseName: twoofus
+    user: twoofus_user
+    plan: free

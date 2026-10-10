@@ -166,11 +166,23 @@ def get_turn_credentials(
     turn_host = os.getenv("TURN_HOST")
     turn_port = os.getenv("TURN_PORT", "3478")
     turn_tls_port = os.getenv("TURN_TLS_PORT", "5349")
+    turn_username = os.getenv("TURN_USERNAME")
+    turn_password = os.getenv("TURN_PASSWORD")
+    turn_urls = os.getenv("TURN_URLS")
 
     # Time-to-live: 2 hours (7200 seconds)
     ttl = 7200
     expiry_timestamp = int(time.time()) + ttl
     username = f"{expiry_timestamp}:{user_id}"
+
+    if turn_urls and turn_username and turn_password:
+        uris = [u.strip() for u in turn_urls.split(",") if u.strip()]
+        return TurnCredentialsResponse(
+            username=turn_username,
+            password=turn_password,
+            ttl=ttl,
+            uris=uris,
+        )
 
     if turn_secret and turn_host and turn_host != "turn.twoofus.app":
         hashed = hmac.new(turn_secret.encode('utf-8'), username.encode('utf-8'), hashlib.sha1)
@@ -184,6 +196,12 @@ def get_turn_credentials(
             f"turn:{turn_host}:{turn_port}?transport=tcp",
             f"turns:{turn_host}:{turn_tls_port}?transport=tcp",
         ]
+        return TurnCredentialsResponse(
+            username=username,
+            password=password,
+            ttl=ttl,
+            uris=uris,
+        )
     else:
         # High-availability production OpenRelay TURN & global STUN
         username = "openrelayproject"

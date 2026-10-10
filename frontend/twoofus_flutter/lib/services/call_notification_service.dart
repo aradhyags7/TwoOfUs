@@ -90,7 +90,7 @@ class CallNotificationService {
         priority: Priority.high,
         fullScreenIntent: true,
         category: AndroidNotificationCategory.call,
-        visibility: NotificationVisibility.public,
+        visibility: NotificationVisibility.private,
         ongoing: true,
         autoCancel: false,
         vibrationPattern: vibrationPattern,
@@ -151,7 +151,7 @@ class CallNotificationService {
         playSound: false,
         enableVibration: false,
         category: AndroidNotificationCategory.call,
-        visibility: NotificationVisibility.public,
+        visibility: NotificationVisibility.private,
       );
 
       const details = NotificationDetails(android: androidDetails);
