@@ -20,6 +20,14 @@ from backend.app.models.couple import Pair
 client = TestClient(app)
 
 class TestMediaRoundtrip:
+    uploaded_media_id: int = 0
+    token_a: str = ""
+    token_b: str = ""
+    token_c: str = ""
+    user_a_id: int = 0
+    user_b_id: int = 0
+    user_c_id: int = 0
+
     @classmethod
     def setup_class(cls):
         suffix = uuid.uuid4().hex[:8]

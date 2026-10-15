@@ -10,12 +10,14 @@ from ..core.security import decode_access_token
 from ..core.database import SessionLocal
 from ..models import CallSession, Pair, User, Message
 
-def _to_utc_iso(dt: Optional[datetime]) -> Optional[str]:
+def _to_utc_iso(dt: Any) -> Optional[str]:
     if dt is None:
         return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat()
+    if isinstance(dt, datetime):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+    return str(dt)
 
 
 def _get_db_session() -> Session:

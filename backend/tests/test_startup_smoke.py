@@ -3,9 +3,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
 
-from app.main import app, run_auto_migrations
-from app.core.config import Settings
-from app.core.database import Base
+from backend.app.main import app, run_auto_migrations
+from backend.app.core.config import Settings
+from backend.app.core.database import Base
 
 
 def test_health_sqlite():
@@ -47,6 +47,7 @@ def test_sqlite_migration_idempotency(tmp_path):
 def test_postgres_migration_idempotency_and_health():
     """Verify run_auto_migrations runs cleanly twice on PostgreSQL and /health is 200."""
     raw_pg_url = os.getenv("TEST_DATABASE_URL")
+    assert raw_pg_url is not None, "TEST_DATABASE_URL must not be None"
     if raw_pg_url.startswith("postgres://"):
         raw_pg_url = raw_pg_url.replace("postgres://", "postgresql://", 1)
 

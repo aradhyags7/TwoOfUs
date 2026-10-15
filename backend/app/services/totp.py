@@ -36,7 +36,7 @@ def generate_totp_code(secret: str, time_step: int = 30, digits: int = 6, for_ti
 
 def verify_totp_code(secret: str, code: str, window: int = 1) -> bool:
     """Validate 6-digit code with time drift window (prevents clock skew issues)."""
-    code_str = str(code).strip()
+    code_str = code.strip()
     if len(code_str) != 6 or not code_str.isdigit():
         return False
     now = time.time()

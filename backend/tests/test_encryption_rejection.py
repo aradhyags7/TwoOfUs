@@ -6,13 +6,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.main import app, get_db
-from app.core.database import Base
-from app.models.user import User
-from app.models.couple import Pair
-from app.models.message import Message
-from app.models.media import Media
-from app.core.security import hash_password, create_access_token
+from backend.app.main import app, get_db
+from backend.app.core.database import Base
+from backend.app.models.user import User
+from backend.app.models.couple import Pair
+from backend.app.models.message import Message
+from backend.app.models.media import Media
+from backend.app.core.security import hash_password, create_access_token
 
 TEST_DB_PATH = "./test_encryption_rejection.db"
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
