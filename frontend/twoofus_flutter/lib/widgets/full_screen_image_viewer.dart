@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/media.dart';
 import '../services/api_service.dart';
 import '../services/security_service.dart';
+import '../theme/theme_controller.dart';
 import 'chat_media_bubble.dart';
 
 class FullScreenImageViewer extends StatefulWidget {
@@ -108,44 +109,55 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
                     ),
                   ),
                   if (widget.media != null && widget.media!.isViewOnce)
-                    Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [Color(0xFFFF2D75), Color(0xFF9B51E0)]),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.timer_outlined, color: Colors.white, size: 12),
-                          SizedBox(width: 4),
-                          Text(
-                            "View Once",
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    Builder(
+                      builder: (context) {
+                        final theme = ThemeController.currentTheme.value;
+                        return Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: theme.accentFill,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: theme.border),
                           ),
-                        ],
-                      ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.timer_outlined, color: Colors.white, size: 12),
+                              SizedBox(width: 4),
+                              Text(
+                                "View Once",
+                                style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   if (widget.media != null && widget.media!.isEncrypted)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.pinkAccent.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.4)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 12),
-                          SizedBox(width: 4),
-                          Text(
-                            "E2EE",
-                            style: TextStyle(color: Colors.pinkAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                    Builder(
+                      builder: (context) {
+                        final theme = ThemeController.currentTheme.value;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: theme.surfaceRaised,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: theme.border),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_rounded, color: theme.accentBright, size: 12),
+                              const SizedBox(width: 4),
+                              Text(
+                                "E2EE",
+                                style: TextStyle(color: theme.accentBright, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                 ],
               ),

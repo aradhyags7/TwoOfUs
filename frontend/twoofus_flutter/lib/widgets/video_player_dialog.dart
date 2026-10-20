@@ -6,6 +6,7 @@ import '../models/media.dart';
 import '../services/api_service.dart';
 import '../services/e2ee_service.dart';
 import '../services/security_service.dart';
+import '../theme/theme_controller.dart';
 import '../utils/session.dart';
 
 class VideoPlayerDialog extends StatefulWidget {
@@ -205,10 +206,10 @@ class _VideoPlayerDialogState extends State<VideoPlayerDialog> {
                         VideoProgressIndicator(
                           _controller!,
                           allowScrubbing: true,
-                          colors: const VideoProgressColors(
-                            playedColor: Colors.pinkAccent,
+                          colors: VideoProgressColors(
+                            playedColor: ThemeController.currentTheme.value.accentFill,
                             bufferedColor: Colors.white24,
-                            backgroundColor: Colors.grey,
+                            backgroundColor: Colors.white12,
                           ),
                         ),
                       ],

@@ -17,6 +17,7 @@ import 'security_screen.dart';
 import '../services/call_service.dart';
 import 'media_gallery_screen.dart';
 import '../widgets/qr_scanner_dialog.dart';
+import '../widgets/design_system/design_system.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TwoOfUs — HomeScreen
@@ -45,17 +46,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isPartnerConnected = false;
   int? _partnerId;
   String _partnerName = "";
-  String _partnerEmail = "";
-  String _partnerLabel = "Not Connected";
   String _generatedPin = "";
   int _connectTab = 0; // 0 = Enter PIN  |  1 = Scan QR
   bool _pinCopied = false;
   bool _isConnecting = false;
-  bool _loading = true;
 
   // ── Active Real-Time Pairing Polling ───────────────────────────────────────
   Timer? _pairingPollTimer;
   bool _hasTriggeredCelebration = false;
+
+  String? get _resolvedAvatarUrl => _userAvatarUrl != null && _userAvatarUrl!.isNotEmpty
+      ? (_userAvatarUrl!.startsWith('http')
+          ? "${_userAvatarUrl!}?v=$_avatarCacheKey"
+          : "${ApiService.baseUrl}/${_userAvatarUrl!.startsWith('/') ? _userAvatarUrl!.substring(1) : _userAvatarUrl!}?v=$_avatarCacheKey")
+      : null;
 
   // ── Animations ─────────────────────────────────────────────────────────────
   late AnimationController _heartCtrl;
@@ -69,7 +73,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Color get _surface => _theme.surface;
   Color get _rose => _theme.primary;
   Color get _violet => _theme.secondary;
-  Color get _lavender => _theme.gradientEnd;
   Color get _text => _theme.textPrimary;
   Color get _sub => _theme.textMuted;
   Color get _border => _theme.border;
@@ -114,15 +117,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ── Data Fetching ──────────────────────────────────────────────────────────
   Future<void> _loadAllData() async {
-    setState(() => _loading = true);
     await Future.wait([
       _loadUserProfile(),
       _loadPartnerStatus(),
       _generatePin(silent: true),
     ]);
-    if (mounted) {
-      setState(() => _loading = false);
-    }
   }
 
   Future<void> _loadUserProfile() async {
@@ -174,7 +173,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final connected = result["connected"] == true;
         final partnerId = result["partner_id"] as int?;
         final partnerName = (result["partner_name"] ?? "Partner").toString();
-        final partnerEmail = (result["partner_email"] ?? "").toString();
 
         if (connected && partnerId != null && !_hasTriggeredCelebration) {
           _pairingPollTimer?.cancel();
@@ -184,8 +182,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             _isPartnerConnected = true;
             _partnerId = partnerId;
             _partnerName = partnerName;
-            _partnerEmail = partnerEmail;
-            _partnerLabel = partnerName.isNotEmpty ? partnerName : "Connected";
           });
 
           await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
@@ -209,16 +205,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final connected = result["connected"] == true;
         final partnerId = result["partner_id"] as int?;
         final partnerName = (result["partner_name"] ?? "").toString();
-        final partnerEmail = (result["partner_email"] ?? "").toString();
 
         setState(() {
           _isPartnerConnected = connected;
           _partnerId = partnerId;
           _partnerName = partnerName;
-          _partnerEmail = partnerEmail;
-          _partnerLabel = connected
-              ? (partnerName.isNotEmpty ? partnerName : "Connected")
-              : "Not Connected";
         });
 
         // If user is connected to a partner, save partner cache and directly navigate to ChatScreen
@@ -263,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: FadeTransition(opacity: anim, child: child),
         );
       },
-      pageBuilder: (dialogContext, _, __) {
+      pageBuilder: (dialogContext, anim1, anim2) {
         return _ConnectedCelebrationDialog(
           partnerName: partnerName,
           userName: _username,
@@ -273,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               context,
               PageRouteBuilder(
                 transitionDuration: const Duration(milliseconds: 500),
-                pageBuilder: (_, animation, secondaryAnimation) => ChatScreen(
+                pageBuilder: (c, animation, secondaryAnimation) => ChatScreen(
                   partnerId: partnerId,
                   partnerName: partnerName,
                 ),
@@ -360,7 +351,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _isPartnerConnected = true;
           _partnerId = partnerId;
           _partnerName = partnerName;
-          _partnerLabel = partnerName;
         });
 
         await Session.savePartner(partnerId, partnerName);
@@ -501,83 +491,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _showLogoutDialog() {
     HapticFeedback.mediumImpact();
-    showDialog(
+    AppSheet.show(
       context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => Dialog(
-        backgroundColor: _surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.logout_rounded, size: 40, color: _rose),
-              const SizedBox(height: 16),
-              Text(
-                "Sign Out",
-                style: TextStyle(color: _text, fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Are you sure you want to sign out of TwoOfUs?",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: _sub, fontSize: 14),
-              ),
-              const SizedBox(height: 26),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: _border),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: Text(
-                        "Stay",
-                        style: TextStyle(color: _sub, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [_rose, _violet]),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          await Session.clear();
-                          if (!context.mounted) return;
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(builder: (_) => const LoginScreen()),
-                            (route) => false,
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
-                        ),
-                        child: const Text(
-                          "Sign out",
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+      builder: (ctx) => AppSheet(
+        title: "Sign Out",
+        subtitle: "Are you sure you want to sign out of TwoOfUs?",
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            AppButton(
+              text: "Sign out",
+              variant: AppButtonVariant.danger,
+              isFullWidth: true,
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await Session.clear();
+                if (!mounted) return;
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            AppButton(
+              text: "Cancel",
+              variant: AppButtonVariant.secondary,
+              isFullWidth: true,
+              onPressed: () => Navigator.pop(ctx),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
@@ -701,29 +647,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           GestureDetector(
             onTap: _openProfileScreen,
             child: Container(
-              width: 38,
-              height: 38,
               margin: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: _rose.withValues(alpha: 0.6), width: 1.8),
-                boxShadow: [
-                  BoxShadow(
-                    color: _rose.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-              child: ClipOval(
-                child: _userAvatarUrl != null && _userAvatarUrl!.isNotEmpty
-                    ? Image.network(
-                        _userAvatarUrl!.startsWith('http')
-                            ? "${_userAvatarUrl!}?v=$_avatarCacheKey"
-                            : "${ApiService.baseUrl}/${_userAvatarUrl!.startsWith('/') ? _userAvatarUrl!.substring(1) : _userAvatarUrl!}?v=$_avatarCacheKey",
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _avatarInitialWidget(size: 38),
-                      )
-                    : _avatarInitialWidget(size: 38),
+              child: AppAvatar(
+                size: 38,
+                name: _username,
+                imageUrl: _resolvedAvatarUrl,
               ),
             ),
           ),
@@ -754,76 +682,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 320),
         width: double.infinity,
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: _surface,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _border),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
         child: Row(
           children: [
-            // Avatar with camera/edit badge
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 62,
-                  height: 62,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [_rose, _violet],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _rose.withValues(alpha: 0.35),
-                        blurRadius: 14,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(2.5),
-                  child: ClipOval(
-                    child: _userAvatarUrl != null && _userAvatarUrl!.isNotEmpty
-                        ? Image.network(
-                            _userAvatarUrl!.startsWith('http')
-                                ? "${_userAvatarUrl!}?v=$_avatarCacheKey"
-                                : "${ApiService.baseUrl}/${_userAvatarUrl!.startsWith('/') ? _userAvatarUrl!.substring(1) : _userAvatarUrl!}?v=$_avatarCacheKey",
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _avatarInitialWidget(size: 60),
-                          )
-                        : _avatarInitialWidget(size: 60),
-                  ),
-                ),
-                Positioned(
-                  bottom: -2,
-                  right: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: _violet,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _surface, width: 2),
-                    ),
-                    child: const Icon(
-                      Icons.edit,
-                      size: 11,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
+            AppAvatar(
+              size: 56,
+              name: _username,
+              imageUrl: _resolvedAvatarUrl,
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
 
             // Profile info
             Expanded(
@@ -837,8 +709,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           _username,
                           style: TextStyle(
                             color: _text,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: -0.3,
                           ),
                           maxLines: 1,
@@ -847,17 +719,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: _rose.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _rose.withValues(alpha: 0.3)),
+                          color: _theme.accentFill.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: _theme.accentFill.withValues(alpha: 0.3)),
                         ),
                         child: Text(
                           "You",
                           style: TextStyle(
-                            color: _rose,
-                            fontSize: 10.5,
+                            color: _theme.accentBright,
+                            fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -871,8 +743,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         : (_userEmail.isNotEmpty ? _userEmail : "Tap to complete your profile bio"),
                     style: TextStyle(
                       color: _sub,
-                      fontSize: 12.5,
-                      height: 1.25,
+                      fontSize: 13,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -881,39 +752,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
 
-            // Arrow action
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _rose.withValues(alpha: 0.1),
-              ),
-              child: Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 14,
-                color: _rose,
-              ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: _sub,
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _avatarInitialWidget({required double size}) {
-    final initial = _username.isNotEmpty ? _username.substring(0, 1).toUpperCase() : "U";
-    return Container(
-      width: size,
-      height: size,
-      color: _surface,
-      child: Center(
-        child: Text(
-          initial,
-          style: TextStyle(
-            color: _rose,
-            fontSize: size * 0.44,
-            fontWeight: FontWeight.w800,
-          ),
         ),
       ),
     );
@@ -954,7 +798,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             itemCount: AppTheme.allThemes.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               final itemTheme = AppTheme.allThemes[index];
               final isSelected = itemTheme.id == _theme.id;
@@ -1082,30 +926,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   // User Avatar
                   Column(
                     children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: _rose, width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _rose.withValues(alpha: 0.3),
-                              blurRadius: 12,
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: _userAvatarUrl != null && _userAvatarUrl!.isNotEmpty
-                              ? Image.network(
-                                  _userAvatarUrl!.startsWith('http')
-                                      ? "${_userAvatarUrl!}?v=$_avatarCacheKey"
-                                      : "${ApiService.baseUrl}/${_userAvatarUrl!.startsWith('/') ? _userAvatarUrl!.substring(1) : _userAvatarUrl!}?v=$_avatarCacheKey",
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => _avatarInitialWidget(size: 64),
-                                )
-                              : _avatarInitialWidget(size: 64),
-                        ),
+                      AppAvatar(
+                        size: 64,
+                        name: _username,
+                        imageUrl: _resolvedAvatarUrl,
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -1167,39 +991,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            Container(
-                              width: 64,
-                              height: 64,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [_violet, _lavender],
-                                ),
-                                border: Border.all(color: _violet, width: 2),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: _violet.withValues(alpha: 0.3),
-                                    blurRadius: 12,
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  _partnerName.isNotEmpty ? _partnerName[0].toUpperCase() : "?",
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
+                            AppAvatar(
+                              size: 64,
+                              name: _partnerName.isNotEmpty ? _partnerName : "Partner",
                             ),
                             Positioned(
                               top: 0,
                               right: 0,
                               child: AnimatedBuilder(
                                 animation: _pulseAnim,
-                                builder: (_, __) => Transform.scale(
+                                builder: (_, _) => Transform.scale(
                                   scale: _pulseAnim.value,
                                   child: Container(
                                     width: 14,
@@ -1238,52 +1039,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const SizedBox(height: 22),
 
               // Open Private Chat CTA
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [_rose, _violet],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _rose.withValues(alpha: 0.4),
-                        blurRadius: 20,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    onPressed: _openChatScreen,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.chat_bubble_rounded, size: 18, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text(
-                          "Open Private Chat",
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              AppButton(
+                text: "Open Private Chat",
+                icon: const Icon(Icons.chat_bubble_rounded, size: 18),
+                isFullWidth: true,
+                onPressed: _openChatScreen,
               ),
             ],
           ),
@@ -1469,40 +1229,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _showPairingQRModal() {
     HapticFeedback.lightImpact();
     final pairPayload = "twoofus://pair?pin=$_generatedPin&uid=${_userId ?? 0}&name=${Uri.encodeComponent(_username)}";
-    showModalBottomSheet(
+    AppSheet.show(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: _surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          border: Border.all(color: _border),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      builder: (ctx) => AppSheet(
+        title: "Connection QR Code",
+        subtitle: "Scan this code to connect instantly",
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: _sub.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              "Connection QR Code",
-              style: TextStyle(color: _text, fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              "Scan this code to connect instantly",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: _sub, fontSize: 13),
-            ),
-            const SizedBox(height: 22),
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -1545,24 +1279,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _generatedPin));
-                  HapticFeedback.lightImpact();
-                  Navigator.pop(ctx);
-                  _toast("Invite PIN copied to clipboard");
-                },
-                icon: const Icon(Icons.copy_rounded, size: 18),
-                label: const Text("Copy PIN to Share"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _rose,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
+            AppButton(
+              text: "Copy PIN to Share",
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              isFullWidth: true,
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: _generatedPin));
+                HapticFeedback.lightImpact();
+                Navigator.pop(ctx);
+                _toast("Invite PIN copied to clipboard");
+              },
             ),
           ],
         ),
@@ -1621,39 +1347,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 42,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: _rose.withValues(alpha: 0.08),
-                        border: Border.all(color: _rose.withValues(alpha: 0.30)),
-                      ),
-                      child: TextButton(
-                        onPressed: _showPairingQRModal,
-                        style: TextButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.fullscreen_rounded, size: 15, color: _rose),
-                            const SizedBox(width: 6),
-                            Text(
-                              "View QR",
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: _rose,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  AppButton(
+                    text: "View QR",
+                    icon: const Icon(Icons.fullscreen_rounded, size: 16),
+                    variant: AppButtonVariant.secondary,
+                    size: AppButtonSize.small,
+                    isFullWidth: true,
+                    onPressed: _showPairingQRModal,
                   ),
                 ],
               ),
@@ -1733,8 +1433,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                             color: _pinCopied
-                                              ? Colors.greenAccent
-                                              : _rose,
+                                                ? Colors.greenAccent
+                                                : _rose,
                                           ),
                                         ),
                                       ],
@@ -1764,51 +1464,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 42,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [_rose, _violet],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _rose.withValues(alpha: 0.30),
-                            blurRadius: 14,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: () => _generatePin(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.refresh_rounded, size: 15, color: Colors.white),
-                            const SizedBox(width: 5),
-                            Text(
-                              _generatedPin.isEmpty ? "Generate" : "New PIN",
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  AppButton(
+                    text: _generatedPin.isEmpty ? "Generate" : "New PIN",
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    variant: AppButtonVariant.primary,
+                    size: AppButtonSize.small,
+                    isFullWidth: true,
+                    onPressed: () => _generatePin(),
                   ),
                 ],
               ),
@@ -1891,19 +1553,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           key: const ValueKey('pin'),
           child: Column(
             children: [
-              _buildField(
+              AppTextField(
                 controller: _pinController,
-                hint: "8-Digit Invite PIN",
-                icon: Icons.vpn_key_rounded,
-                type: TextInputType.text,
+                hintText: "8-Digit Invite PIN",
+                prefixIcon: const Icon(Icons.vpn_key_rounded, size: 20),
+                keyboardType: TextInputType.text,
                 maxLength: 8,
               ),
               const SizedBox(height: 14),
-              _buildGradientBtn(
-                label: _isConnecting ? "Connecting…" : "Connect",
-                icon: Icons.link_rounded,
+              AppButton(
+                text: _isConnecting ? "Connecting…" : "Connect",
+                icon: const Icon(Icons.link_rounded, size: 18),
                 isLoading: _isConnecting,
-                onTap: _isConnecting ? () {} : _connectWithPin,
+                isFullWidth: true,
+                onPressed: _isConnecting ? null : _connectWithPin,
               ),
             ],
           ),
@@ -1958,11 +1621,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
               const SizedBox(height: 14),
-              _buildGradientBtn(
-                label: _isConnecting ? "Connecting…" : "Scan QR Code",
-                icon: Icons.camera_alt_rounded,
+              AppButton(
+                text: _isConnecting ? "Connecting…" : "Scan QR Code",
+                icon: const Icon(Icons.camera_alt_rounded, size: 18),
                 isLoading: _isConnecting,
-                onTap: _isConnecting ? () {} : _scanPartnerQR,
+                isFullWidth: true,
+                onPressed: _isConnecting ? null : _scanPartnerQR,
               ),
             ],
           ),
@@ -2004,138 +1668,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: child,
       );
 
-  Widget _buildGradientBtn({
-    required String label,
-    required IconData icon,
-    required VoidCallback onTap,
-    bool isLoading = false,
-  }) =>
-      SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_rose, _violet],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: _rose.withValues(alpha: 0.32),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: ElevatedButton(
-            onPressed: onTap,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.transparent,
-              shadowColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.2,
-                    ),
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(icon, size: 18, color: Colors.white),
-                      const SizedBox(width: 8),
-                      Text(
-                        label,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-      );
-
-  Widget _buildField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    TextInputType? type,
-    int? maxLength,
-  }) =>
-      AnimatedContainer(
-        duration: const Duration(milliseconds: 240),
-        decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _border),
-        ),
-        child: TextField(
-          controller: controller,
-          keyboardType: type,
-          textCapitalization: TextCapitalization.characters,
-          maxLength: maxLength,
-          buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-          style: TextStyle(
-            color: _text,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.5,
-          ),
-          cursorColor: _rose,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(
-              color: _sub,
-              fontSize: 14,
-              letterSpacing: 0,
-              fontWeight: FontWeight.normal,
-            ),
-            prefixIcon: Icon(icon, size: 20, color: _rose.withValues(alpha: 0.8)),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
-          ),
-        ),
-      );
-
   List<Widget> _cornerBrackets() {
     const s = 24.0;
     const t = 3.0;
     const r = 8.0;
-    final c = _rose;
-
-    Widget b(bool top, bool left) => Positioned(
-          top: top ? r : null,
-          bottom: top ? null : r,
-          left: left ? r : null,
-          right: left ? null : r,
-          child: SizedBox(
-            width: s,
-            height: s,
-            child: CustomPaint(
-              painter: _CornerPainter(top: top, left: left, color: c, thickness: t),
-            ),
-          ),
-        );
-
-    return [b(true, true), b(true, false), b(false, true), b(false, false)];
-  }
-
-  List<Widget> _smallCornerBrackets() {
-    const s = 18.0;
-    const t = 2.5;
-    const r = 6.0;
     final c = _rose;
 
     Widget b(bool top, bool left) => Positioned(
@@ -2407,49 +1943,15 @@ class _ConnectedCelebrationDialogState extends State<_ConnectedCelebrationDialog
                   const SizedBox(height: 22),
 
                   // Action Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: LinearGradient(
-                          colors: [rose, violet],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: rose.withValues(alpha: 0.4),
-                            blurRadius: 18,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          _autoEnterTimer?.cancel();
-                          HapticFeedback.mediumImpact();
-                          widget.onEnter();
-                        },
-                        icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
-                        label: const Text(
-                          "Enter Shared Space",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                      ),
-                    ),
+                  AppButton(
+                    text: "Enter Shared Space",
+                    icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                    isFullWidth: true,
+                    onPressed: () {
+                      _autoEnterTimer?.cancel();
+                      HapticFeedback.mediumImpact();
+                      widget.onEnter();
+                    },
                   ),
                 ],
               ),

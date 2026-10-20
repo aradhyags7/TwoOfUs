@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TwoOfUs — Hardware Passcode & Local PIN Screen
+// ─────────────────────────────────────────────────────────────────────────────
 
 enum PasscodeMode { setup, unlock, change, disable }
 
@@ -21,14 +26,9 @@ class PasscodeSetupScreen extends StatefulWidget {
 }
 
 class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
-  Color get bg => ThemeController.currentTheme.value.bg;
-  Color get surface => ThemeController.currentTheme.value.surface;
-  Color get rose => ThemeController.currentTheme.value.primary;
-  Color get violet => ThemeController.currentTheme.value.secondary;
-
   String passcode = "";
   String tempPasscode = "";
-  
+
   // Step for multi-step flows (0: initial / current, 1: new, 2: confirm)
   int step = 0;
   String errorMessage = "";
@@ -78,7 +78,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
       case PasscodeMode.setup:
         return step == 0 ? "Create Passcode" : "Confirm Passcode";
       case PasscodeMode.unlock:
-        return "Welcome Back";
+        return "TwoOfUs Locked";
       case PasscodeMode.change:
         if (step == 0) return "Current Passcode";
         if (step == 1) return "New Passcode";
@@ -91,15 +91,15 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
   String get _subtitleText {
     switch (widget.mode) {
       case PasscodeMode.setup:
-        return step == 0 ? "Choose a 4-digit PIN" : "Re-enter your 4-digit PIN";
+        return step == 0 ? "Choose a 4-digit PIN for device security" : "Re-enter your 4-digit PIN to confirm";
       case PasscodeMode.unlock:
-        return "Enter your passcode to unlock app";
+        return "Enter your 4-digit passcode to unlock";
       case PasscodeMode.change:
-        if (step == 0) return "Enter your current PIN";
+        if (step == 0) return "Enter your existing 4-digit PIN";
         if (step == 1) return "Choose a new 4-digit PIN";
         return "Re-enter your new 4-digit PIN";
       case PasscodeMode.disable:
-        return "Enter current PIN to disable app lock";
+        return "Enter your current PIN to turn off lock";
     }
   }
 
@@ -108,174 +108,203 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
     return ValueListenableBuilder<AppTheme>(
       valueListenable: ThemeController.currentTheme,
       builder: (context, activeTheme, _) {
+        final canGoBack = widget.mode != PasscodeMode.unlock && Navigator.canPop(context);
+
         return Scaffold(
           backgroundColor: activeTheme.bg,
           appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: widget.mode == PasscodeMode.unlock
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => Navigator.pop(context, false),
-              ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: rose.withOpacity(0.15),
-                child: Icon(
-                  Icons.lock_rounded,
-                  color: rose,
-                  size: 44,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                _titleText,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _subtitleText,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 15,
-                ),
-              ),
-              if (errorMessage.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  errorMessage,
-                  style: const TextStyle(
-                    color: Colors.redAccent,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+            backgroundColor: activeTheme.bg,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            leading: canGoBack
+                ? IconButton(
+                    icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: activeTheme.textPrimary),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                : null,
+          ),
+          body: SafeArea(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Spacer(flex: 1),
+
+                // Lock Emblem
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: activeTheme.surfaceRaised,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: activeTheme.border, width: 1),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.lock_rounded,
+                    color: activeTheme.isDark ? activeTheme.accentBright : activeTheme.accentFill,
+                    size: 26,
                   ),
                 ),
-              ],
-              const SizedBox(height: 30),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  4,
-                  (index) {
-                    bool filled = index < passcode.length;
+                const SizedBox(height: 20),
+
+                // Title
+                Text(
+                  _titleText,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    color: activeTheme.textPrimary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Subtitle
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    _subtitleText,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: activeTheme.textTertiary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Error message
+                if (errorMessage.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: activeTheme.danger.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: activeTheme.danger.withValues(alpha: 0.4), width: 1),
+                    ),
+                    child: Text(
+                      errorMessage,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        color: activeTheme.danger,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 24),
+
+                // PIN Dots
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(4, (index) {
+                    final bool filled = index < passcode.length;
                     return AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.all(8),
-                      width: 18,
-                      height: 18,
+                      duration: const Duration(milliseconds: 180),
+                      margin: const EdgeInsets.symmetric(horizontal: 10),
+                      width: 16,
+                      height: 16,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: filled ? rose : Colors.white24,
-                        boxShadow: filled
-                            ? [
-                                BoxShadow(
-                                  color: rose.withOpacity(0.5),
-                                  blurRadius: 8,
-                                  spreadRadius: 1,
-                                )
-                              ]
-                            : [],
+                        color: filled
+                            ? (activeTheme.isDark ? activeTheme.accentBright : activeTheme.accentFill)
+                            : activeTheme.surfaceRaised,
+                        border: Border.all(
+                          color: filled
+                              ? (activeTheme.isDark ? activeTheme.accentBright : activeTheme.accentFill)
+                              : activeTheme.border,
+                          width: 1.5,
+                        ),
                       ),
                     );
-                  },
+                  }),
                 ),
-              ),
-              const Spacer(),
-              _numberPad(),
-              const SizedBox(height: 16),
-            ],
+
+                const Spacer(flex: 2),
+
+                // Numeric Keypad
+                _buildKeypad(activeTheme),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
-        ),
-      ),
         );
       },
     );
   }
 
-  Widget _numberPad() {
-    return Column(
-      children: [
-        for (var row in [
-          ["1", "2", "3"],
-          ["4", "5", "6"],
-          ["7", "8", "9"],
-        ])
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: row.map(_button).toList(),
-            ),
-          ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            // Left slot: Biometrics button if unlocking
-            if (widget.mode == PasscodeMode.unlock && isBiometricsAvailable)
-              GestureDetector(
-                onTap: () async {
-                  final auth = await SecurityService.authenticateWithBiometrics();
-                  if (auth && mounted) {
-                    _handleUnlockSuccess();
-                  }
-                },
-                child: CircleAvatar(
-                  radius: 34,
-                  backgroundColor: surface,
-                  child: Icon(
-                    Icons.fingerprint_rounded,
-                    color: rose,
-                    size: 32,
-                  ),
-                ),
-              )
-            else
-              const SizedBox(width: 68),
-
-            _button("0"),
-
-            // Right slot: Backspace
-            GestureDetector(
-              onTap: () {
-                if (passcode.isNotEmpty) {
-                  setState(() {
-                    passcode = passcode.substring(0, passcode.length - 1);
-                    errorMessage = "";
-                  });
-                }
-              },
-              child: CircleAvatar(
-                radius: 34,
-                backgroundColor: surface,
-                child: const Icon(
-                  Icons.backspace_outlined,
-                  color: Colors.white,
-                  size: 22,
-                ),
+  Widget _buildKeypad(AppTheme theme) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: Column(
+        children: [
+          for (var row in [
+            ["1", "2", "3"],
+            ["4", "5", "6"],
+            ["7", "8", "9"],
+          ])
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: row.map((digit) => _buildNumberButton(digit, theme)).toList(),
               ),
             ),
-          ],
-        ),
-      ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              // Left: Biometrics or Empty
+              if (widget.mode == PasscodeMode.unlock && isBiometricsAvailable)
+                _buildActionButton(
+                  icon: Icons.fingerprint_rounded,
+                  iconColor: theme.isDark ? theme.accentBright : theme.accentFill,
+                  theme: theme,
+                  onTap: () async {
+                    HapticFeedback.lightImpact();
+                    final auth = await SecurityService.authenticateWithBiometrics();
+                    if (auth && mounted) {
+                      _handleUnlockSuccess();
+                    }
+                  },
+                )
+              else
+                const SizedBox(width: 68, height: 68),
+
+              // Center: Zero
+              _buildNumberButton("0", theme),
+
+              // Right: Backspace
+              _buildActionButton(
+                icon: Icons.backspace_outlined,
+                iconColor: theme.textSecondary,
+                theme: theme,
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  if (passcode.isNotEmpty) {
+                    setState(() {
+                      passcode = passcode.substring(0, passcode.length - 1);
+                      errorMessage = "";
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _button(String value) {
-    return GestureDetector(
+  Widget _buildNumberButton(String value, AppTheme theme) {
+    return InkResponse(
       onTap: () {
+        HapticFeedback.lightImpact();
         if (passcode.length >= 4) return;
 
         setState(() {
@@ -285,22 +314,57 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
 
         if (passcode.length == 4) {
           Future.delayed(
-            const Duration(milliseconds: 150),
+            const Duration(milliseconds: 140),
             _onCompletedPasscode,
           );
         }
       },
-      child: CircleAvatar(
-        radius: 34,
-        backgroundColor: surface,
+      radius: 34,
+      splashColor: theme.accentFill.withValues(alpha: 0.15),
+      highlightShape: BoxShape.circle,
+      child: Container(
+        width: 68,
+        height: 68,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: theme.surface,
+          border: Border.all(color: theme.border, width: 1),
+        ),
+        alignment: Alignment.center,
         child: Text(
           value,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            color: theme.textPrimary,
             fontSize: 26,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required Color iconColor,
+    required AppTheme theme,
+    required VoidCallback onTap,
+  }) {
+    return InkResponse(
+      onTap: onTap,
+      radius: 34,
+      splashColor: theme.accentFill.withValues(alpha: 0.15),
+      highlightShape: BoxShape.circle,
+      child: Container(
+        width: 68,
+        height: 68,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: theme.surface,
+          border: Border.all(color: theme.border, width: 1),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: iconColor, size: 24),
       ),
     );
   }
@@ -329,8 +393,9 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
             setState(() {
               step = 0;
               tempPasscode = "";
-              errorMessage = "Passcodes don't match. Try again.";
+              errorMessage = "Passcodes do not match. Try again.";
             });
+            HapticFeedback.mediumImpact();
           }
         }
         break;
@@ -344,6 +409,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
             setState(() {
               errorMessage = "Incorrect passcode";
             });
+            HapticFeedback.mediumImpact();
           }
         }
         break;
@@ -359,6 +425,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
             setState(() {
               errorMessage = "Current passcode is incorrect";
             });
+            HapticFeedback.mediumImpact();
           }
         } else if (step == 1) {
           tempPasscode = code;
@@ -376,24 +443,28 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
             setState(() {
               step = 1;
               tempPasscode = "";
-              errorMessage = "Passcodes don't match. Try again.";
+              errorMessage = "Passcodes do not match. Try again.";
             });
+            HapticFeedback.mediumImpact();
           }
         }
         break;
 
       case PasscodeMode.disable:
         final isValid = await SecurityService.verifyPasscode(code);
-        if (isValid) {
-          await SecurityService.deletePasscode();
-          if (mounted) {
-            AppFeedback.showInfo(context, "Passcode removed");
-            Navigator.pop(context, true);
+        if (mounted) {
+          if (isValid) {
+            await SecurityService.deletePasscode();
+            if (mounted) {
+              AppFeedback.showSuccess(context, "Passcode turned off");
+              Navigator.pop(context, true);
+            }
+          } else {
+            setState(() {
+              errorMessage = "Incorrect passcode";
+            });
+            HapticFeedback.mediumImpact();
           }
-        } else {
-          setState(() {
-            errorMessage = "Incorrect passcode";
-          });
         }
         break;
     }

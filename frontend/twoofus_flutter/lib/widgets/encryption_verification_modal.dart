@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../services/e2ee_service.dart';
+import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 import '../utils/session.dart';
+import 'design_system/app_button.dart';
 import 'qr_scanner_dialog.dart';
 import '../utils/app_feedback.dart';
 
@@ -65,7 +68,7 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
-    _pulseAnim = Tween<double>(begin: 0.92, end: 1.08).animate(
+    _pulseAnim = Tween<double>(begin: 0.94, end: 1.06).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
@@ -148,7 +151,6 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
     final trimmed = input.trim();
     if (trimmed.isEmpty) return;
 
-    // Extract code if it's a URL or raw digits
     String extractedCode = trimmed;
     if (trimmed.contains('code=')) {
       final uri = Uri.tryParse(trimmed);
@@ -194,12 +196,19 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeController.currentTheme.value;
+    final accent = theme.isDark ? theme.accentBright : theme.accentFill;
     final blocks = _safetyCode.split(' ');
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF13111C),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(36)),
+      decoration: BoxDecoration(
+        color: theme.surfaceRaised,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(
+          top: BorderSide(color: theme.border, width: 1),
+          left: BorderSide(color: theme.border, width: 1),
+          right: BorderSide(color: theme.border, width: 1),
+        ),
       ),
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
       child: SingleChildScrollView(
@@ -209,10 +218,10 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
           children: [
             // Top Drag indicator
             Container(
-              width: 42,
+              width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
+                color: theme.textTertiary.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -225,45 +234,38 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                 return Transform.scale(
                   scale: _pulseAnim.value,
                   child: Container(
-                    width: 68,
-                    height: 68,
+                    width: 60,
+                    height: 60,
                     decoration: BoxDecoration(
+                      color: _isVerified
+                          ? theme.success.withValues(alpha: 0.15)
+                          : theme.surface,
                       shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: _isVerified
-                            ? [const Color(0xFF00E676), const Color(0xFF00B0FF)]
-                            : [const Color(0xFFFF2A6D), const Color(0xFF9B51E0)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                      border: Border.all(
+                        color: _isVerified ? theme.success : theme.border,
+                        width: 1.5,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_isVerified ? const Color(0xFF00E676) : const Color(0xFFFF2A6D))
-                              .withValues(alpha: 0.45),
-                          blurRadius: 22,
-                          spreadRadius: 2,
-                        ),
-                      ],
                     ),
                     child: Icon(
                       _isVerified ? Icons.verified_user_rounded : Icons.lock_outline_rounded,
-                      color: Colors.white,
-                      size: 34,
+                      color: _isVerified ? theme.success : accent,
+                      size: 28,
                     ),
                   ),
                 );
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
             // Header Title
             Text(
               _isVerified ? "Security Code Verified 🛡️" : "Verify Security Code",
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 21,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.3,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: theme.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
               ),
             ),
             const SizedBox(height: 6),
@@ -275,8 +277,9 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                     : "Messages and calls with ${widget.partnerName} are end-to-end encrypted. Compare this 60-digit number or scan the QR code to verify.",
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.65),
-                  fontSize: 12.5,
+                  fontFamily: 'Inter',
+                  color: theme.textSecondary,
+                  fontSize: 13,
                   height: 1.4,
                 ),
               ),
@@ -285,12 +288,12 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
 
             // Segmented Tab Switcher (60-Digit Code vs QR Code)
             Container(
-              height: 44,
+              height: 42,
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1A2B),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                color: theme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: theme.border),
               ),
               child: Row(
                 children: [
@@ -302,27 +305,26 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                       },
                       child: Container(
                         decoration: BoxDecoration(
-                          color: _activeTab == 0 ? const Color(0xFFFF2A6D) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
+                          color: _activeTab == 0 ? theme.accentFill : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.numbers_rounded,
-                                size: 16,
-                                color: _activeTab == 0 ? Colors.white : Colors.white60),
+                            Icon(
+                              Icons.numbers_rounded,
+                              size: 16,
+                              color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
+                            ),
                             const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                "60-Digit Code",
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: _activeTab == 0 ? Colors.white : Colors.white60,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
+                            Text(
+                              "60-Digit Code",
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
                               ),
                             ),
                           ],
@@ -338,27 +340,26 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                       },
                       child: Container(
                         decoration: BoxDecoration(
-                          color: _activeTab == 1 ? const Color(0xFFFF2A6D) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
+                          color: _activeTab == 1 ? theme.accentFill : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.qr_code_2_rounded,
-                                size: 16,
-                                color: _activeTab == 1 ? Colors.white : Colors.white60),
+                            Icon(
+                              Icons.qr_code_2_rounded,
+                              size: 16,
+                              color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
+                            ),
                             const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                "QR Scan Code",
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: _activeTab == 1 ? Colors.white : Colors.white60,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
+                            Text(
+                              "QR Scan Code",
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
                               ),
                             ),
                           ],
@@ -373,10 +374,10 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
 
             // Tab 0: 60-Digit Number Grid | Tab 1: Real QR Code
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
+              duration: const Duration(milliseconds: 200),
               child: _activeTab == 0
-                  ? _buildNumberGridTab(blocks)
-                  : _buildQRCodeTab(),
+                  ? _buildNumberGridTab(blocks, theme, accent)
+                  : _buildQRCodeTab(theme, accent),
             ),
             const SizedBox(height: 18),
 
@@ -384,88 +385,52 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF191626),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                color: theme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.border),
               ),
               child: Column(
                 children: [
-                  _infoRow(
-                    "Channel Security",
-                    _isVerified ? "Verified Zero-Knowledge 🛡️" : "Zero-Knowledge Relay 🔒",
-                    highlight: _isVerified,
-                  ),
-                  Divider(color: Colors.white.withValues(alpha: 0.08), height: 16),
-                  _infoRow("Symmetric Cipher", "AES-256-GCM (Authenticated)"),
-                  Divider(color: Colors.white.withValues(alpha: 0.08), height: 16),
-                  _infoRow("Key Exchange", "X25519 Curve25519 ECDH"),
-                  Divider(color: Colors.white.withValues(alpha: 0.08), height: 16),
-                  _infoRow("Fingerprint Hash", "SHA-512 (60 Decimal Digits)"),
+                  _infoRow("Channel Security", _isVerified ? "Verified Zero-Knowledge 🛡️" : "Zero-Knowledge Relay 🔒", theme, highlight: _isVerified),
+                  Divider(color: theme.divider, height: 16),
+                  _infoRow("Symmetric Cipher", "AES-256-GCM (Authenticated)", theme),
+                  Divider(color: theme.divider, height: 16),
+                  _infoRow("Key Exchange", "X25519 Curve25519 ECDH", theme),
+                  Divider(color: theme.divider, height: 16),
+                  _infoRow("Fingerprint Hash", "SHA-512 (60 Decimal Digits)", theme),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
 
             // Verified Toggle Action Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _toggleVerifiedStatus,
-                icon: Icon(
-                  _isVerified ? Icons.check_circle_rounded : Icons.verified_user_rounded,
-                  size: 18,
-                ),
-                label: Text(
-                  _isVerified ? "Mark as Unverified / Reset" : "Mark as Verified 🛡️",
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isVerified
-                      ? const Color(0xFF1F3D2B)
-                      : const Color(0xFF28223B),
-                  foregroundColor: _isVerified ? Colors.greenAccent : Colors.white,
-                  side: BorderSide(
-                    color: _isVerified ? Colors.greenAccent : const Color(0xFFFF2A6D).withValues(alpha: 0.4),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  elevation: 2,
-                ),
+            AppButton(
+              text: _isVerified ? "Mark as Unverified / Reset" : "Mark as Verified 🛡️",
+              variant: _isVerified ? AppButtonVariant.outline : AppButtonVariant.secondary,
+              isFullWidth: true,
+              icon: Icon(
+                _isVerified ? Icons.restart_alt_rounded : Icons.verified_user_rounded,
+                size: 18,
               ),
+              onPressed: _toggleVerifiedStatus,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
             // Bottom Action Bar
             Row(
               children: [
                 Expanded(
-                  child: ElevatedButton.icon(
+                  child: AppButton(
+                    text: "Copy Full Code",
+                    icon: const Icon(Icons.copy_rounded, size: 16),
                     onPressed: () => _copySafetyCode(),
-                    icon: const Icon(Icons.copy_rounded, size: 18),
-                    label: const Text("Copy Full Code"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF2A6D),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      elevation: 4,
-                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                OutlinedButton(
+                const SizedBox(width: 10),
+                AppButton(
+                  text: "Close",
+                  variant: AppButtonVariant.secondary,
                   onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: const Text("Close"),
                 ),
               ],
             ),
@@ -476,31 +441,24 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
   }
 
   // ── Tab 0: 60-Digit Grid ──────────────────────────────────────────────────
-  Widget _buildNumberGridTab(List<String> blocks) {
+  Widget _buildNumberGridTab(List<String> blocks, AppTheme theme, Color accent) {
     return Container(
       key: const ValueKey(0),
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1A2C),
-        borderRadius: BorderRadius.circular(22),
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _isVerified
-              ? Colors.greenAccent.withValues(alpha: 0.4)
-              : const Color(0xFFFF2A6D).withValues(alpha: 0.35),
+          color: _isVerified ? theme.success.withValues(alpha: 0.4) : theme.border,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: _loading
-          ? const SizedBox(
+          ? SizedBox(
               height: 180,
-              child: Center(child: CircularProgressIndicator(color: Colors.pinkAccent)),
+              child: Center(
+                child: CircularProgressIndicator(color: theme.accentFill, strokeWidth: 2),
+              ),
             )
           : Column(
               children: [
@@ -522,24 +480,22 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                       child: Container(
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: _isVerified
-                              ? const Color(0xFF122C20)
-                              : const Color(0xFF28233C),
+                          color: theme.surfaceRaised,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: _isVerified
-                                ? Colors.greenAccent.withValues(alpha: 0.3)
-                                : Colors.white.withValues(alpha: 0.08),
+                                ? theme.success.withValues(alpha: 0.3)
+                                : theme.border,
                           ),
                         ),
                         child: Text(
                           blockText,
                           style: TextStyle(
-                            color: _isVerified ? Colors.greenAccent : const Color(0xFFFF75A0),
+                            color: _isVerified ? theme.success : accent,
                             fontFamily: 'monospace',
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.0,
                           ),
                         ),
                       ),
@@ -547,16 +503,13 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                   },
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.touch_app_rounded, size: 13, color: Colors.white.withValues(alpha: 0.45)),
-                    const SizedBox(width: 4),
-                    Text(
-                      "Tap any 5-digit block to copy individually",
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11),
-                    ),
-                  ],
+                Text(
+                  "Tap any 5-digit block to copy individually",
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    color: theme.textTertiary,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),
@@ -564,30 +517,28 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
   }
 
   // ── Tab 1: Real ISO/IEC 18004 QR Code System ──────────────────────────────
-  Widget _buildQRCodeTab() {
+  Widget _buildQRCodeTab(AppTheme theme, Color accent) {
     return Container(
       key: const ValueKey(1),
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1A2C),
-        borderRadius: BorderRadius.circular(22),
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _isVerified
-              ? Colors.greenAccent.withValues(alpha: 0.4)
-              : const Color(0xFF9B51E0).withValues(alpha: 0.4),
+          color: _isVerified ? theme.success.withValues(alpha: 0.4) : theme.border,
         ),
       ),
       child: Column(
         children: [
-          // Sub-Tab Switcher: [ 📱 Display My QR ] | [ 🔍 Verify Partner's Code ]
+          // Sub-Tab Switcher
           Container(
             height: 38,
             padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
-              color: const Color(0xFF13111C),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              color: theme.surfaceRaised,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: theme.border),
             ),
             child: Row(
               children: [
@@ -596,20 +547,16 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                     onTap: () => setState(() => _qrSubMode = 0),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: _qrSubMode == 0
-                            ? const Color(0xFFFF2A6D).withValues(alpha: 0.3)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(9),
-                        border: _qrSubMode == 0
-                            ? Border.all(color: const Color(0xFFFF2A6D))
-                            : null,
+                        color: _qrSubMode == 0 ? theme.accentFill : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         "📱 My Safety QR",
                         style: TextStyle(
-                          color: _qrSubMode == 0 ? Colors.white : Colors.white54,
-                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Inter',
+                          color: _qrSubMode == 0 ? theme.onAccent : theme.textSecondary,
+                          fontWeight: FontWeight.w600,
                           fontSize: 12,
                         ),
                       ),
@@ -621,20 +568,16 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                     onTap: () => setState(() => _qrSubMode = 1),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: _qrSubMode == 1
-                            ? const Color(0xFFFF2A6D).withValues(alpha: 0.3)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(9),
-                        border: _qrSubMode == 1
-                            ? Border.all(color: const Color(0xFFFF2A6D))
-                            : null,
+                        color: _qrSubMode == 1 ? theme.accentFill : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         "🔍 Verify Partner",
                         style: TextStyle(
-                          color: _qrSubMode == 1 ? Colors.white : Colors.white54,
-                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Inter',
+                          color: _qrSubMode == 1 ? theme.onAccent : theme.textSecondary,
+                          fontWeight: FontWeight.w600,
                           fontSize: 12,
                         ),
                       ),
@@ -647,161 +590,132 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
           const SizedBox(height: 18),
 
           if (_qrSubMode == 0) ...[
-            // Real Scannable ISO QR Code Container
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 210,
-                  height: 210,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(22),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (_isVerified ? const Color(0xFF00E676) : const Color(0xFF9B51E0))
-                            .withValues(alpha: 0.35),
-                        blurRadius: 20,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: QrImageView(
-                    data: _qrPayload,
-                    version: QrVersions.auto,
-                    size: 186,
-                    errorCorrectionLevel: QrErrorCorrectLevel.Q,
-                    backgroundColor: Colors.white,
-                    eyeStyle: const QrEyeStyle(
-                      eyeShape: QrEyeShape.square,
-                      color: Color(0xFF14121E),
-                    ),
-                    dataModuleStyle: const QrDataModuleStyle(
-                      dataModuleShape: QrDataModuleShape.square,
-                      color: Color(0xFF14121E),
-                    ),
-                  ),
-                ),
-                // Center E2EE Lock Icon Overlay with Safety Ring
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF14121E),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _isVerified ? Colors.greenAccent : Colors.pinkAccent,
-                      width: 2.2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    _isVerified ? Icons.verified_rounded : Icons.lock_rounded,
-                    color: _isVerified ? Colors.greenAccent : Colors.pinkAccent,
-                    size: 20,
-                  ),
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.border),
+              ),
+              child: QrImageView(
+                data: _qrPayload,
+                version: QrVersions.auto,
+                size: 180,
+                errorCorrectionLevel: QrErrorCorrectLevel.Q,
+                backgroundColor: Colors.white,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
               _isVerified ? "Safety Code Verified ✅" : "Scan Safety QR Code",
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: theme.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               "Scan this QR code with ${widget.partnerName}'s camera to instantly verify security.",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5),
-            ),
-            const SizedBox(height: 14),
-            ElevatedButton.icon(
-              onPressed: _openCameraScanner,
-              icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
-              label: Text("Scan ${widget.partnerName}'s QR Code 📷"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF2A6D),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                elevation: 3,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: theme.textSecondary,
+                fontSize: 12,
               ),
             ),
+            const SizedBox(height: 14),
+            AppButton(
+              text: "Scan ${widget.partnerName}'s QR Code 📷",
+              icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+              onPressed: _openCameraScanner,
+            ),
           ] else ...[
-            // Partner Code Verifier / Matcher Card
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFF14121E),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                color: theme.surfaceRaised,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: theme.border),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _openCameraScanner,
-                      icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                      label: const Text("Open Camera Scanner 📷", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF2A6D),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 4,
-                      ),
-                    ),
+                  AppButton(
+                    text: "Open Camera Scanner 📷",
+                    isFullWidth: true,
+                    icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                    onPressed: _openCameraScanner,
                   ),
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.15))),
+                      Expanded(child: Divider(color: theme.divider)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Text("OR ENTER MANUALLY", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        child: Text(
+                          "OR ENTER MANUALLY",
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            color: theme.textTertiary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
                       ),
-                      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.15))),
+                      Expanded(child: Divider(color: theme.divider)),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     "Compare Partner's Code",
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: theme.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     "Paste ${widget.partnerName}'s 60-digit number or scanned QR text below:",
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: theme.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _compareCtrl,
-                    style: const TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'monospace'),
-                    cursorColor: const Color(0xFFFF2A6D),
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      color: theme.textPrimary,
+                      fontSize: 13,
+                    ),
                     maxLines: 2,
                     decoration: InputDecoration(
                       hintText: "Paste 60 digits or twoofus://verify...",
-                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 12),
+                      hintStyle: TextStyle(
+                        fontFamily: 'Inter',
+                        color: theme.textTertiary,
+                        fontSize: 12,
+                      ),
                       filled: true,
-                      fillColor: const Color(0xFF1E1A2B),
+                      fillColor: theme.surface,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                        borderSide: BorderSide(color: theme.border),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                        borderSide: BorderSide(color: theme.border),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFFF2A6D)),
+                        borderSide: BorderSide(color: theme.accentFill),
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
@@ -810,7 +724,10 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                   Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton.icon(
+                        child: AppButton(
+                          text: "Paste & Check",
+                          variant: AppButtonVariant.secondary,
+                          icon: const Icon(Icons.paste_rounded, size: 16),
                           onPressed: () async {
                             final clip = await Clipboard.getData(Clipboard.kTextPlain);
                             if (clip?.text != null) {
@@ -818,28 +735,14 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                               _verifyScannedOrPastedCode(clip.text!);
                             }
                           },
-                          icon: const Icon(Icons.paste_rounded, size: 16),
-                          label: const Text("Paste & Check", style: TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.pinkAccent,
-                            side: const BorderSide(color: Colors.pinkAccent),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _verifyScannedOrPastedCode(_compareCtrl.text),
+                        child: AppButton(
+                          text: "Verify",
                           icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
-                          label: const Text("Verify", style: TextStyle(fontSize: 12)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFF2A6D),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
+                          onPressed: () => _verifyScannedOrPastedCode(_compareCtrl.text),
                         ),
                       ),
                     ],
@@ -850,18 +753,18 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: _compareResult!
-                            ? Colors.greenAccent.withValues(alpha: 0.15)
-                            : Colors.redAccent.withValues(alpha: 0.15),
+                            ? theme.success.withValues(alpha: 0.12)
+                            : theme.danger.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: _compareResult! ? Colors.greenAccent : Colors.redAccent,
+                          color: _compareResult! ? theme.success : theme.danger,
                         ),
                       ),
                       child: Row(
                         children: [
                           Icon(
                             _compareResult! ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                            color: _compareResult! ? Colors.greenAccent : Colors.redAccent,
+                            color: _compareResult! ? theme.success : theme.danger,
                             size: 18,
                           ),
                           const SizedBox(width: 8),
@@ -871,8 +774,9 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                                   ? "Safety numbers match! Partner is verified. 🛡️"
                                   : "Safety numbers do NOT match! Please check carefully.",
                               style: TextStyle(
-                                color: _compareResult! ? Colors.greenAccent : Colors.redAccent,
-                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Inter',
+                                color: _compareResult! ? theme.success : theme.danger,
+                                fontWeight: FontWeight.w600,
                                 fontSize: 11.5,
                               ),
                             ),
@@ -890,18 +794,26 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
     );
   }
 
-  Widget _infoRow(String label, String value, {bool highlight = false}) {
+  Widget _infoRow(String label, String value, AppTheme theme, {bool highlight = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            color: theme.textSecondary,
+            fontSize: 12,
+          ),
+        ),
         const SizedBox(width: 8),
         Flexible(
           child: Text(
             value,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: highlight ? Colors.greenAccent : Colors.white,
+              fontFamily: 'Inter',
+              color: highlight ? theme.success : theme.textPrimary,
               fontWeight: FontWeight.w600,
               fontSize: 12,
             ),

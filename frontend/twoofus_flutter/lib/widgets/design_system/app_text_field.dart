@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../theme/theme_controller.dart';
 
 class AppTextField extends StatefulWidget {
@@ -18,6 +19,9 @@ class AppTextField extends StatefulWidget {
   final FocusNode? focusNode;
   final int maxLines;
   final bool autofocus;
+  final int? maxLength;
+  final TextCapitalization textCapitalization;
+  final List<TextInputFormatter>? inputFormatters;
 
   const AppTextField({
     super.key,
@@ -37,6 +41,9 @@ class AppTextField extends StatefulWidget {
     this.focusNode,
     this.maxLines = 1,
     this.autofocus = false,
+    this.maxLength,
+    this.textCapitalization = TextCapitalization.none,
+    this.inputFormatters,
   });
 
   @override
@@ -123,7 +130,7 @@ class _AppTextFieldState extends State<AppTextField> {
         AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
-            color: widget.enabled ? theme.surfaceRaised : theme.surfaceRaised.withOpacity(0.5),
+            color: widget.enabled ? theme.surfaceRaised : theme.surfaceRaised.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: borderColor, width: borderWidth),
           ),
@@ -134,6 +141,10 @@ class _AppTextFieldState extends State<AppTextField> {
             enabled: widget.enabled,
             keyboardType: widget.keyboardType,
             textInputAction: widget.textInputAction,
+            maxLength: widget.maxLength,
+            textCapitalization: widget.textCapitalization,
+            inputFormatters: widget.inputFormatters,
+            buildCounter: widget.maxLength != null ? (_, {required currentLength, required isFocused, maxLength}) => null : null,
             autofocus: widget.autofocus,
             maxLines: widget.maxLines,
             onChanged: widget.onChanged,

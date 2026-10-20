@@ -120,7 +120,7 @@ class AppListTile extends StatelessWidget {
         height: 36,
         decoration: BoxDecoration(
           color: isDestructive
-              ? theme.danger.withOpacity(0.12)
+              ? theme.danger.withValues(alpha: 0.12)
               : theme.surfaceRaised,
           borderRadius: BorderRadius.circular(10),
         ),

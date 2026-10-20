@@ -57,7 +57,7 @@ class AppSheet extends StatelessWidget {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.textTertiary.withOpacity(0.35),
+                  color: theme.textTertiary.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),

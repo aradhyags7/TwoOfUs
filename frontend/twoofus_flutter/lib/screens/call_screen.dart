@@ -9,6 +9,7 @@ import '../services/call_notification_service.dart';
 import '../services/call_service.dart';
 import '../services/call_signaling_client.dart';
 import '../services/webrtc_manager.dart';
+import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/session.dart';
 import '../widgets/encryption_verification_modal.dart';
@@ -50,9 +51,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Offset _pipOffset = const Offset(20, 120);
   bool _isSwappedVideo = false;
 
-  Color get _bg => ThemeController.currentTheme.value.bg;
-  Color get _rose => ThemeController.currentTheme.value.primary;
-  Color get _violet => ThemeController.currentTheme.value.secondary;
+  AppTheme get _theme => ThemeController.currentTheme.value;
+  Color get _bg => _theme.bg;
+  Color get _accent => _theme.isDark ? _theme.accentBright : _theme.accentFill;
 
   @override
   void initState() {
@@ -593,7 +594,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                           center: Alignment.center,
                           radius: 1.2,
                           colors: [
-                            _violet.withValues(alpha: 0.25),
+                            _accent.withValues(alpha: 0.15),
                             _bg,
                           ],
                         ),
@@ -643,25 +644,26 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
+              color: _theme.surfaceRaised,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(color: _theme.border),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.lock_rounded, color: Colors.greenAccent, size: 14),
-                SizedBox(width: 6),
+                Icon(Icons.lock_rounded, color: _theme.success, size: 14),
+                const SizedBox(width: 6),
                 Text(
                   "End-to-End Encrypted (DTLS-SRTP)",
                   style: TextStyle(
-                    color: Colors.white70,
+                    fontFamily: 'Inter',
+                    color: _theme.textSecondary,
                     fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                SizedBox(width: 4),
-                Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 14),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right_rounded, color: _theme.textTertiary, size: 14),
               ],
             ),
           ),
@@ -669,8 +671,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         const SizedBox(height: 16),
         Text(
           widget.partnerName,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            color: _theme.textPrimary,
             fontSize: 28,
             fontWeight: FontWeight.bold,
             letterSpacing: -0.5,
@@ -693,7 +696,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             return Text(
               statusText,
               style: TextStyle(
-                color: isOngoing ? Colors.pinkAccent : Colors.white60,
+                fontFamily: 'Inter',
+                color: isOngoing ? _accent : _theme.textSecondary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -714,25 +718,24 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: (isSpeaker ? Colors.greenAccent : Colors.amberAccent).withValues(alpha: 0.15),
+                    color: _theme.surfaceRaised,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: (isSpeaker ? Colors.greenAccent : Colors.amberAccent).withValues(alpha: 0.3),
-                    ),
+                    border: Border.all(color: _theme.border),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         isSpeaker ? Icons.volume_up_rounded : Icons.phone_in_talk_rounded,
-                        color: isSpeaker ? Colors.greenAccent : Colors.amberAccent,
+                        color: isSpeaker ? _theme.success : _theme.warning,
                         size: 13,
                       ),
                       const SizedBox(width: 5),
                       Text(
                         isSpeaker ? "Speakerphone Active" : "Earpiece Active",
                         style: TextStyle(
-                          color: isSpeaker ? Colors.greenAccent : Colors.amberAccent,
+                          fontFamily: 'Inter',
+                          color: isSpeaker ? _theme.success : _theme.warning,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -766,7 +769,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: _rose.withValues(alpha: (1.0 - _pulseController.value) * 0.35),
+                      color: _accent.withValues(alpha: (1.0 - _pulseController.value) * 0.35),
                       width: 2,
                     ),
                   ),
@@ -778,7 +781,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: _violet.withValues(alpha: (1.0 - _pulseController.value) * 0.45),
+                      color: _theme.accentFill.withValues(alpha: (1.0 - _pulseController.value) * 0.25),
                       width: 2,
                     ),
                   ),
@@ -788,11 +791,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   width: 130,
                   height: 130,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [_rose, _violet]),
+                    color: _theme.surfaceRaised,
                     shape: BoxShape.circle,
+                    border: Border.all(color: _theme.border, width: 2),
                     boxShadow: [
                       BoxShadow(
-                        color: _rose.withValues(alpha: 0.35),
+                        color: _accent.withValues(alpha: 0.25),
                         blurRadius: 28,
                         offset: const Offset(0, 8),
                       ),
@@ -801,8 +805,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   child: Center(
                     child: Text(
                       widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : "P",
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        color: _theme.textPrimary,
                         fontSize: 48,
                         fontWeight: FontWeight.bold,
                       ),
@@ -832,7 +837,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                     height: height,
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
-                      color: Colors.pinkAccent,
+                      color: _accent,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   );
@@ -847,14 +852,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isMuted
-                      ? Colors.redAccent.withValues(alpha: 0.2)
-                      : Colors.greenAccent.withValues(alpha: 0.15),
+                  color: _theme.surfaceRaised,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isMuted
-                        ? Colors.redAccent.withValues(alpha: 0.4)
-                        : Colors.greenAccent.withValues(alpha: 0.3),
+                    color: isMuted ? _theme.danger.withValues(alpha: 0.5) : _theme.border,
                   ),
                 ),
                 child: Row(
@@ -863,13 +864,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                     Icon(
                       isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
                       size: 14,
-                      color: isMuted ? Colors.redAccent : Colors.greenAccent,
+                      color: isMuted ? _theme.danger : _theme.success,
                     ),
                     const SizedBox(width: 6),
                     Text(
                       isMuted ? "Your mic is muted" : "Audio connected",
                       style: TextStyle(
-                        color: isMuted ? Colors.redAccent : Colors.greenAccent,
+                        fontFamily: 'Inter',
+                        color: isMuted ? _theme.danger : _theme.textPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -884,7 +886,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Video Surface with Remote Fullscreen & Floating Local PiP ────────────
   // ── Video Surface with Remote Fullscreen & Floating Draggable PiP ────────
   Widget _buildVideoSurface() {
     final isLocalSwapped = _isSwappedVideo;
@@ -905,7 +906,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 )
               : Container(
-                  color: const Color(0xFF10071C),
+                  color: _theme.bg,
                   child: Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -915,10 +916,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                           height: 100,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: LinearGradient(colors: [_rose, _violet]),
+                            color: _theme.surfaceRaised,
+                            border: Border.all(color: _theme.border, width: 2),
                             boxShadow: [
                               BoxShadow(
-                                color: _rose.withValues(alpha: 0.3),
+                                color: _accent.withValues(alpha: 0.25),
                                 blurRadius: 24,
                                 offset: const Offset(0, 8),
                               ),
@@ -931,8 +933,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                                   : (widget.partnerName.isNotEmpty
                                       ? widget.partnerName[0].toUpperCase()
                                       : "P"),
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                color: _theme.textPrimary,
                                 fontSize: 40,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -942,10 +945,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                         const SizedBox(height: 16),
                         Text(
                           isLocalSwapped
-                              ? "Camera is off"
-                              : "${widget.partnerName}'s video paused",
+                                  ? "Camera is off"
+                                  : "${widget.partnerName}'s video paused",
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            fontFamily: 'Inter',
+                            color: _theme.textSecondary,
                             fontSize: 15,
                             fontWeight: FontWeight.w500,
                           ),
@@ -979,12 +983,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               width: 120,
               height: 175,
               decoration: BoxDecoration(
-                color: const Color(0xFF1E0E30),
+                color: _theme.surfaceRaised,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.5),
+                border: Border.all(color: _theme.border, width: 1.5),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.6),
+                    color: Colors.black.withValues(alpha: 0.5),
                     blurRadius: 18,
                     offset: const Offset(0, 8),
                   ),
@@ -1152,12 +1156,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E0E30).withValues(alpha: 0.92),
+        color: _theme.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        border: Border.all(color: _theme.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45),
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -1260,14 +1264,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     Color iconColor;
 
     if (isEndCall) {
-      bg = const Color(0xFFFF1744);
+      bg = _theme.danger;
       iconColor = Colors.white;
     } else if (isActive) {
-      bg = Colors.white;
-      iconColor = Colors.black87;
+      bg = _theme.accentFill;
+      iconColor = _theme.onAccent;
     } else {
-      bg = Colors.white.withValues(alpha: 0.15);
-      iconColor = Colors.white;
+      bg = _theme.surfaceRaised;
+      iconColor = _theme.textPrimary;
     }
 
     return InkWell(
@@ -1287,12 +1291,16 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                 color: bg,
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: isEndCall ? _theme.danger : _theme.border,
+                  width: 1,
+                ),
                 boxShadow: isEndCall
                     ? [
-                        const BoxShadow(
-                          color: Color(0x66FF1744),
+                        BoxShadow(
+                          color: _theme.danger.withValues(alpha: 0.4),
                           blurRadius: 14,
-                          offset: Offset(0, 4),
+                          offset: const Offset(0, 4),
                         ),
                       ]
                     : null,
@@ -1303,7 +1311,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             Text(
               label,
               style: TextStyle(
-                color: isEndCall ? const Color(0xFFFF5252) : Colors.white70,
+                fontFamily: 'Inter',
+                color: isEndCall ? _theme.danger : _theme.textSecondary,
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
               ),

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/media.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 import '../widgets/chat_media_bubble.dart';
+import '../widgets/design_system/empty_state.dart';
 import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/video_player_dialog.dart';
 
@@ -63,48 +66,94 @@ class _MediaGalleryScreenState extends State<MediaGalleryScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF141218),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E1C24),
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(
-          "Shared Media with ${widget.partnerName}",
-          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.pinkAccent,
-          labelColor: Colors.pinkAccent,
-          unselectedLabelColor: Colors.white60,
-          tabs: [
-            Tab(text: "Photos (${_photos.length})"),
-            Tab(text: "Videos (${_videos.length})"),
-            Tab(text: "Docs (${_docs.length})"),
-          ],
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.pinkAccent))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPhotosGrid(),
-                _buildVideosGrid(),
-                _buildDocsList(),
-              ],
+    return ValueListenableBuilder<AppTheme>(
+      valueListenable: ThemeController.currentTheme,
+      builder: (context, activeTheme, _) {
+        final accentColor = activeTheme.isDark ? activeTheme.accentBright : activeTheme.accentFill;
+
+        return Scaffold(
+          backgroundColor: activeTheme.bg,
+          appBar: AppBar(
+            backgroundColor: activeTheme.bg,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: activeTheme.textPrimary),
+              onPressed: () => Navigator.pop(context),
             ),
+            title: Text(
+              "Shared Media",
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: activeTheme.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.2,
+              ),
+            ),
+            centerTitle: true,
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(48),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: activeTheme.border, width: 1)),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorColor: accentColor,
+                  indicatorWeight: 2.5,
+                  labelColor: accentColor,
+                  unselectedLabelColor: activeTheme.textTertiary,
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  tabs: [
+                    Tab(text: "Photos (${_photos.length})"),
+                    Tab(text: "Videos (${_videos.length})"),
+                    Tab(text: "Docs (${_docs.length})"),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          body: _isLoading
+              ? Center(
+                  child: CircularProgressIndicator(
+                    color: activeTheme.accentFill,
+                    strokeWidth: 2.5,
+                  ),
+                )
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildPhotosGrid(activeTheme),
+                    _buildVideosGrid(activeTheme),
+                    _buildDocsList(activeTheme),
+                  ],
+                ),
+        );
+      },
     );
   }
 
-  Widget _buildPhotosGrid() {
+  Widget _buildPhotosGrid(AppTheme theme) {
     if (_photos.isEmpty) {
-      return const Center(
-        child: Text("No shared photos yet 🖼️", style: TextStyle(color: Colors.grey)),
+      return const EmptyState(
+        icon: Icons.photo_library_outlined,
+        title: "No Shared Photos",
+        description: "Photos shared in this conversation will be cataloged here.",
       );
     }
     return GridView.builder(
       padding: const EdgeInsets.all(12),
+      physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         crossAxisSpacing: 8,
@@ -130,46 +179,57 @@ class _MediaGalleryScreenState extends State<MediaGalleryScreen> with SingleTick
               ),
             );
           },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: AuthenticatedImage(
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.border, width: 1),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                AuthenticatedImage(
                   url: thumbUrl,
                   fallbackUrl: fullUrl,
                   token: widget.token,
                   media: item,
                 ),
-              ),
-              if (item.isEncrypted)
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      shape: BoxShape.circle,
+                if (item.isEncrypted)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.lock_rounded,
+                        color: theme.isDark ? theme.accentBright : theme.accentFill,
+                        size: 11,
+                      ),
                     ),
-                    child: const Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 10),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildVideosGrid() {
+  Widget _buildVideosGrid(AppTheme theme) {
     if (_videos.isEmpty) {
-      return const Center(
-        child: Text("No shared videos yet 🎥", style: TextStyle(color: Colors.grey)),
+      return const EmptyState(
+        icon: Icons.videocam_outlined,
+        title: "No Shared Videos",
+        description: "Videos shared in this conversation will be cataloged here.",
       );
     }
     return GridView.builder(
       padding: const EdgeInsets.all(12),
+      physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 10,
@@ -197,9 +257,9 @@ class _MediaGalleryScreenState extends State<MediaGalleryScreen> with SingleTick
           },
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.purpleAccent.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white24),
+              color: theme.surfaceRaised,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: theme.border, width: 1),
             ),
             child: Stack(
               alignment: Alignment.center,
@@ -210,18 +270,28 @@ class _MediaGalleryScreenState extends State<MediaGalleryScreen> with SingleTick
                     Container(
                       width: 44,
                       height: 44,
-                      decoration: const BoxDecoration(
-                        color: Colors.white30,
+                      decoration: BoxDecoration(
+                        color: theme.surface,
                         shape: BoxShape.circle,
+                        border: Border.all(color: theme.border, width: 1),
                       ),
-                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
+                      child: Icon(
+                        Icons.play_arrow_rounded,
+                        color: theme.isDark ? theme.accentBright : theme.accentFill,
+                        size: 26,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                       child: Text(
                         item.originalFilename,
-                        style: const TextStyle(color: Colors.white, fontSize: 11),
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          color: theme.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -233,12 +303,16 @@ class _MediaGalleryScreenState extends State<MediaGalleryScreen> with SingleTick
                     top: 6,
                     right: 6,
                     child: Container(
-                      padding: const EdgeInsets.all(3),
+                      padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.65),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 10),
+                      child: Icon(
+                        Icons.lock_rounded,
+                        color: theme.isDark ? theme.accentBright : theme.accentFill,
+                        size: 11,
+                      ),
                     ),
                   ),
               ],
@@ -249,14 +323,17 @@ class _MediaGalleryScreenState extends State<MediaGalleryScreen> with SingleTick
     );
   }
 
-  Widget _buildDocsList() {
+  Widget _buildDocsList(AppTheme theme) {
     if (_docs.isEmpty) {
-      return const Center(
-        child: Text("No shared documents yet 📄", style: TextStyle(color: Colors.grey)),
+      return const EmptyState(
+        icon: Icons.description_outlined,
+        title: "No Shared Documents",
+        description: "Documents and files exchanged will be displayed here.",
       );
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
+      physics: const BouncingScrollPhysics(),
       itemCount: _docs.length,
       itemBuilder: (context, index) {
         final item = _docs[index];

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
 
 class QRScannerDialog extends StatefulWidget {
@@ -53,6 +55,10 @@ class _QRScannerDialogState extends State<QRScannerDialog>
   bool _hasCameraPermission = false;
   bool _isPermanentlyDenied = false;
   String? _scannerError;
+
+  AppTheme get _theme => ThemeController.currentTheme.value;
+  Color get _accent => _theme.accentFill;
+  Color get _accentBright => _theme.accentBright;
 
   @override
   void initState() {
@@ -263,10 +269,10 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                     // Corner brackets
                     CustomPaint(
                       size: Size(scanWindowSize, scanWindowSize),
-                      painter: _ReticleCornerPainter(),
+                      painter: _ReticleCornerPainter(color: _accentBright),
                     ),
 
-                    // Animated Neon Laser Line
+                    // Animated Laser Line
                     AnimatedBuilder(
                       animation: _laserAnim,
                       builder: (context, child) {
@@ -278,18 +284,18 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                             height: 3,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(2),
-                              gradient: const LinearGradient(
+                              gradient: LinearGradient(
                                 colors: [
                                   Colors.transparent,
-                                  Color(0xFFFF2A6D),
-                                  Color(0xFF00E676),
-                                  Color(0xFFFF2A6D),
+                                  _accentBright,
+                                  _theme.success,
+                                  _accentBright,
                                   Colors.transparent,
                                 ],
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFFF2A6D).withValues(alpha: 0.8),
+                                  color: _accentBright.withValues(alpha: 0.6),
                                   blurRadius: 10,
                                   spreadRadius: 2,
                                 ),
@@ -331,7 +337,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFFFF2A6D), size: 18),
+                        Icon(Icons.qr_code_scanner_rounded, color: _accentBright, size: 18),
                         const SizedBox(width: 8),
                         Text(
                           widget.title,
@@ -366,7 +372,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                       if (_hasCameraPermission) ...[
                         const SizedBox(width: 8),
                         CircleAvatar(
-                          backgroundColor: _isTorchOn ? const Color(0xFFFF2A6D) : Colors.black54,
+                          backgroundColor: _isTorchOn ? _accent : Colors.black54,
                           child: IconButton(
                             icon: Icon(
                               _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
@@ -397,9 +403,9 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                   margin: const EdgeInsets.all(24),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161324).withValues(alpha: 0.92),
+                    color: _theme.surfaceRaised.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                    border: Border.all(color: _theme.border),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.5),
@@ -466,14 +472,14 @@ class _QRScannerDialogState extends State<QRScannerDialog>
               shape: BoxShape.circle,
               gradient: RadialGradient(
                 colors: [
-                  const Color(0xFFFF2A6D).withValues(alpha: 0.3),
+                  _accentBright.withValues(alpha: 0.3),
                   Colors.transparent,
                 ],
               ),
             ),
-            child: const Center(
+            child: Center(
               child: CircularProgressIndicator(
-                color: Color(0xFFFF2A6D),
+                color: _accentBright,
                 strokeWidth: 3,
               ),
             ),
@@ -499,9 +505,9 @@ class _QRScannerDialogState extends State<QRScannerDialog>
         child: Container(
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E1A2C).withValues(alpha: 0.95),
+            color: _theme.surfaceRaised.withValues(alpha: 0.95),
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: const Color(0xFFFF2A6D).withValues(alpha: 0.3)),
+            border: Border.all(color: _theme.border),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.6),
@@ -520,12 +526,12 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
                     colors: [
-                      const Color(0xFFFF2A6D).withValues(alpha: 0.25),
-                      const Color(0xFF9B51E0).withValues(alpha: 0.25),
+                      _accent.withValues(alpha: 0.25),
+                      _accentBright.withValues(alpha: 0.25),
                     ],
                   ),
                   border: Border.all(
-                    color: const Color(0xFFFF2A6D).withValues(alpha: 0.6),
+                    color: _accentBright.withValues(alpha: 0.6),
                     width: 2,
                   ),
                 ),
@@ -533,7 +539,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                   _isPermanentlyDenied
                       ? Icons.no_photography_rounded
                       : Icons.camera_alt_rounded,
-                  color: const Color(0xFFFF2A6D),
+                  color: _accentBright,
                   size: 40,
                 ),
               ),
@@ -566,8 +572,8 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                 Text(
                   _scannerError!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFFFF5252),
+                  style: TextStyle(
+                    color: _theme.danger,
                     fontSize: 12,
                   ),
                 ),
@@ -593,7 +599,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF2A6D),
+                    backgroundColor: _accent,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -640,9 +646,9 @@ class _QRScannerDialogState extends State<QRScannerDialog>
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E1A2C).withValues(alpha: 0.95),
+            color: _theme.surfaceRaised.withValues(alpha: 0.95),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white24),
+            border: Border.all(color: _theme.border),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -665,7 +671,7 @@ class _QRScannerDialogState extends State<QRScannerDialog>
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text("Retry Camera"),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF2A6D),
+                  backgroundColor: _accent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -689,6 +695,10 @@ class _QRScannerDialogState extends State<QRScannerDialog>
 }
 
 class _ReticleCornerPainter extends CustomPainter {
+  final Color color;
+
+  const _ReticleCornerPainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     const cornerLength = 26.0;
@@ -696,7 +706,7 @@ class _ReticleCornerPainter extends CustomPainter {
     const radius = 18.0;
 
     final paint = Paint()
-      ..color = const Color(0xFFFF2A6D)
+      ..color = color
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;

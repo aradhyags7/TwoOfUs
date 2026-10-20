@@ -8,6 +8,8 @@ import '../services/e2ee_service.dart';
 import '../utils/session.dart';
 import 'image_crop_editor.dart';
 import 'view_once_badge.dart';
+import '../theme/app_theme.dart';
+import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
 
 class MediaComposerModal extends StatefulWidget {
@@ -310,9 +312,8 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
 
   @override
   Widget build(BuildContext context) {
-    const bgDark = Color(0xFF0A0A0E);
-    const rose = Color(0xFFFF2D75);
-    const violet = Color(0xFF9B51E0);
+    final theme = ThemeController.currentTheme.value;
+    final accent = theme.isDark ? theme.accentBright : theme.accentFill;
 
     if (_files.isEmpty) return const SizedBox.shrink();
     final currentFile = _files[_currentIndex];
@@ -320,14 +321,14 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
     final isMuted = _videoMuted[_currentIndex] ?? false;
 
     return Scaffold(
-      backgroundColor: bgDark,
+      backgroundColor: theme.bg,
       body: SafeArea(
         child: Stack(
           children: [
             Column(
               children: [
                 // Top Studio Action Bar
-                _buildTopActionBar(rose, violet, isCurrentVideo, isMuted),
+                _buildTopActionBar(theme, isCurrentVideo, isMuted),
 
                 // Main Interactive Viewport
                 Expanded(
@@ -338,7 +339,7 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                     itemBuilder: (context, index) {
                       final file = _files[index];
                       if (_isVideo(file)) {
-                        return _buildVideoPreview(index);
+                        return _buildVideoPreview(index, theme);
                       } else {
                         return InteractiveViewer(
                           minScale: 0.8,
@@ -357,13 +358,13 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
 
                 // Video Trimmer Controls (if visible)
                 if (isCurrentVideo && _showVideoTrimmer)
-                  _buildVideoTrimmerBar(rose),
+                  _buildVideoTrimmerBar(theme),
 
                 // Bottom Thumbnail Carousel Strip
-                _buildThumbnailStrip(rose),
+                _buildThumbnailStrip(theme),
 
                 // Floating Caption Bar & View Once Toggle
-                _buildCaptionBar(rose, violet),
+                _buildCaptionBar(theme),
               ],
             ),
 
@@ -383,26 +384,31 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                             height: 64,
                             child: CircularProgressIndicator(
                               value: _uploadProgress > 0 ? _uploadProgress : null,
-                              color: rose,
+                              color: accent,
                               strokeWidth: 4,
                             ),
                           ),
-                          Icon(Icons.lock_rounded, color: rose, size: 24),
+                          Icon(Icons.lock_rounded, color: accent, size: 24),
                         ],
                       ),
                       const SizedBox(height: 20),
                       Text(
                         "Encrypting & Sending ${(_uploadProgress * 100).toInt()}%",
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          color: theme.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         "End-to-End Encrypted Transfer",
-                        style: TextStyle(color: Colors.white60, fontSize: 12),
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          color: theme.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -414,35 +420,41 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
     );
   }
 
-  Widget _buildTopActionBar(Color rose, Color violet, bool isCurrentVideo, bool isMuted) {
+  Widget _buildTopActionBar(AppTheme theme, bool isCurrentVideo, bool isMuted) {
+    final accent = theme.isDark ? theme.accentBright : theme.accentFill;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
-        border: const Border(bottom: BorderSide(color: Colors.white10)),
+        color: theme.surface.withValues(alpha: 0.8),
+        border: Border(bottom: BorderSide(color: theme.border)),
       ),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
+            icon: Icon(Icons.close_rounded, color: theme.textPrimary, size: 24),
             onPressed: _isUploading ? null : () => Navigator.pop(context),
           ),
           if (widget.partnerPubKey != null && widget.partnerPubKey!.isNotEmpty)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: rose.withValues(alpha: 0.18),
+                color: theme.accentFill.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: rose.withValues(alpha: 0.4)),
+                border: Border.all(color: theme.border),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.lock_rounded, color: Colors.pinkAccent, size: 12),
-                  SizedBox(width: 4),
+                  Icon(Icons.lock_rounded, color: accent, size: 12),
+                  const SizedBox(width: 4),
                   Text(
                     "E2EE",
-                    style: TextStyle(color: Colors.pinkAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -452,7 +464,7 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
             // Photo Crop & Rotate Tool
             IconButton(
               tooltip: "Crop & Rotate",
-              icon: const Icon(Icons.crop_rotate_rounded, color: Colors.white, size: 24),
+              icon: Icon(Icons.crop_rotate_rounded, color: theme.textPrimary, size: 22),
               onPressed: _isUploading ? null : _openCropEditor,
             ),
           ] else ...[
@@ -461,8 +473,8 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
               tooltip: isMuted ? "Unmute Audio" : "Mute Audio",
               icon: Icon(
                 isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                color: isMuted ? Colors.redAccent : Colors.white,
-                size: 24,
+                color: isMuted ? theme.danger : theme.textPrimary,
+                size: 22,
               ),
               onPressed: _isUploading ? null : _toggleVideoSound,
             ),
@@ -471,8 +483,8 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
               tooltip: "Trim Video",
               icon: Icon(
                 Icons.content_cut_rounded,
-                color: _showVideoTrimmer ? rose : Colors.white,
-                size: 22,
+                color: _showVideoTrimmer ? accent : theme.textPrimary,
+                size: 20,
               ),
               onPressed: _isUploading ? null : () => setState(() => _showVideoTrimmer = !_showVideoTrimmer),
             ),
@@ -480,7 +492,7 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
           // Delete Current Item
           IconButton(
             tooltip: "Remove Item",
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70, size: 24),
+            icon: Icon(Icons.delete_outline_rounded, color: theme.textSecondary, size: 22),
             onPressed: _isUploading ? null : _removeCurrentFile,
           ),
         ],
@@ -488,10 +500,10 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
     );
   }
 
-  Widget _buildVideoPreview(int index) {
+  Widget _buildVideoPreview(int index, AppTheme theme) {
     final controller = _videoControllers[index];
     if (controller == null || !controller.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
+      return Center(child: CircularProgressIndicator(color: theme.accentFill, strokeWidth: 2));
     }
 
     return Center(
@@ -513,11 +525,11 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                 child: Container(
                   width: 64,
                   height: 64,
-                  decoration: const BoxDecoration(
-                    color: Colors.black54,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 44),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
                 ),
               ),
             ),
@@ -527,24 +539,25 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
     );
   }
 
-  Widget _buildVideoTrimmerBar(Color rose) {
+  Widget _buildVideoTrimmerBar(AppTheme theme) {
+    final accent = theme.isDark ? theme.accentBright : theme.accentFill;
     final controller = _videoControllers[_currentIndex];
     final totalDuration = controller?.value.duration.inSeconds.toDouble() ?? 30.0;
     final currentRange = _videoTrim[_currentIndex] ?? RangeValues(0.0, totalDuration);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.black87,
+      color: theme.surface,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Trim Duration", style: TextStyle(color: Colors.white70, fontSize: 12)),
+              Text("Trim Duration", style: TextStyle(fontFamily: 'Inter', color: theme.textSecondary, fontSize: 12)),
               Text(
                 "${currentRange.start.toInt()}s - ${currentRange.end.toInt()}s (${(currentRange.end - currentRange.start).toInt()}s)",
-                style: TextStyle(color: rose, fontWeight: FontWeight.bold, fontSize: 12),
+                style: TextStyle(fontFamily: 'Inter', color: accent, fontWeight: FontWeight.bold, fontSize: 12),
               ),
             ],
           ),
@@ -552,8 +565,8 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
             values: currentRange,
             min: 0.0,
             max: totalDuration > 0 ? totalDuration : 1.0,
-            activeColor: rose,
-            inactiveColor: Colors.white24,
+            activeColor: accent,
+            inactiveColor: theme.border,
             onChanged: (newRange) {
               setState(() {
                 _videoTrim[_currentIndex] = newRange;
@@ -566,11 +579,12 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
     );
   }
 
-  Widget _buildThumbnailStrip(Color rose) {
+  Widget _buildThumbnailStrip(AppTheme theme) {
+    final accent = theme.isDark ? theme.accentBright : theme.accentFill;
     return Container(
       height: 72,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      color: Colors.black.withValues(alpha: 0.4),
+      color: theme.surface.withValues(alpha: 0.6),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -585,11 +599,11 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                 height: 56,
                 margin: const EdgeInsets.only(left: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white10,
+                  color: theme.surfaceRaised,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white24, style: BorderStyle.solid),
+                  border: Border.all(color: theme.border),
                 ),
-                child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+                child: Icon(Icons.add_rounded, color: theme.textSecondary, size: 26),
               ),
             );
           }
@@ -614,8 +628,8 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSelected ? rose : Colors.transparent,
-                  width: isSelected ? 2.5 : 1.0,
+                  color: isSelected ? accent : theme.border,
+                  width: isSelected ? 2.0 : 1.0,
                 ),
               ),
               child: ClipRRect(
@@ -627,8 +641,8 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                       Image.file(file, fit: BoxFit.cover)
                     else
                       Container(
-                        color: Colors.purple.withValues(alpha: 0.3),
-                        child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 24),
+                        color: theme.surfaceRaised,
+                        child: Icon(Icons.videocam_rounded, color: theme.textSecondary, size: 24),
                       ),
                     if (isVideo)
                       const Positioned(
@@ -646,12 +660,12 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
     );
   }
 
-  Widget _buildCaptionBar(Color rose, Color violet) {
+  Widget _buildCaptionBar(AppTheme theme) {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).viewInsets.bottom + 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF14141E),
-        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+        color: theme.surface,
+        border: Border(top: BorderSide(color: theme.border)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -660,12 +674,12 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
           if (_hasError) ...[
             Row(
               children: [
-                const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 16),
+                Icon(Icons.error_outline_rounded, color: theme.danger, size: 16),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     _errorMessage.isNotEmpty ? _errorMessage : "Upload failed. Please retry.",
-                    style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                    style: TextStyle(fontFamily: 'Inter', color: theme.danger, fontSize: 12),
                   ),
                 ),
                 TextButton(
@@ -675,7 +689,7 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text("Retry", style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  child: Text("Retry", style: TextStyle(fontFamily: 'Inter', color: theme.danger, fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -697,16 +711,17 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: theme.surfaceRaised,
                     borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: theme.border),
                   ),
                   child: TextField(
                     controller: _captionController,
                     enabled: !_isUploading,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    style: TextStyle(fontFamily: 'Inter', color: theme.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: _isViewOnce ? "View once message..." : "Add a caption...",
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                      hintStyle: TextStyle(fontFamily: 'Inter', color: theme.textTertiary, fontSize: 14),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     ),
@@ -715,7 +730,7 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
               ),
               const SizedBox(width: 10),
 
-              // Gradient Send Button FAB
+              // Solid Theme Send Button
               GestureDetector(
                 onTap: _isUploading ? null : _startUpload,
                 child: Container(
@@ -723,17 +738,10 @@ class _MediaComposerModalState extends State<MediaComposerModal> {
                   height: 46,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: [rose, violet]),
-                    boxShadow: [
-                      BoxShadow(
-                        color: rose.withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+                    color: theme.accentFill,
                   ),
-                  child: const Center(
-                    child: Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                  child: Center(
+                    child: Icon(Icons.send_rounded, color: theme.onAccent, size: 20),
                   ),
                 ),
               ),

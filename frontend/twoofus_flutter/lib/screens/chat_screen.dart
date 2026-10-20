@@ -23,10 +23,8 @@ import 'partner_profile_screen.dart';
 import 'security_screen.dart';
 import 'theme_selection_screen.dart';
 import 'package:file_picker/file_picker.dart';
-import '../models/media.dart';
 import '../models/diary_memory.dart';
 import '../widgets/chat_media_bubble.dart';
-import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/media_composer_modal.dart';
 import '../widgets/timeline_drawer.dart';
 import '../widgets/encryption_verification_modal.dart';
@@ -114,22 +112,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
 
   // ── Animation ─────────────────────────────────────────────────────────────
   late AnimationController _pulseCtrl;
-  late Animation<double>   _pulseAnim;
 
   // ── Palette ───────────────────────────────────────────────────────────────
   AppTheme get _theme   => ThemeController.currentTheme.value;
   Color get _rose       => _theme.primary;
   Color get _violet     => _theme.secondary;
-  Color get _lavender   => _theme.gradientEnd;
-  Color get _darkBg     => _theme.bg;
-  Color get _darkSurf   => _theme.surface;
 
   Color get _bg         => _theme.bg;
   Color get _surf       => _theme.surface;
   Color get _text       => _theme.textPrimary;
   Color get _sub        => _theme.textMuted;
   Color get _border     => _theme.border;
-  Color get _msgBg      => _theme.bubblePartner;
 
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -139,8 +132,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     WidgetsBinding.instance.addObserver(this);
     _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
       ..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.5, end: 1.0)
-        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
     _msgCtrl.addListener(_onTypingChanged);
     _initialize();
     _startPresencePolling();
@@ -225,25 +216,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         }
       }
     } catch (_) {}
-  }
-
-  Widget _buildAvatarFallback() {
-    final initial = widget.partnerName.trim().isNotEmpty
-        ? widget.partnerName.trim()[0].toUpperCase()
-        : '';
-    if (initial.isNotEmpty) {
-      return Center(
-        child: Text(
-          initial,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-      );
-    }
-    return const Icon(Icons.person_rounded, color: Colors.white, size: 18);
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -564,21 +536,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   }
 
   // ── Attachment Helpers ───────────────────────────────────────────────────
-  Future<void> _pickImage(ImageSource source) async {
-    try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(source: source, imageQuality: 85);
-      if (picked != null) {
-        setState(() {
-          _selectedImage = picked;
-          _selectedFileName = picked.name;
-        });
-      }
-    } catch (e) {
-      _toast("Failed to pick media", isError: true);
-    }
-  }
-
   void _removeSelectedMedia() {
     setState(() {
       _selectedImage = null;

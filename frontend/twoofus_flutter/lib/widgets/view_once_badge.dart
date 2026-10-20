@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../theme/theme_controller.dart';
 
 class ViewOnceBadge extends StatefulWidget {
   final bool isActive;
@@ -39,8 +40,9 @@ class _ViewOnceBadgeState extends State<ViewOnceBadge> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    const rose = Color(0xFFFF2D75);
-    const violet = Color(0xFF9B51E0);
+    final theme = ThemeController.currentTheme.value;
+    final rose = theme.accentFill;
+    final violet = theme.accentBright;
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -84,7 +86,7 @@ class _ViewOnceBadgeState extends State<ViewOnceBadge> with SingleTickerProvider
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: isPulsing
-                        ? const LinearGradient(
+                        ? LinearGradient(
                             colors: [rose, violet],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,

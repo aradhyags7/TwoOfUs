@@ -131,11 +131,11 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: isConsumed
-                ? theme.surfaceRaised.withOpacity(0.5)
+                ? theme.surfaceRaised.withValues(alpha: 0.5)
                 : theme.surfaceRaised,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isConsumed ? theme.border : theme.focusRing.withOpacity(0.6),
+              color: isConsumed ? theme.border : theme.focusRing.withValues(alpha: 0.6),
               width: 1,
             ),
           ),
@@ -240,7 +240,7 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: theme.surface.withOpacity(0.85),
+                      color: theme.surface.withValues(alpha: 0.85),
                       shape: BoxShape.circle,
                       border: Border.all(color: theme.borderSubtle, width: 1),
                     ),
@@ -288,7 +288,7 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: theme.surface.withOpacity(0.9),
+                      color: theme.surface.withValues(alpha: 0.9),
                       shape: BoxShape.circle,
                       border: Border.all(color: theme.border, width: 1),
                     ),
@@ -327,7 +327,7 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: theme.surface.withOpacity(0.85),
+                      color: theme.surface.withValues(alpha: 0.85),
                       shape: BoxShape.circle,
                       border: Border.all(color: theme.borderSubtle, width: 1),
                     ),

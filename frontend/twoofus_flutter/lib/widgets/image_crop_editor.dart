@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
 
 enum EditorTab {
@@ -372,7 +373,7 @@ class _ImageCropEditorState extends State<ImageCropEditor> with SingleTickerProv
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFF2D75),
+              backgroundColor: ThemeController.currentTheme.value.accentFill,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
             onPressed: () {
@@ -541,15 +542,16 @@ class _ImageCropEditorState extends State<ImageCropEditor> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    const bgDark = Color(0xFF08080C);
-    const rose = Color(0xFFFF2D75);
-    const violet = Color(0xFF9B51E0);
+    final theme = ThemeController.currentTheme.value;
+    final bgDark = theme.bg;
+    final rose = theme.accentFill;
+    final violet = theme.accentBright;
 
     return Scaffold(
       backgroundColor: bgDark,
       body: SafeArea(
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: rose))
+            ? Center(child: CircularProgressIndicator(color: rose))
             : Stack(
                 children: [
                   Column(
@@ -606,13 +608,13 @@ class _ImageCropEditorState extends State<ImageCropEditor> with SingleTickerProv
                   if (_isProcessing)
                     Container(
                       color: Colors.black.withValues(alpha: 0.75),
-                      child: const Center(
+                      child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             CircularProgressIndicator(color: rose),
-                            SizedBox(height: 16),
-                            Text(
+                            const SizedBox(height: 16),
+                            const Text(
                               "Baking Pro Edits...",
                               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                             ),

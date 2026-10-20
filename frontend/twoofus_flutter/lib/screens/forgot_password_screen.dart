@@ -2,8 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/design_system/design_system.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TwoOfUs — Forgot Password & Password Recovery Screen
+// ─────────────────────────────────────────────────────────────────────────────
 
 class ForgotPasswordScreen extends StatefulWidget {
   final String? initialEmailOrUsername;
@@ -14,8 +20,7 @@ class ForgotPasswordScreen extends StatefulWidget {
   State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
-    with SingleTickerProviderStateMixin {
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailCtrl = TextEditingController();
   final _codeCtrl = TextEditingController();
   final _newPassCtrl = TextEditingController();
@@ -28,24 +33,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
 
   int _currentStep = 1; // 1: Request code, 2: Enter code & new pass, 3: Success
   bool _isLoading = false;
-  bool _obscureNewPass = true;
-  bool _obscureConfirmPass = true;
   String? _targetEmail;
+  String? _errorMessage;
 
   // 60-second cooldown timer for resending email code
   int _resendCooldown = 0;
   Timer? _resendTimer;
-
-  // ── Theme Accessors ───────────────────────────────────────────────────────
-  Color get _bg => ThemeController.currentTheme.value.bg;
-  Color get _surface => ThemeController.currentTheme.value.surface;
-  Color get _rose => ThemeController.currentTheme.value.primary;
-  Color get _violet => ThemeController.currentTheme.value.secondary;
-  Color get _lavender => ThemeController.currentTheme.value.gradientEnd;
-  bool get _isDark => ThemeController.currentTheme.value.bg.computeLuminance() < 0.5;
-
-  Color get _text => ThemeController.currentTheme.value.textPrimary;
-  Color get _sub => ThemeController.currentTheme.value.textMuted;
 
   @override
   void initState() {
@@ -83,64 +76,72 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     });
   }
 
-  void _toast(String msg, {bool isError = false}) {
-    if (!mounted) return;
-    if (isError) {
-      AppFeedback.showError(context, msg);
-    } else {
-      AppFeedback.showSuccess(context, msg);
-    }
-  }
-
   Future<void> _requestCode() async {
+    HapticFeedback.lightImpact();
     if (_resendCooldown > 0 && _currentStep == 2) return;
     final query = _emailCtrl.text.trim();
     if (query.isEmpty) {
-      _toast("Please enter your email or username", isError: true);
+      setState(() => _errorMessage = "Please enter your email or username");
+      AppFeedback.showError(context, "Please enter your email or username");
       return;
     }
 
-    HapticFeedback.lightImpact();
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     final res = await ApiService.requestPasswordReset(query);
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (res != null && !res.containsKey("error")) {
+    if (res != null && res["success"] == true) {
       setState(() {
-        _targetEmail = res["email"]?.toString() ?? query;
+        _targetEmail = res["masked_email"] ?? query;
         _currentStep = 2;
       });
       _startResendTimer();
-      _toast("Password reset email sent to ${_targetEmail ?? 'your email'}! 📬");
+      AppFeedback.showSuccess(
+        context,
+        "A 6-digit reset code has been sent to ${_targetEmail ?? 'your email'}",
+        title: "Code Dispatched",
+      );
     } else {
-      final err = res?["error"]?.toString() ?? "Could not find an account with those details";
-      _toast(err, isError: true);
+      final err = res?["error"] ?? "Failed to send reset code. Please check your credentials.";
+      setState(() => _errorMessage = err);
+      AppFeedback.showError(context, err);
     }
   }
 
-  Future<void> _submitReset() async {
+  Future<void> _verifyAndReset() async {
+    HapticFeedback.lightImpact();
     final query = _emailCtrl.text.trim();
     final code = _codeCtrl.text.trim();
     final newPass = _newPassCtrl.text.trim();
     final confirmPass = _confirmPassCtrl.text.trim();
 
-    if (code.isEmpty || code.length < 6) {
-      _toast("Please enter the 6-digit reset code", isError: true);
-      return;
-    }
-    if (newPass.length < 6) {
-      _toast("Password must be at least 6 characters long", isError: true);
-      return;
-    }
-    if (newPass != confirmPass) {
-      _toast("Passwords do not match", isError: true);
+    if (code.isEmpty || code.length != 6) {
+      setState(() => _errorMessage = "Please enter the 6-digit verification code");
+      AppFeedback.showError(context, "Please enter the 6-digit verification code");
       return;
     }
 
-    HapticFeedback.lightImpact();
-    setState(() => _isLoading = true);
+    if (newPass.length < 6) {
+      setState(() => _errorMessage = "Password must be at least 6 characters long");
+      AppFeedback.showError(context, "Password must be at least 6 characters long");
+      return;
+    }
+
+    if (newPass != confirmPass) {
+      setState(() => _errorMessage = "Passwords do not match");
+      AppFeedback.showError(context, "Passwords do not match");
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     final res = await ApiService.resetPassword(
       emailOrUsername: query,
@@ -151,382 +152,347 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (res != null && !res.containsKey("error")) {
+    if (res != null && res["success"] == true) {
+      _resendTimer?.cancel();
       setState(() => _currentStep = 3);
-      HapticFeedback.heavyImpact();
+      AppFeedback.showSuccess(
+        context,
+        "Your password has been reset successfully.",
+        title: "Success",
+      );
     } else {
-      final err = res?["error"]?.toString() ?? "Failed to reset password. Check your code.";
-      _toast(err, isError: true);
+      final err = res?["error"] ?? "Invalid or expired code. Please try again.";
+      setState(() => _errorMessage = err);
+      AppFeedback.showError(context, err);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: _text, size: 20),
-          onPressed: () {
-            if (_currentStep == 2) {
-              setState(() => _currentStep = 1);
-            } else {
-              Navigator.pop(context);
-            }
-          },
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            child: _buildCurrentStepView(),
+    return ValueListenableBuilder<AppTheme>(
+      valueListenable: ThemeController.currentTheme,
+      builder: (context, activeTheme, _) {
+        return Scaffold(
+          backgroundColor: activeTheme.bg,
+          appBar: AppBar(
+            backgroundColor: activeTheme.bg,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: activeTheme.textPrimary),
+              onPressed: () {
+                if (_currentStep == 2) {
+                  setState(() => _currentStep = 1);
+                } else {
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            title: Text(
+              "Account Recovery",
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: activeTheme.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                letterSpacing: -0.3,
+              ),
+            ),
           ),
-        ),
-      ),
+          body: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: _buildCurrentStep(activeTheme),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildCurrentStepView() {
+  Widget _buildCurrentStep(AppTheme theme) {
     switch (_currentStep) {
       case 1:
-        return _buildStep1Request();
+        return _buildStep1Request(theme);
       case 2:
-        return _buildStep2VerifyAndReset();
+        return _buildStep2VerifyAndReset(theme);
       case 3:
-        return _buildStep3Success();
       default:
-        return const SizedBox.shrink();
+        return _buildStep3Success(theme);
     }
   }
 
-  // ── Step 1: Request Code ─────────────────────────────────────────────────
-  Widget _buildStep1Request() {
+  Widget _buildStep1Request(AppTheme theme) {
     return Column(
       key: const ValueKey("step1"),
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Center(
           child: Container(
-            width: 80,
-            height: 80,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_rose, _violet]),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: _rose.withValues(alpha: 0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              color: theme.surfaceRaised,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.border, width: 1),
             ),
-            child: const Icon(Icons.lock_reset_rounded, color: Colors.white, size: 40),
-          ),
-        ),
-        const SizedBox(height: 28),
-        Text(
-          "Forgot Password? 🔐",
-          style: TextStyle(
-            color: _text,
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          "Don't worry! Enter your registered email address or username to receive a 6-digit security reset code directly to your email.",
-          style: TextStyle(color: _sub, fontSize: 14, height: 1.45),
-        ),
-        const SizedBox(height: 32),
-
-        _buildField(
-          controller: _emailCtrl,
-          focusNode: _emailFocus,
-          hint: "Email address or username",
-          icon: Icons.alternate_email_rounded,
-          keyboardType: TextInputType.emailAddress,
-        ),
-
-        const SizedBox(height: 28),
-
-        _buildGradientButton(
-          label: "Send Reset Code to Email",
-          icon: Icons.send_rounded,
-          onTap: _isLoading ? null : _requestCode,
-        ),
-      ],
-    );
-  }
-
-  // ── Step 2: Enter Code & New Password ────────────────────────────────────
-  Widget _buildStep2VerifyAndReset() {
-    return Column(
-      key: const ValueKey("step2"),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Center(
-          child: Container(
-            width: 70,
-            height: 70,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_violet, _rose]),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: _violet.withValues(alpha: 0.3),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.lock_reset_rounded,
+              size: 26,
+              color: theme.isDark ? theme.accentBright : theme.accentFill,
             ),
-            child: const Icon(Icons.mark_email_read_rounded, color: Colors.white, size: 34),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 18),
         Text(
-          "Check Your Email 📬",
+          "Reset Your Password",
+          textAlign: TextAlign.center,
           style: TextStyle(
-            color: _text,
+            fontFamily: 'Inter',
             fontSize: 24,
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.5,
+            fontWeight: FontWeight.w700,
+            color: theme.textPrimary,
+            letterSpacing: -0.4,
           ),
         ),
         const SizedBox(height: 6),
         Text(
-          "We have sent a 6-digit verification code to ${_targetEmail ?? 'your registered email'}.\nPlease check your inbox (and spam/junk folder), then enter the code below to reset your password:",
-          style: TextStyle(color: _sub, fontSize: 13, height: 1.45),
-        ),
-
-        const SizedBox(height: 24),
-
-        // 6-digit code input
-        _buildField(
-          controller: _codeCtrl,
-          focusNode: _codeFocus,
-          hint: "6-Digit Reset Code (e.g. 123456)",
-          icon: Icons.pin_outlined,
-          keyboardType: TextInputType.number,
-        ),
-
-        const SizedBox(height: 16),
-
-        // New password
-        _buildField(
-          controller: _newPassCtrl,
-          focusNode: _newPassFocus,
-          hint: "New Password (min 6 characters)",
-          icon: Icons.lock_outline_rounded,
-          obscure: _obscureNewPass,
-          suffix: IconButton(
-            icon: Icon(
-              _obscureNewPass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              color: _sub,
-              size: 20,
-            ),
-            onPressed: () => setState(() => _obscureNewPass = !_obscureNewPass),
+          "Enter your registered email address or username. We'll send you a 6-digit verification code.",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            color: theme.textTertiary,
+            fontSize: 14,
+            height: 1.4,
           ),
         ),
-
-        const SizedBox(height: 16),
-
-        // Confirm new password
-        _buildField(
-          controller: _confirmPassCtrl,
-          focusNode: _confirmPassFocus,
-          hint: "Confirm New Password",
-          icon: Icons.lock_reset_rounded,
-          obscure: _obscureConfirmPass,
-          suffix: IconButton(
-            icon: Icon(
-              _obscureConfirmPass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              color: _sub,
-              size: 20,
-            ),
-            onPressed: () => setState(() => _obscureConfirmPass = !_obscureConfirmPass),
-          ),
-        ),
-
         const SizedBox(height: 28),
 
-        _buildGradientButton(
-          label: "Update & Set Password",
-          icon: Icons.check_circle_outline_rounded,
-          onTap: _isLoading ? null : _submitReset,
-        ),
+        if (_errorMessage != null) ...[
+          _buildErrorBanner(theme, _errorMessage!),
+          const SizedBox(height: 16),
+        ],
 
-        const SizedBox(height: 12),
+        AppTextField(
+          controller: _emailCtrl,
+          focusNode: _emailFocus,
+          label: "Email or Username",
+          hintText: "Enter your account email or username",
+          prefixIcon: const Icon(Icons.alternate_email_rounded, size: 18),
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _requestCode(),
+        ),
+        const SizedBox(height: 24),
+
+        AppButton(
+          text: "Send Verification Code",
+          isLoading: _isLoading,
+          onPressed: _requestCode,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep2VerifyAndReset(AppTheme theme) {
+    return Column(
+      key: const ValueKey("step2"),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: theme.surfaceRaised,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.border, width: 1),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.mark_email_read_rounded,
+              size: 26,
+              color: theme.isDark ? theme.accentBright : theme.accentFill,
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          "Check Your Email",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: theme.textPrimary,
+            letterSpacing: -0.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          "We sent a 6-digit code to ${_targetEmail ?? 'your email'}.\nEnter it below along with your new password.",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            color: theme.textTertiary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        if (_errorMessage != null) ...[
+          _buildErrorBanner(theme, _errorMessage!),
+          const SizedBox(height: 16),
+        ],
+
+        AppTextField(
+          controller: _codeCtrl,
+          focusNode: _codeFocus,
+          label: "6-Digit Verification Code",
+          hintText: "e.g. 123456",
+          prefixIcon: const Icon(Icons.pin_outlined, size: 18),
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 16),
+
+        AppTextField(
+          controller: _newPassCtrl,
+          focusNode: _newPassFocus,
+          label: "New Password",
+          hintText: "Minimum 6 characters",
+          isPassword: true,
+          prefixIcon: const Icon(Icons.shield_outlined, size: 18),
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 16),
+
+        AppTextField(
+          controller: _confirmPassCtrl,
+          focusNode: _confirmPassFocus,
+          label: "Confirm New Password",
+          hintText: "Re-enter new password",
+          isPassword: true,
+          prefixIcon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _verifyAndReset(),
+        ),
+        const SizedBox(height: 20),
+
         Center(
           child: TextButton.icon(
-            onPressed: (_isLoading || _resendCooldown > 0) ? null : _requestCode,
-            icon: Icon(Icons.refresh_rounded, color: _resendCooldown > 0 ? _sub.withValues(alpha: 0.4) : _sub, size: 16),
+            onPressed: (_resendCooldown > 0 || _isLoading) ? null : _requestCode,
+            icon: Icon(
+              Icons.replay_rounded,
+              size: 16,
+              color: _resendCooldown > 0 ? theme.textTertiary : (theme.isDark ? theme.accentBright : theme.accentFill),
+            ),
             label: Text(
-              _resendCooldown > 0
-                  ? "Resend Email Code in ${_resendCooldown}s"
-                  : "Resend Code to Email",
+              _resendCooldown > 0 ? "Resend code in ${_resendCooldown}s" : "Resend code",
               style: TextStyle(
-                color: _resendCooldown > 0 ? _sub.withValues(alpha: 0.4) : _sub,
+                fontFamily: 'Inter',
                 fontSize: 13,
-                fontWeight: FontWeight.bold,
+                color: _resendCooldown > 0 ? theme.textTertiary : (theme.isDark ? theme.accentBright : theme.accentFill),
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ),
+        const SizedBox(height: 12),
+
+        AppButton(
+          text: "Set New Password",
+          isLoading: _isLoading,
+          onPressed: _verifyAndReset,
+        ),
       ],
     );
   }
 
-  // ── Step 3: Success Screen ───────────────────────────────────────────────
-  Widget _buildStep3Success() {
+  Widget _buildStep3Success(AppTheme theme) {
     return Column(
       key: const ValueKey("step3"),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 40),
         Center(
           child: Container(
-            width: 100,
-            height: 100,
+            width: 64,
+            height: 64,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF00E676), Color(0xFF00B0FF)]),
+              color: theme.success.withValues(alpha: 0.15),
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF00E676).withValues(alpha: 0.35),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              border: Border.all(color: theme.success.withValues(alpha: 0.4), width: 1.5),
             ),
-            child: const Icon(Icons.check_rounded, color: Colors.white, size: 54),
+            alignment: Alignment.center,
+            child: Icon(Icons.check_rounded, color: theme.success, size: 32),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          "Password Reset Complete!",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: theme.textPrimary,
+            letterSpacing: -0.4,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          "Your password has been successfully updated. You can now sign in using your new credentials.",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            color: theme.textTertiary,
+            fontSize: 14,
+            height: 1.4,
           ),
         ),
         const SizedBox(height: 32),
-        Text(
-          "Password Changed! 🎉",
-          style: TextStyle(
-            color: _text,
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          "Your password has been successfully updated with end-to-end encryption security. You can now log into your TwoOfUs space.",
-          style: TextStyle(color: _sub, fontSize: 14, height: 1.45),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 40),
-        _buildGradientButton(
-          label: "Back to Login",
-          icon: Icons.login_rounded,
-          onTap: () => Navigator.pop(context),
+
+        AppButton(
+          text: "Sign In Now",
+          onPressed: () => Navigator.pop(context),
         ),
       ],
     );
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  Widget _buildField({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String hint,
-    required IconData icon,
-    bool obscure = false,
-    Widget? suffix,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
+  Widget _buildErrorBanner(AppTheme theme, String message) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+        color: theme.danger.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.danger.withValues(alpha: 0.4), width: 1),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline_rounded, color: theme.danger, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: theme.danger,
+                fontSize: 13,
+              ),
+            ),
           ),
         ],
-      ),
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        obscureText: obscure,
-        keyboardType: keyboardType,
-        style: TextStyle(color: _text, fontSize: 15),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: _sub.withValues(alpha: 0.6), fontSize: 14),
-          prefixIcon: Icon(icon, color: _rose, size: 20),
-          suffixIcon: suffix,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback? onTap,
-  }) {
-    return Container(
-      width: double.infinity,
-      height: 52,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: onTap == null ? [Colors.grey.shade700, Colors.grey.shade800] : [_rose, _violet],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: onTap == null
-            ? []
-            : [
-                BoxShadow(
-                  color: _rose.withValues(alpha: 0.35),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Center(
-            child: _isLoading
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(icon, color: Colors.white, size: 20),
-                      const SizedBox(width: 10),
-                      Text(
-                        label,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
       ),
     );
   }
