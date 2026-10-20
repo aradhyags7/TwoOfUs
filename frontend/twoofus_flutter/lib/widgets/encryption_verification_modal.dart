@@ -309,28 +309,25 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                           borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.numbers_rounded,
-                                size: 16,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.numbers_rounded,
+                              size: 16,
+                              color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              "60-Digit Code",
+                              style: TextStyle(
+                                fontFamily: 'Inter',
                                 color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                "60-Digit Code",
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -347,28 +344,25 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                           borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.qr_code_2_rounded,
-                                size: 16,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.qr_code_2_rounded,
+                              size: 16,
+                              color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              "QR Scan Code",
+                              style: TextStyle(
+                                fontFamily: 'Inter',
                                 color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                "QR Scan Code",
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

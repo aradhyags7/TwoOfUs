@@ -45,6 +45,11 @@ def _get_firebase_app() -> bool:
         _firebase_initialized = True
         print("[FCM] Initialized Firebase Admin SDK from FIREBASE_CREDENTIALS_JSON", flush=True)
         return True
+    except ImportError:
+        if not _missing_credentials_logged:
+            print("[FCM] firebase-admin package is not installed; push notifications disabled", flush=True)
+            _missing_credentials_logged = True
+        return False
     except Exception as e:
         print(f"[FCM] Failed to initialize Firebase Admin SDK: {e}", flush=True)
         return False

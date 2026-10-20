@@ -1,0 +1,30 @@
+{
+  "_comment": "Template/Example for Firebase Cloud Messaging setup. The 'package_name' in client_info.android_client_info MUST match the applicationId in android/app/build.gradle.kts (default: com.example.twoofus_flutter). Download your real configuration file from the Firebase Console (Project Settings > Your apps > Android app > google-services.json) and copy it to android/app/google-services.json.",
+  "project_info": {
+    "project_number": "123456789012",
+    "project_id": "twoofus-app-example",
+    "storage_bucket": "twoofus-app-example.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789012:android:abcdef0123456789",
+        "android_client_info": {
+          "package_name": "com.example.twoofus_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyExampleFakeApiKeyForTemplateOnly123"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

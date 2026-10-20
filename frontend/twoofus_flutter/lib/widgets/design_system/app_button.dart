@@ -125,31 +125,28 @@ class _AppButtonState extends State<AppButton> {
         ),
       );
     } else {
-      content = FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (widget.icon != null) ...[
-              IconTheme(
-                data: IconThemeData(color: fg, size: _fontSize + 3),
-                child: widget.icon!,
-              ),
-              const SizedBox(width: 8),
-            ],
-            Text(
-              widget.text,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: _fontSize,
-                fontWeight: FontWeight.w600,
-                color: fg,
-                letterSpacing: -0.1,
-              ),
+      content = Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (widget.icon != null) ...[
+            IconTheme(
+              data: IconThemeData(color: fg, size: _fontSize + 3),
+              child: widget.icon!,
             ),
+            const SizedBox(width: 8),
           ],
-        ),
+          Text(
+            widget.text,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: _fontSize,
+              fontWeight: FontWeight.w600,
+              color: fg,
+              letterSpacing: -0.1,
+            ),
+          ),
+        ],
       );
     }
 
