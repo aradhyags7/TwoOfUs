@@ -14,31 +14,43 @@ import 'utils/session.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Tracks whether Firebase initialization succeeded
+bool firebaseInitSucceeded = false;
+/// Ensures retry on resume happens at most once
+bool hasRetriedFirebaseInit = false;
+
 /// Safely initializes Firebase and FCM client services with try/catch guards
 /// so that the app boots normally even if Firebase is unconfigured or throws.
-Future<void> initFirebaseAndFcm({
+Future<bool> initFirebaseAndFcm({
   Future<void> Function()? firebaseInit,
   Future<void> Function()? fcmInit,
 }) async {
+  bool coreOk = false;
   try {
     if (firebaseInit != null) {
       await firebaseInit();
     } else {
-      await Firebase.initializeApp().timeout(const Duration(milliseconds: 500));
+      await Firebase.initializeApp().timeout(const Duration(seconds: 10));
     }
+    coreOk = true;
   } catch (e) {
     if (kDebugMode) debugPrint("[Init] Firebase.initializeApp failed or unconfigured: $e");
   }
 
-  try {
-    if (fcmInit != null) {
-      await fcmInit();
-    } else {
-      await FcmClientService.initialize();
+  if (coreOk) {
+    try {
+      if (fcmInit != null) {
+        await fcmInit();
+      } else {
+        await FcmClientService.initialize();
+      }
+      firebaseInitSucceeded = true;
+      return true;
+    } catch (e) {
+      if (kDebugMode) debugPrint("[Init] FCM setup failed: $e");
     }
-  } catch (e) {
-    if (kDebugMode) debugPrint("[Init] FCM setup failed: $e");
   }
+  return false;
 }
 
 void main() async {
@@ -102,14 +114,21 @@ class _TwoOfUsAppState extends State<TwoOfUsApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused) {
       final activeCall = CallService.activeCallNotifier.value;
       if (activeCall != null && activeCall.status == 'ongoing') {
+        final isVideo = (activeCall.callType == 'video') && CallService.isVideoEnabledNotifier.value;
         Session.getCachedPartnerName().then((partner) {
           CallNotificationService.instance.showActiveCallNotification(
             partnerName: partner ?? "Partner",
             durationSeconds: CallService.callDurationNotifier.value,
+            isVideoActive: isVideo,
           );
         });
       }
     } else if (state == AppLifecycleState.resumed) {
+      // Retry once on the next app resume if Firebase init failed on startup
+      if (!firebaseInitSucceeded && !hasRetriedFirebaseInit) {
+        hasRetriedFirebaseInit = true;
+        initFirebaseAndFcm();
+      }
       CallNotificationService.instance.cancelActive();
       ThemeController.updateSystemUiOverlay();
     }

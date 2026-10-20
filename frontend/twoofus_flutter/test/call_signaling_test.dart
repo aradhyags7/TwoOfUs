@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:twoofus_flutter/models/call_session.dart';
+import 'package:twoofus_flutter/services/call_notification_service.dart';
 import 'package:twoofus_flutter/services/call_service.dart';
 
 void main() {
@@ -155,6 +157,31 @@ void main() {
       expect(callId, 456);
       expect(callerName, 'Bob');
       expect(callType, 'video');
+    });
+
+    test('Cross-isolate persistent deduplication via SharedPreferences', () async {
+      SharedPreferences.setMockInitialValues({});
+      const testCallId = 8842;
+
+      // Initial check should be false
+      expect(await CallNotificationService.isCallPersistentlyHandled(testCallId), isFalse);
+
+      // Mark as handled
+      await CallNotificationService.markCallPersistentlyHandled(testCallId);
+
+      // Subsequent checks should be true
+      expect(await CallNotificationService.isCallPersistentlyHandled(testCallId), isTrue);
+
+      // Verify persistent storage contains the call id
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('fcm_handled_call_ids');
+      expect(list, isNotNull);
+      expect(list, contains(testCallId.toString()));
+
+      // Duplicate mark does not add duplicate entries
+      await CallNotificationService.markCallPersistentlyHandled(testCallId);
+      final listAfter = prefs.getStringList('fcm_handled_call_ids');
+      expect(listAfter!.where((id) => id == testCallId.toString()).length, 1);
     });
   });
 }

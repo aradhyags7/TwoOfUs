@@ -19,13 +19,15 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (data['type'] == 'incoming_call') {
     final callId = int.tryParse(data['call_id']?.toString() ?? '') ?? 0;
     if (callId > 0) {
-      if (CallService.isCallAlreadyHandled(callId)) {
+      if (await CallNotificationService.isCallPersistentlyHandled(callId) ||
+          CallService.isCallAlreadyHandled(callId)) {
         if (kDebugMode) {
           print("[FCM Background] Duplicate incoming_call push ignored for call_id=$callId");
         }
         return;
       }
       CallService.markCallHandled(callId);
+      await CallNotificationService.markCallPersistentlyHandled(callId);
 
       final callerName = data['caller_name']?.toString() ?? 'Partner';
       final callType = data['call_type']?.toString() ?? 'voice';
@@ -50,7 +52,7 @@ class FcmClientService {
     if (_isInitialized) return;
 
     try {
-      await Firebase.initializeApp().timeout(const Duration(milliseconds: 500));
+      await Firebase.initializeApp().timeout(const Duration(seconds: 10));
     } catch (e) {
       if (kDebugMode) {
         print("[FCM] Firebase.initializeApp note: $e");

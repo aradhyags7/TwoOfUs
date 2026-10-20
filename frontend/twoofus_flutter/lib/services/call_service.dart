@@ -108,7 +108,8 @@ class CallService {
         final callerName = (msg['caller_name'] as String?) ?? 'Partner';
 
         // Deduplicate incoming calls so one call never rings twice
-        if (isCallAlreadyHandled(callId)) {
+        final isPersistentlyHandled = await CallNotificationService.isCallPersistentlyHandled(callId);
+        if (isCallAlreadyHandled(callId) || isPersistentlyHandled) {
           if (kDebugMode) {
             debugPrint("[CallService] Duplicate incoming_call ignored for call_id=$callId");
           }
@@ -117,6 +118,7 @@ class CallService {
           return;
         }
         markCallHandled(callId);
+        await CallNotificationService.markCallPersistentlyHandled(callId);
 
         // If user is already on a call, reject as busy
         if (activeCallNotifier.value != null) {

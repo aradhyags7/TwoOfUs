@@ -82,12 +82,55 @@ class CallNotificationService {
     }
   }
 
+  static const String _kHandledCallIdsKey = 'fcm_handled_call_ids';
+
+  /// Checks if a call has already been handled, reading from persistent SharedPreferences
+  /// across isolates.
+  static Future<bool> isCallPersistentlyHandled(int callId) async {
+    if (callId <= 0) return false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_kHandledCallIdsKey) ?? [];
+      return list.contains(callId.toString());
+    } catch (e) {
+      if (kDebugMode) print("[CallNotificationService] isCallPersistentlyHandled error: $e");
+      return false;
+    }
+  }
+
+  /// Marks a callId as handled in persistent SharedPreferences (shared across isolates)
+  static Future<void> markCallPersistentlyHandled(int callId) async {
+    if (callId <= 0) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = (prefs.getStringList(_kHandledCallIdsKey) ?? []).toList();
+      if (!list.contains(callId.toString())) {
+        list.add(callId.toString());
+        if (list.length > 50) {
+          list.removeRange(0, list.length - 50);
+        }
+        await prefs.setStringList(_kHandledCallIdsKey, list);
+      }
+    } catch (e) {
+      if (kDebugMode) print("[CallNotificationService] markCallPersistentlyHandled error: $e");
+    }
+  }
+
   /// Displays high-priority heads-up incoming call alert with full-screen intent
   Future<void> showIncomingCallNotification({
     required int callId,
     required String callerName,
     required String callType,
   }) async {
+    // Cross-isolate deduplication check
+    if (await isCallPersistentlyHandled(callId)) {
+      if (kDebugMode) {
+        print("[CallNotificationService] Call $callId already handled; skipping duplicate notification");
+      }
+      return;
+    }
+    await markCallPersistentlyHandled(callId);
+
     if (!_isInitialized) {
       await initialize();
       if (!_isInitialized) return;
@@ -128,8 +171,9 @@ class CallNotificationService {
 
       final details = NotificationDetails(android: androidDetails);
 
+      // Use the call_id directly as the notification id to deduplicate in the OS tray
       await _notificationsPlugin.show(
-        id: incomingNotificationId,
+        id: callId > 0 ? callId : incomingNotificationId,
         title: 'Incoming ${callType.toUpperCase()} Call',
         body: '$callerName is calling you...',
         notificationDetails: details,
@@ -144,6 +188,7 @@ class CallNotificationService {
   Future<void> showActiveCallNotification({
     required String partnerName,
     required int durationSeconds,
+    bool isVideoActive = false,
   }) async {
     if (!_isInitialized) {
       await initialize();
@@ -173,18 +218,28 @@ class CallNotificationService {
       final androidPlugin = _notificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
-      // Start the microphone foreground service only after the user accepts and RECORD_AUDIO is granted
+      // Start the microphone foreground service only after the user accepts and RECORD_AUDIO is granted.
+      // Include camera only while video is active and camera permission is granted.
       final micGranted = await Permission.microphone.isGranted;
       if (androidPlugin != null && micGranted) {
+        final serviceTypes = <AndroidServiceForegroundType>{
+          AndroidServiceForegroundType.foregroundServiceTypeMicrophone,
+        };
+
+        if (isVideoActive) {
+          final cameraGranted = await Permission.camera.isGranted;
+          if (cameraGranted) {
+            serviceTypes.add(AndroidServiceForegroundType.foregroundServiceTypeCamera);
+          }
+        }
+
         await androidPlugin.startForegroundService(
           id: activeNotificationId,
           title: 'Call with $partnerName',
           body: 'Connected • $minutes:$seconds',
           notificationDetails: androidDetails,
           payload: durationSeconds.toString(),
-          foregroundServiceTypes: {
-            AndroidServiceForegroundType.foregroundServiceTypeMicrophone,
-          },
+          foregroundServiceTypes: serviceTypes,
         );
       } else {
         await _notificationsPlugin.show(
@@ -200,9 +255,12 @@ class CallNotificationService {
   }
 
   /// Cancels the incoming call notification
-  Future<void> cancelIncoming() async {
+  Future<void> cancelIncoming({int? callId}) async {
     if (!_isInitialized) return;
     try {
+      if (callId != null && callId > 0) {
+        await _notificationsPlugin.cancel(id: callId);
+      }
       await _notificationsPlugin.cancel(id: incomingNotificationId);
     } catch (e) {
       if (kDebugMode) print("[CallNotificationService] cancelIncoming error: $e");
