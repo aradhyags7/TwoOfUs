@@ -66,6 +66,8 @@ class Session {
   }
 
   static Future<void> clearPartner() async {
+    CallService.stopIncomingCallWatcher();
+    E2EEService.clearSessionCaches();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kCachedPartnerId);
     await prefs.remove(_kCachedPartnerName);

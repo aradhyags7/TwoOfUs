@@ -996,6 +996,26 @@ def pair_status(
     }
 
 
+@app.post("/unpair")
+@app.delete("/pair")
+def unpair_partner(
+    db: Session = Depends(get_db),
+    current_user_payload = Depends(get_current_user)
+):
+    auth_user_id = int(current_user_payload.get("sub"))
+    pairs = (
+        db.query(Pair)
+        .filter(
+            (Pair.user1_id == auth_user_id) |
+            (Pair.user2_id == auth_user_id)
+        )
+        .all()
+    )
+    for pair in pairs:
+        db.delete(pair)
+    db.commit()
+
+    return {"message": "Unpaired successfully", "unpaired": True}
 
 
 @app.get("/me")

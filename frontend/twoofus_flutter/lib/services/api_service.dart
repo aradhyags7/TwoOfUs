@@ -852,6 +852,20 @@ class ApiService {
     }
   }
 
+  static Future<bool> unpair({String? token}) async {
+    try {
+      final headers = await _authHeaders(token: token);
+      final response = await http.post(
+        Uri.parse('$baseUrl/unpair'),
+        headers: headers,
+      );
+
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // =========================
   // E2EE PUBLIC KEYS
   // =========================

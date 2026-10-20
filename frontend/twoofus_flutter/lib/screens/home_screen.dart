@@ -153,8 +153,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _startPairingPolling() {
     _pairingPollTimer?.cancel();
-    _pairingPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
-      if (!mounted || _isPartnerConnected || _hasTriggeredCelebration) {
+    _pairingPollTimer = Timer.periodic(const Duration(milliseconds: 2000), (_) async {
+      if (!mounted) {
         _pairingPollTimer?.cancel();
         return;
       }
@@ -174,20 +174,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final partnerId = result["partner_id"] as int?;
         final partnerName = (result["partner_name"] ?? "Partner").toString();
 
-        if (connected && partnerId != null && !_hasTriggeredCelebration) {
-          _pairingPollTimer?.cancel();
-          _hasTriggeredCelebration = true;
+        if (connected && partnerId != null) {
+          if (!_isPartnerConnected && !_hasTriggeredCelebration) {
+            _hasTriggeredCelebration = true;
 
-          setState(() {
-            _isPartnerConnected = true;
-            _partnerId = partnerId;
-            _partnerName = partnerName;
-          });
+            setState(() {
+              _isPartnerConnected = true;
+              _partnerId = partnerId;
+              _partnerName = partnerName;
+            });
 
-          await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
+            await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
 
-          if (mounted) {
-            _showConnectedCelebrationModal(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
+            if (mounted) {
+              _showConnectedCelebrationModal(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
+            }
+          }
+        } else {
+          // Remote partner disconnected live
+          if (_isPartnerConnected) {
+            setState(() {
+              _isPartnerConnected = false;
+              _partnerId = null;
+              _partnerName = "";
+              _hasTriggeredCelebration = false;
+            });
+            await Session.clearPartner();
+            _generatePin(silent: true);
+            if (mounted) {
+              AppFeedback.showInfo(context, "Partner disconnected. Returned to connection menu.");
+            }
           }
         }
       }
@@ -208,13 +224,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
         setState(() {
           _isPartnerConnected = connected;
-          _partnerId = partnerId;
-          _partnerName = partnerName;
+          _partnerId = connected ? partnerId : null;
+          _partnerName = connected ? partnerName : "";
+          if (!connected) {
+            _hasTriggeredCelebration = false;
+          }
         });
 
         // If user is connected to a partner, save partner cache and directly navigate to ChatScreen
         if (connected && partnerId != null) {
-          _pairingPollTimer?.cancel();
           await Session.savePartner(partnerId, partnerName.isNotEmpty ? partnerName : "Partner");
           if (autoNavigate && mounted) {
             Navigator.pushReplacement(
@@ -227,6 +245,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             );
           }
+        } else {
+          // If disconnected, clear partner session and resume pairing poll
+          await Session.clearPartner();
+          _startPairingPolling();
         }
       }
     } catch (_) {}
@@ -433,13 +455,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _openChatScreen() {
+  Future<void> _openChatScreen() async {
     if (_partnerId == null) {
       _toast("Partner not connected yet", isError: true);
       return;
     }
     HapticFeedback.lightImpact();
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatScreen(
@@ -448,12 +470,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+    if (mounted) {
+      await _loadPartnerStatus(autoNavigate: false);
+    }
   }
 
-  void _openPartnerProfile() {
+  Future<void> _openPartnerProfile() async {
     if (_partnerId == null) return;
     HapticFeedback.lightImpact();
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PartnerProfileScreen(
@@ -462,20 +487,83 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+    if (mounted) {
+      await _loadPartnerStatus(autoNavigate: false);
+    }
   }
 
-  void _openMediaVault() async {
+  Future<void> _openMediaVault() async {
     if (_partnerId == null) return;
     final token = await Session.getToken() ?? '';
     if (!mounted) return;
     HapticFeedback.lightImpact();
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => MediaGalleryScreen(
           partnerId: _partnerId!,
           partnerName: _partnerName.isNotEmpty ? _partnerName : "Partner",
           token: token,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadPartnerStatus(autoNavigate: false);
+    }
+  }
+
+  void _showDisconnectConfirmation() {
+    HapticFeedback.mediumImpact();
+    AppSheet.show(
+      context: context,
+      builder: (sheetContext) => AppSheet(
+        title: "Disconnect with $_partnerName?",
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "This will disconnect your pairing with $_partnerName and return you to the connection menu. You can pair again with a PIN or QR code at any time.",
+              style: TextStyle(
+                color: _sub,
+                fontSize: 14,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 22),
+            AppButton(
+              text: "Disconnect & Unpair",
+              variant: AppButtonVariant.danger,
+              isFullWidth: true,
+              icon: const Icon(Icons.link_off_rounded, size: 18),
+              onPressed: () async {
+                Navigator.pop(sheetContext);
+                try {
+                  final token = await Session.getToken();
+                  await ApiService.unpair(token: token);
+                } catch (_) {}
+                await Session.clearPartner();
+                if (mounted) {
+                  setState(() {
+                    _isPartnerConnected = false;
+                    _partnerId = null;
+                    _partnerName = "";
+                    _hasTriggeredCelebration = false;
+                  });
+                  _generatePin(silent: true);
+                  _startPairingPolling();
+                  AppFeedback.showInfo(context, "Disconnected from partner. Returned to connection menu.");
+                }
+              },
+            ),
+            const SizedBox(height: 10),
+            AppButton(
+              text: "Cancel",
+              variant: AppButtonVariant.secondary,
+              isFullWidth: true,
+              onPressed: () => Navigator.pop(sheetContext),
+            ),
+          ],
         ),
       ),
     );
@@ -1089,6 +1177,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 14),
+        AppButton(
+          text: "Disconnect Partner",
+          variant: AppButtonVariant.ghost,
+          isFullWidth: true,
+          icon: const Icon(Icons.link_off_rounded, size: 16),
+          onPressed: _showDisconnectConfirmation,
         ),
       ],
     );

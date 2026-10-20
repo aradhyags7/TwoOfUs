@@ -14,6 +14,7 @@ import '../widgets/video_player_dialog.dart';
 import '../services/call_service.dart';
 import 'media_gallery_screen.dart';
 import 'theme_selection_screen.dart';
+import 'home_screen.dart';
 import '../widgets/design_system/design_system.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -928,30 +929,52 @@ class _PartnerProfileScreenState extends State<PartnerProfileScreen>
   }
 
   void _showBlockPartnerDialog() {
-    showDialog(
+    AppSheet.show(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surf,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: _border)),
-        title: Text("Unpair / Block ${widget.partnerName}?", style: TextStyle(color: _text, fontWeight: FontWeight.w600)),
-        content: Text(
-          "This will disconnect your connection with ${widget.partnerName}.",
-          style: TextStyle(color: _sub),
+      builder: (sheetContext) => AppSheet(
+        title: "Disconnect with ${widget.partnerName}?",
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "This will disconnect your pairing with ${widget.partnerName} and immediately return you to the connection menu. You can pair again with a PIN or QR code at any time.",
+              style: TextStyle(
+                color: _sub,
+                fontSize: 14,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 22),
+            AppButton(
+              text: "Disconnect & Unpair",
+              variant: AppButtonVariant.danger,
+              isFullWidth: true,
+              icon: const Icon(Icons.link_off_rounded, size: 18),
+              onPressed: () async {
+                Navigator.pop(sheetContext);
+                _toast("Disconnecting...", isError: false);
+                try {
+                  await ApiService.unpair(token: _userToken);
+                } catch (_) {}
+                await Session.clearPartner();
+                if (!mounted) return;
+                AppFeedback.showInfo(context, "Disconnected from partner. Returned to connection menu.");
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  (route) => false,
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            AppButton(
+              text: "Cancel",
+              variant: AppButtonVariant.secondary,
+              isFullWidth: true,
+              onPressed: () => Navigator.pop(sheetContext),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text("Cancel", style: TextStyle(color: _sub)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _toast("Unpaired successfully", isError: true);
-            },
-            child: Text("Unpair", style: TextStyle(color: _isDark ? AppColors.darkDanger : AppColors.lightDanger, fontWeight: FontWeight.w600)),
-          ),
-        ],
       ),
     );
   }

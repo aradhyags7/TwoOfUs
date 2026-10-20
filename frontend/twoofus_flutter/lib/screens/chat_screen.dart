@@ -21,6 +21,7 @@ import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'partner_profile_screen.dart';
 import 'security_screen.dart';
+import 'home_screen.dart';
 import 'theme_selection_screen.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/diary_memory.dart';
@@ -193,6 +194,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   }
 
   // ── Presence & Polling ────────────────────────────────────────────────────
+  int _presenceCheckCount = 0;
+  bool _isDisconnecting = false;
+
   void _startPresencePolling() {
     _presenceTimer?.cancel();
     _syncPresence();
@@ -201,9 +205,38 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     });
   }
 
+  Future<void> _handlePartnerDisconnected() async {
+    if (_isDisconnecting || !mounted) return;
+    _isDisconnecting = true;
+
+    _presenceTimer?.cancel();
+    _messagePollingTimer?.cancel();
+
+    await Session.clearPartner();
+
+    if (!mounted) return;
+    AppFeedback.showInfo(context, "Partner disconnected. Returned to connection menu.");
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      (route) => false,
+    );
+  }
+
   Future<void> _syncPresence() async {
     try {
       ApiService.sendHeartbeat(token: _userToken);
+
+      // Periodically check if partner has unpaired/disconnected
+      _presenceCheckCount++;
+      if (_presenceCheckCount % 2 == 0 && _myId != null) {
+        final pairStatus = await ApiService.getPairStatus(_myId!, token: _userToken);
+        if (pairStatus != null && pairStatus['connected'] == false && mounted) {
+          await _handlePartnerDisconnected();
+          return;
+        }
+      }
+
       final status = await ApiService.getOnlineStatus(widget.partnerId, token: _userToken);
       if (status != null && mounted) {
         final online = status['is_online'] == true;
@@ -1106,6 +1139,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         ),
       ),
     );
+
+    if (_myId != null) {
+      final pairStatus = await ApiService.getPairStatus(_myId!, token: _userToken);
+      if (pairStatus != null && pairStatus['connected'] == false && mounted) {
+        await _handlePartnerDisconnected();
+        return;
+      }
+    }
 
     if (res == 'open_search' && mounted) {
       _startSearch();
