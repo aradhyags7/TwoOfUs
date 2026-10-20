@@ -1,8 +1,11 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/call_notification_service.dart';
+import 'services/fcm_client_service.dart';
 import 'services/security_service.dart';
 import 'services/call_service.dart';
 import 'theme/app_theme.dart';
@@ -11,10 +14,43 @@ import 'utils/session.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Safely initializes Firebase and FCM client services with try/catch guards
+/// so that the app boots normally even if Firebase is unconfigured or throws.
+Future<void> initFirebaseAndFcm({
+  Future<void> Function()? firebaseInit,
+  Future<void> Function()? fcmInit,
+}) async {
+  try {
+    if (firebaseInit != null) {
+      await firebaseInit();
+    } else {
+      await Firebase.initializeApp().timeout(const Duration(milliseconds: 500));
+    }
+  } catch (e) {
+    if (kDebugMode) debugPrint("[Init] Firebase.initializeApp failed or unconfigured: $e");
+  }
+
+  try {
+    if (fcmInit != null) {
+      await fcmInit();
+    } else {
+      await FcmClientService.initialize();
+    }
+  } catch (e) {
+    if (kDebugMode) debugPrint("[Init] FCM setup failed: $e");
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThemeController.init();
   await ApiService.initServerConfig();
+  try {
+    await CallNotificationService.instance.initialize();
+  } catch (e) {
+    if (kDebugMode) debugPrint("[Init] CallNotificationService init failed: $e");
+  }
+  await initFirebaseAndFcm();
   runApp(const TwoOfUsApp());
 }
 
@@ -34,6 +70,12 @@ class _TwoOfUsAppState extends State<TwoOfUsApp> with WidgetsBindingObserver {
     SecurityService.refreshPasscodeState();
     SecurityService.resetInactivityTimer();
     CallService.startIncomingCallWatcher();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && navigatorKey.currentContext != null) {
+        CallNotificationService.instance.checkAndPromptFullScreenIntent(navigatorKey.currentContext!);
+      }
+    });
   }
 
   @override

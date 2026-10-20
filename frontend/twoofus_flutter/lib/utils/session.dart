@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/e2ee_service.dart';
 import '../services/call_service.dart';
+import '../services/fcm_client_service.dart';
 
 class Session {
   static const String _kUserId = "user_id";
@@ -57,6 +58,7 @@ class Session {
     await prefs.setInt(_kUserId, userId);
     await prefs.setString(_kUsername, username);
     await prefs.setString(_kEmail, email);
+    FcmClientService.syncTokenIfLoggedIn();
   }
 
   static Future<void> savePartner(int partnerId, String partnerName) async {

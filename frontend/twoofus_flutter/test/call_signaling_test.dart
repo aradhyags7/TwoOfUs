@@ -138,5 +138,23 @@ void main() {
       expect(uriWithToken.queryParameters['token'], sampleToken);
       expect(uriWithToken.queryParameters.containsKey('ticket'), false);
     });
+
+    test('FCM incoming_call data message parses call_id, caller_name, call_type correctly', () {
+      final fcmDataPayload = {
+        'type': 'incoming_call',
+        'call_id': '456',
+        'caller_name': 'Bob',
+        'call_type': 'video',
+      };
+
+      expect(fcmDataPayload['type'], 'incoming_call');
+      final callId = int.tryParse(fcmDataPayload['call_id'] ?? '') ?? 0;
+      final callerName = fcmDataPayload['caller_name'] ?? 'Partner';
+      final callType = fcmDataPayload['call_type'] ?? 'voice';
+
+      expect(callId, 456);
+      expect(callerName, 'Bob');
+      expect(callType, 'video');
+    });
   });
 }

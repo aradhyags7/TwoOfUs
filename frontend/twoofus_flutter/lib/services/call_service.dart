@@ -27,6 +27,25 @@ class CallService {
   static Timer? _pollingTimer;
   static StreamSubscription<Map<String, dynamic>>? _signalingSub;
   static bool _isWatching = false;
+  static final Set<int> _handledIncomingCallIds = <int>{};
+
+  /// Returns true if this call_id has already been processed and is ringing or active
+  static bool isCallAlreadyHandled(int callId) {
+    if (callId <= 0) return false;
+    if (_handledIncomingCallIds.contains(callId)) return true;
+    if (activeCallNotifier.value?.id == callId) return true;
+    return false;
+  }
+
+  /// Marks call as handled to deduplicate between WebSocket signaling and FCM data pushes
+  static void markCallHandled(int callId) {
+    if (callId > 0) {
+      _handledIncomingCallIds.add(callId);
+      if (_handledIncomingCallIds.length > 30) {
+        _handledIncomingCallIds.remove(_handledIncomingCallIds.first);
+      }
+    }
+  }
 
   /// Starts real-time WebSocket signaling listener and background fallback polling
   static void startIncomingCallWatcher([BuildContext? context]) {
@@ -38,17 +57,28 @@ class CallService {
     CallNotificationService.instance.onNotificationAction = (action, callId) async {
       if (action == 'decline') {
         CallSignalingClient.instance.sendReject(callId: callId, reason: 'declined');
+        await ApiService.respondToCall(callId, 'rejected');
         CallNotificationService.instance.cancelIncoming();
         activeCallNotifier.value = null;
       } else if (action == 'accept') {
         CallNotificationService.instance.cancelIncoming();
-        final session = activeCallNotifier.value;
+        var session = activeCallNotifier.value;
+        if (session == null && callId > 0) {
+          final myId = await Session.getUserId();
+          if (myId != null) {
+            final activeData = await ApiService.getActiveCall(myId);
+            if (activeData != null) {
+              session = CallSessionModel.fromJson(activeData);
+              activeCallNotifier.value = session;
+            }
+          }
+        }
         if (session != null && navigatorKey.currentState != null) {
           String partnerName = await Session.getCachedPartnerName() ?? "Partner";
           navigatorKey.currentState?.push(
             MaterialPageRoute(
               builder: (_) => CallScreen(
-                session: session,
+                session: session!,
                 partnerId: session.callerId,
                 partnerName: partnerName,
                 isIncoming: true,
@@ -76,6 +106,17 @@ class CallService {
         final callId = msg['call_id'] as int;
         final callerId = msg['caller_id'] as int;
         final callerName = (msg['caller_name'] as String?) ?? 'Partner';
+
+        // Deduplicate incoming calls so one call never rings twice
+        if (isCallAlreadyHandled(callId)) {
+          if (kDebugMode) {
+            debugPrint("[CallService] Duplicate incoming_call ignored for call_id=$callId");
+          }
+          // Acknowledge ringing to caller even if notification is already showing
+          CallSignalingClient.instance.sendRinging(callId: callId, targetId: callerId);
+          return;
+        }
+        markCallHandled(callId);
 
         // If user is already on a call, reject as busy
         if (activeCallNotifier.value != null) {

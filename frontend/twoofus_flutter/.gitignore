@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase credentials
+google-services.json
+**/google-services.json
+
+# Test failure artifacts
+test/failures/
+**/test/failures/
