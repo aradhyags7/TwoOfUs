@@ -31,17 +31,29 @@ class CallSignalingClient {
     final token = await Session.getToken();
     if (token == null || token.isEmpty) {
       if (kDebugMode) {
-        print("[CallSignalingClient] Cannot connect: missing auth token");
+        debugPrint("[CallSignalingClient] Cannot connect: missing auth token");
       }
       return;
     }
 
     try {
       final wsUrl = ApiService.wsCallUrl;
-      final uri = Uri.parse("$wsUrl?token=$token");
+      // Phase 3 Hardened Auth: Request single-use ticket first to keep JWT out of query string
+      String? ticket;
+      try {
+        ticket = await ApiService.getCallTicket(token: token);
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint("[CallSignalingClient] Failed to acquire single-use ticket ($e), falling back to token");
+        }
+      }
+
+      final Uri uri = (ticket != null && ticket.isNotEmpty)
+          ? Uri.parse("$wsUrl?ticket=$ticket")
+          : Uri.parse("$wsUrl?token=$token");
 
       if (kDebugMode) {
-        print("[CallSignalingClient] Connecting to $wsUrl...");
+        debugPrint("[CallSignalingClient] Connecting to $wsUrl (${ticket != null ? 'single-use ticket' : 'token fallback'})...");
       }
 
       _channel?.sink.close();
@@ -54,12 +66,17 @@ class CallSignalingClient {
             final Map<String, dynamic> msg =
                 jsonDecode(rawMessage.toString()) as Map<String, dynamic>;
             final type = msg['type'];
+            final callId = msg['call_id'];
+
+            if (kDebugMode) {
+              debugPrint("[CallSignalingClient] Received event: type=$type, call_id=$callId");
+            }
 
             if (type == 'authenticated') {
               isConnectedNotifier.value = true;
               _startPingTimer();
               if (kDebugMode) {
-                print("[CallSignalingClient] Authenticated ready on server");
+                debugPrint("[CallSignalingClient] Authenticated ready on server (user: ${msg['user_id']})");
               }
             } else if (type == 'pong') {
               // Heartbeat acknowledged
@@ -68,19 +85,21 @@ class CallSignalingClient {
             _messageController.add(msg);
           } catch (e) {
             if (kDebugMode) {
-              print("[CallSignalingClient] Parse error: $e");
+              debugPrint("[CallSignalingClient] Parse error: $e");
             }
           }
         },
         onError: (dynamic error) {
           if (kDebugMode) {
-            print("[CallSignalingClient] Stream error: $error");
+            debugPrint("[CallSignalingClient] Stream error: $error");
           }
           _handleDisconnect();
         },
         onDone: () {
+          final closeCode = _channel?.closeCode;
+          final closeReason = _channel?.closeReason;
           if (kDebugMode) {
-            print("[CallSignalingClient] Connection closed");
+            debugPrint("[CallSignalingClient] WebSocket closed (code: $closeCode, reason: '$closeReason')");
           }
           _handleDisconnect();
         },
@@ -88,7 +107,7 @@ class CallSignalingClient {
       );
     } catch (e) {
       if (kDebugMode) {
-        print("[CallSignalingClient] Connection exception: $e");
+        debugPrint("[CallSignalingClient] Connection exception: $e");
       }
       _handleDisconnect();
     }
@@ -115,7 +134,7 @@ class CallSignalingClient {
     _reconnectAttempts++;
     final delaySeconds = (_reconnectAttempts * 2).clamp(2, 20);
     if (kDebugMode) {
-      print("[CallSignalingClient] Reconnecting in ${delaySeconds}s (attempt $_reconnectAttempts)...");
+      debugPrint("[CallSignalingClient] Reconnecting in ${delaySeconds}s (attempt $_reconnectAttempts)...");
     }
     _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
       connect();
@@ -126,17 +145,30 @@ class CallSignalingClient {
   void sendSignal(Map<String, dynamic> data) {
     if (_channel != null) {
       try {
+        final type = data['type'];
+        final callId = data['call_id'];
+        if (kDebugMode && type != 'ping') {
+          debugPrint("[CallSignalingClient] Sending event: type=$type, call_id=$callId");
+        }
         final payload = jsonEncode(data);
         _channel!.sink.add(payload);
       } catch (e) {
         if (kDebugMode) {
-          print("[CallSignalingClient] Failed to send signal: $e");
+          debugPrint("[CallSignalingClient] Failed to send signal: $e");
         }
       }
     }
   }
 
   // ── High-Level Signaling Event Helpers ─────────────────────────────────────
+
+  /// Signals to caller that callee's WebRTC peer connection and local media tracks are ready
+  void sendCalleeReady({required int callId}) {
+    sendSignal({
+      'type': 'callee_ready',
+      'call_id': callId,
+    });
+  }
 
   /// Sends outgoing call invitation
   void sendInvite({

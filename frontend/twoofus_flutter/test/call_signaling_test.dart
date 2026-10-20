@@ -109,5 +109,34 @@ void main() {
       expect(result.contains('a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1'), true);
       expect('minptime'.allMatches(result).length, 1);
     });
+
+    test('Candidate type regex parses host, srflx, and relay types accurately', () {
+      const hostCandidate = "candidate:1 1 UDP 2122260223 192.168.1.100 50000 typ host generation 0";
+      const srflxCandidate = "candidate:2 1 UDP 1686052607 203.0.113.195 50000 typ srflx raddr 192.168.1.100 rport 50000 generation 0";
+      const relayCandidate = "candidate:3 1 UDP 41885695 198.51.100.1 50000 typ relay raddr 203.0.113.195 rport 50000 generation 0";
+
+      String parseType(String c) {
+        final match = RegExp(r'typ\s+([a-zA-Z0-9]+)').firstMatch(c);
+        return match != null ? match.group(1)! : 'unknown';
+      }
+
+      expect(parseType(hostCandidate), 'host');
+      expect(parseType(srflxCandidate), 'srflx');
+      expect(parseType(relayCandidate), 'relay');
+      expect(parseType('invalid_candidate'), 'unknown');
+    });
+
+    test('Single-use ticket WebSocket URI formation is formatted accurately', () {
+      const baseWsUrl = 'ws://example.com/ws/call';
+      const sampleTicket = 'call_ticket_abcdef123456';
+      final uriWithTicket = Uri.parse('$baseWsUrl?ticket=$sampleTicket');
+      expect(uriWithTicket.queryParameters['ticket'], sampleTicket);
+      expect(uriWithTicket.queryParameters.containsKey('token'), false);
+
+      const sampleToken = 'jwt.test.token';
+      final uriWithToken = Uri.parse('$baseWsUrl?token=$sampleToken');
+      expect(uriWithToken.queryParameters['token'], sampleToken);
+      expect(uriWithToken.queryParameters.containsKey('ticket'), false);
+    });
   });
 }

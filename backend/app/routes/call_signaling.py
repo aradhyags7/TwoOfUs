@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import os
 import time
+import traceback
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
@@ -34,18 +35,27 @@ def get_current_user_id_from_token(token: str) -> int:
 async def secure_call_websocket(
     websocket: WebSocket,
     token: Optional[str] = Query(None),
+    ticket: Optional[str] = Query(None),
 ):
     """
     Primary authenticated WebSocket signaling endpoint for WebRTC voice and video calls.
-    Requires a valid JWT access token passed via query parameter (?token=<JWT>).
+    Supports either:
+    1. Single-use ticket (?ticket=<ticket>) issued via POST /call/ticket (Recommended, Phase 3 hardened).
+    2. JWT access token (?token=<JWT>) (Backward-compatible).
     """
-    if not token:
-        await websocket.close(code=4001, reason="Authentication token required")
-        return
-
-    user_id = await secure_call_manager.authenticate_socket(token)
-    if user_id is None:
-        await websocket.close(code=4001, reason="Invalid or expired authentication token")
+    user_id: Optional[int] = None
+    if ticket:
+        user_id = secure_call_manager.redeem_ticket(ticket)
+        if user_id is None:
+            await websocket.close(code=4001, reason="Invalid or expired ticket")
+            return
+    elif token:
+        user_id = await secure_call_manager.authenticate_socket(token)
+        if user_id is None:
+            await websocket.close(code=4001, reason="Invalid or expired authentication token")
+            return
+    else:
+        await websocket.close(code=4001, reason="Authentication token or ticket required")
         return
 
     await secure_call_manager.connect(user_id, websocket)
@@ -60,10 +70,13 @@ async def secure_call_websocket(
         while True:
             data = await websocket.receive_json()
             await secure_call_manager.handle_signaling_event(user_id, data, websocket)
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as ws_disc:
+        code = getattr(ws_disc, "code", "unknown")
+        reason = getattr(ws_disc, "reason", "")
+        print(f"[WS DISCONNECT for user {user_id}]: code={code}, reason='{reason}'", flush=True)
         await secure_call_manager.disconnect(user_id, websocket)
     except Exception as e:
-        print(f"[WS ERROR for user {user_id}]: {e}")
+        print(f"[WS UNEXPECTED ERROR for user {user_id}]: {e}\n{traceback.format_exc()}", flush=True)
         await secure_call_manager.disconnect(user_id, websocket)
 
 
@@ -96,10 +109,44 @@ async def legacy_call_websocket(
         while True:
             data = await websocket.receive_json()
             await secure_call_manager.handle_signaling_event(user_id, data, websocket)
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as ws_disc:
+        code = getattr(ws_disc, "code", "unknown")
+        reason = getattr(ws_disc, "reason", "")
+        print(f"[Legacy WS DISCONNECT for user {user_id}]: code={code}, reason='{reason}'", flush=True)
         await secure_call_manager.disconnect(user_id, websocket)
-    except Exception:
+    except Exception as e:
+        print(f"[Legacy WS UNEXPECTED ERROR for user {user_id}]: {e}\n{traceback.format_exc()}", flush=True)
         await secure_call_manager.disconnect(user_id, websocket)
+
+
+# ── 2.1 Single-Use WS Ticket Issuer (Phase 3 Hardened Auth) ───────────────────
+@router.post("/call/ticket")
+def create_call_ticket(
+    token: str = Query(..., description="Access token"),
+):
+    """Issues a short-lived (60s) single-use WebSocket authentication ticket."""
+    user_id = get_current_user_id_from_token(token)
+    ticket = secure_call_manager.create_ticket(user_id)
+    return {"ticket": ticket, "expires_in": 60}
+
+
+# ── 2.2 Diagnostic Call Debug Endpoint ────────────────────────────────────────
+@router.get("/call/debug")
+def get_call_debug(
+    token: str = Query(..., description="Access token"),
+):
+    """Diagnostic endpoint returning ICE configuration and WebSocket connection status."""
+    user_id = get_current_user_id_from_token(token)
+    turn_creds = get_turn_credentials(token)
+    return {
+        "user_id": user_id,
+        "call_debug_enabled": os.getenv("CALL_DEBUG", "true").lower() == "true",
+        "turn_configured": bool(os.getenv("TURN_SECRET") or os.getenv("TURN_USERNAME") or os.getenv("TURN_URLS")),
+        "turn_host": os.getenv("TURN_HOST", "openrelay.metered.ca (default)"),
+        "ice_servers": turn_creds.uris,
+        "active_ws_connections_count": secure_call_manager.get_user_socket_count(user_id),
+        "is_user_online": secure_call_manager.is_user_online(user_id),
+    }
 
 
 # ── 3. Device Push Token Registration (For Background Wakeups) ────────────────

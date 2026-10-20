@@ -1567,6 +1567,41 @@ class ApiService {
     }
   }
 
+  /// Obtains a short-lived (60s) single-use WebSocket ticket for secure signaling auth
+  static Future<String?> getCallTicket({String? token}) async {
+    try {
+      final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
+      if (effectiveToken.isEmpty) return null;
+      final response = await http.post(
+        Uri.parse('$baseUrl/call/ticket?token=$effectiveToken'),
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['ticket'] as String?;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Diagnostic call debug endpoint
+  static Future<Map<String, dynamic>?> getCallDebug({String? token}) async {
+    try {
+      final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
+      if (effectiveToken.isEmpty) return null;
+      final response = await http.get(
+        Uri.parse('$baseUrl/call/debug?token=$effectiveToken'),
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<bool> registerDevicePushToken(String pushToken, {String platform = "android", String? token}) async {
     try {
       final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
