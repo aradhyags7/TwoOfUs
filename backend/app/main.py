@@ -191,6 +191,19 @@ app.add_middleware(
 # Mount call signaling router for WebSockets and TURN credentials
 app.include_router(call_signaling_router)
 
+
+@app.on_event("startup")
+def on_startup():
+    """Startup tasks: clean stale calling sessions and verify components."""
+    db = SessionLocal()
+    try:
+        secure_call_manager.clean_stale_sessions(db)
+    except Exception as e:
+        print(f"[STARTUP] Error cleaning stale call sessions: {e}", flush=True)
+    finally:
+        db.close()
+
+
 os.makedirs("uploads/avatars", exist_ok=True)
 os.makedirs("uploads/memories", exist_ok=True)
 ensure_media_dirs()

@@ -1,8 +1,10 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
+import os
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
+import uuid
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
@@ -43,8 +45,44 @@ class SecureSignalingManager:
         self._rate_limits: Dict[int, List[float]] = {}
         # Max signaling messages allowed per 1-second window
         self._rate_limit_max_per_sec = 40
+        # Single-use short-lived WS tickets: ticket_str -> (user_id, expires_at)
+        self._tickets: Dict[str, Tuple[int, float]] = {}
         # Lock for connection registry modifications
         self._lock = asyncio.Lock()
+        # Diagnostic debug logging flag
+        self._call_debug = os.getenv("CALL_DEBUG", "true").lower() == "true"
+
+    def _log(self, msg: str):
+        """Diagnostic logger enabled via CALL_DEBUG environment variable."""
+        if self._call_debug:
+            print(f"[CALL_DEBUG] {msg}", flush=True)
+
+    def create_ticket(self, user_id: int) -> str:
+        """Generates a short-lived (60s) single-use WebSocket ticket."""
+        now = time.time()
+        ticket = f"call_ticket_{uuid.uuid4().hex}"
+        # Prune expired tickets
+        self._tickets = {k: v for k, v in self._tickets.items() if v[1] > now}
+        self._tickets[ticket] = (user_id, now + 60.0)
+        self._log(f"Created single-use WS ticket for user {user_id}")
+        return ticket
+
+    def redeem_ticket(self, ticket: str) -> Optional[int]:
+        """Validates and redeems a single-use WebSocket ticket."""
+        now = time.time()
+        if not ticket or ticket not in self._tickets:
+            self._log(f"Rejected invalid or non-existent ticket: {ticket}")
+            return None
+        user_id, expires_at = self._tickets.pop(ticket)
+        if now > expires_at:
+            self._log(f"Rejected expired ticket for user {user_id}")
+            return None
+        self._log(f"Successfully redeemed single-use ticket for user {user_id}")
+        return user_id
+
+    def get_user_socket_count(self, user_id: int) -> int:
+        """Returns count of active WebSocket connections for user."""
+        return len(self._connections.get(user_id, set()))
 
     async def authenticate_socket(self, token: str) -> Optional[int]:
         """Validates JWT token and extracts user_id. Returns None if invalid or expired."""
@@ -65,6 +103,7 @@ class SecureSignalingManager:
             if user_id not in self._connections:
                 self._connections[user_id] = set()
             self._connections[user_id].add(websocket)
+        self._log(f"User {user_id} connected WebSocket (active sockets: {len(self._connections[user_id])})")
 
     async def disconnect(self, user_id: int, websocket: WebSocket):
         """Removes a WebSocket connection and cleans up empty sets."""
@@ -75,10 +114,63 @@ class SecureSignalingManager:
                     del self._connections[user_id]
             if user_id in self._rate_limits:
                 del self._rate_limits[user_id]
+        self._log(f"User {user_id} disconnected WebSocket (remaining sockets: {self.get_user_socket_count(user_id)})")
+
+        # If user has zero active sockets, clean any active sessions where partner is also disconnected
+        if not self.is_user_online(user_id):
+            db = _get_db_session()
+            try:
+                self.clean_stale_sessions(db)
+            finally:
+                db.close()
 
     def is_user_online(self, user_id: int) -> bool:
         """Checks if user has at least one active signaling WebSocket."""
         return user_id in self._connections and len(self._connections[user_id]) > 0
+
+    def clean_stale_sessions(self, db: Session):
+        """
+        Cleans up orphan and stale call sessions:
+        1. Ringing calls older than 45 seconds are marked as 'missed'.
+        2. Ongoing calls where neither participant is online are marked as 'ended'.
+        """
+        now = datetime.now(timezone.utc)
+        stale_ringing_cutoff = now - timedelta(seconds=45)
+
+        # 1. Ringing timeout (45s)
+        stale_ringing = (
+            db.query(CallSession)
+            .filter(
+                (CallSession.status == "ringing") &
+                (CallSession.created_at < stale_ringing_cutoff)
+            )
+            .all()
+        )
+        for c in stale_ringing:
+            c.status = "missed"
+            c.ended_at = now
+            c.ended_reason = "ringing_timeout_45s"
+            self._log(f"Cleaned stale ringing session {c.id} -> missed (45s timeout)")
+
+        # 2. Ongoing calls where both participants' WebSockets are gone
+        ongoing_calls = (
+            db.query(CallSession)
+            .filter(CallSession.status == "ongoing")
+            .all()
+        )
+        for c in ongoing_calls:
+            c_id = int(getattr(c, "caller_id"))
+            r_id = int(getattr(c, "receiver_id"))
+            if not self.is_user_online(c_id) and not self.is_user_online(r_id):
+                c.status = "ended"
+                c.ended_at = now
+                c.ended_reason = "both_sockets_disconnected"
+                if c.started_at:
+                    started = c.started_at.replace(tzinfo=timezone.utc) if c.started_at.tzinfo is None else c.started_at
+                    c.duration_seconds = max(0, int((now - started).total_seconds()))
+                self._log(f"Cleaned orphan ongoing session {c.id} -> ended (both sockets disconnected)")
+
+        db.commit()
 
     def _check_rate_limit(self, user_id: int) -> bool:
         """Applies a sliding 1-second window rate limit. Returns True if permitted."""
@@ -164,22 +256,27 @@ class SecureSignalingManager:
             await websocket.send_json({"type": "pong", "timestamp": _to_utc_iso(datetime.now(timezone.utc))})
             return
 
-        target_id = raw_data.get("target_id") or raw_data.get("target_user_id")
+        target_id = raw_data.get("target_id") or raw_data.get("target_user_id") or raw_data.get("receiver_id")
         call_id = raw_data.get("call_id")
         payload = raw_data.get("payload", {})
         now = datetime.now(timezone.utc)
 
         db: Session = _get_db_session()
         try:
+            # ── 1.1 Proactive Stale Sessions Cleanup ─────────────────────────
+            self.clean_stale_sessions(db)
+
             # ── 2. Relationship Verification ─────────────────────────────────
             if target_id is not None:
                 try:
                     target_id = int(target_id)
                 except (ValueError, TypeError):
+                    self._log(f"Rejected invalid target_id from sender={sender_id}: {target_id}")
                     await websocket.send_json({"type": "error", "detail": "Invalid target_id"})
                     return
 
                 if not self._verify_pairing(db, sender_id, target_id):
+                    self._log(f"call event {msg_type} REJECTED (unpaired): sender={sender_id}, target={target_id}")
                     await websocket.send_json({
                         "type": "error",
                         "code": 403,
@@ -188,9 +285,10 @@ class SecureSignalingManager:
                     return
 
             # ── 3. Call Invitation (Initiate Call) ────────────────────────────
-            if msg_type == "call_invite":
+            if msg_type in ("call_invite", "call_request"):
                 if target_id is None:
-                    await websocket.send_json({"type": "error", "detail": "Missing target_id for call_invite"})
+                    self._log(f"{msg_type} REJECTED (missing target_id): sender={sender_id}")
+                    await websocket.send_json({"type": "error", "detail": f"Missing target_id for {msg_type}"})
                     return
 
                 call_type = raw_data.get("call_type") or payload.get("call_type", "voice")
@@ -207,6 +305,7 @@ class SecureSignalingManager:
                     .first()
                 )
                 if active_call:
+                    self._log(f"call_invite REJECTED (target busy): sender={sender_id}, target={target_id}, active_call={active_call.id}, status={active_call.status}")
                     await websocket.send_json({
                         "type": "call_busy",
                         "target_id": target_id,
@@ -266,6 +365,11 @@ class SecureSignalingManager:
                     }
                 )
 
+                self._log(
+                    f"call_invite: call_id={new_session.id}, sender={sender_id}, target={target_id}, "
+                    f"type={call_type}, delivered={delivered}, target_online={self.is_user_online(target_id)}"
+                )
+
                 if delivered:
                     # Notify caller that receiver's device is ringing
                     await websocket.send_json({
@@ -278,23 +382,40 @@ class SecureSignalingManager:
 
             # ── 4. Call State Guard for Active Signals ────────────────────────
             if call_id is None:
+                self._log(f"Signaling event '{msg_type}' REJECTED: missing call_id from sender={sender_id}")
                 await websocket.send_json({"type": "error", "detail": "Missing call_id"})
                 return
 
             session = db.query(CallSession).filter(CallSession.id == call_id).first()
             if not session:
+                self._log(f"Signaling event '{msg_type}' REJECTED: session {call_id} not found")
                 await websocket.send_json({"type": "error", "detail": "Call session not found"})
                 return
 
             caller_id = int(getattr(session, "caller_id"))
             receiver_id = int(getattr(session, "receiver_id"))
             if sender_id not in (caller_id, receiver_id):
+                self._log(f"Signaling event '{msg_type}' REJECTED (unauthorized participant): sender={sender_id}, call_id={call_id}")
                 await websocket.send_json({"type": "error", "code": 403, "detail": "Not a participant in this call"})
                 return
 
             other_party_id = receiver_id if sender_id == caller_id else caller_id
 
-            # ── 5. Call Acceptance ───────────────────────────────────────────
+            # ── 5. Callee Ready Notification (WebRTC readiness handshake) ────
+            if msg_type in ("callee_ready", "receiver_ready"):
+                delivered = await self.send_to_user(
+                    other_party_id,
+                    {
+                        "type": "callee_ready",
+                        "call_id": session.id,
+                        "sender_id": sender_id,
+                        "target_id": other_party_id,
+                    }
+                )
+                self._log(f"callee_ready: call_id={session.id}, sender={sender_id}, target={other_party_id}, delivered={delivered}")
+                return
+
+            # ── 6. Call Acceptance ───────────────────────────────────────────
             if msg_type in ("call_accept", "call_accepted"):
                 if str(getattr(session, "status")) != "ongoing":
                     session.status = "ongoing"
@@ -302,7 +423,7 @@ class SecureSignalingManager:
                     db.commit()
                     db.refresh(session)
 
-                await self.send_to_user(
+                delivered = await self.send_to_user(
                     other_party_id,
                     {
                         "type": "call_accepted",
@@ -311,9 +432,10 @@ class SecureSignalingManager:
                         "started_at": _to_utc_iso(session.started_at),
                     }
                 )
+                self._log(f"call_accept: call_id={session.id}, sender={sender_id}, target={other_party_id}, delivered={delivered}")
                 return
 
-            # ── 6. Call Rejection ────────────────────────────────────────────
+            # ── 7. Call Rejection ────────────────────────────────────────────
             if msg_type in ("call_reject", "call_rejected"):
                 session.status = "rejected"
                 session.ended_at = now
@@ -323,7 +445,7 @@ class SecureSignalingManager:
 
                 self._create_call_log_message(db, session)
 
-                await self.send_to_user(
+                delivered = await self.send_to_user(
                     other_party_id,
                     {
                         "type": "call_rejected",
@@ -332,9 +454,10 @@ class SecureSignalingManager:
                         "reason": session.rejection_reason,
                     }
                 )
+                self._log(f"call_reject: call_id={session.id}, sender={sender_id}, target={other_party_id}, reason={session.rejection_reason}, delivered={delivered}")
                 return
 
-            # ── 7. Call Cancellation (Caller cancels before answer) ──────────
+            # ── 8. Call Cancellation (Caller cancels before answer) ──────────
             if msg_type in ("call_cancel", "call_cancelled"):
                 session.status = "missed"
                 session.ended_at = now
@@ -344,7 +467,7 @@ class SecureSignalingManager:
 
                 self._create_call_log_message(db, session)
 
-                await self.send_to_user(
+                delivered = await self.send_to_user(
                     other_party_id,
                     {
                         "type": "call_cancelled",
@@ -352,9 +475,10 @@ class SecureSignalingManager:
                         "sender_id": sender_id,
                     }
                 )
+                self._log(f"call_cancel: call_id={session.id}, sender={sender_id}, target={other_party_id}, delivered={delivered}")
                 return
 
-            # ── 8. Call Termination (Hang up) ────────────────────────────────
+            # ── 9. Call Termination (Hang up) ────────────────────────────────
             if msg_type in ("call_end", "call_ended"):
                 current_status = str(getattr(session, "status", ""))
                 if current_status != "ended":
@@ -378,7 +502,7 @@ class SecureSignalingManager:
 
                     self._create_call_log_message(db, session)
 
-                await self.send_to_user(
+                delivered = await self.send_to_user(
                     other_party_id,
                     {
                         "type": "call_ended",
@@ -388,13 +512,15 @@ class SecureSignalingManager:
                         "status": session.status,
                     }
                 )
+                self._log(f"call_end: call_id={session.id}, sender={sender_id}, target={other_party_id}, duration={session.duration_seconds}s, status={session.status}, delivered={delivered}")
                 return
 
-            # ── 9. WebRTC Media Signaling (Offer, Answer, ICE Candidates) ────
+            # ── 10. WebRTC Media Signaling (Offer, Answer, ICE Candidates) ───
             if msg_type in ("webrtc_offer", "webrtc_answer", "webrtc_ice_candidate", "offer", "answer", "ice_candidate"):
                 current_status = str(getattr(session, "status", ""))
                 # Only allow forwarding SDP/ICE when call is in valid state
                 if current_status not in ("ringing", "ongoing", "connecting"):
+                    self._log(f"Media signal '{msg_type}' REJECTED: call {session.id} is in '{current_status}' state")
                     await websocket.send_json({
                         "type": "error",
                         "detail": f"Cannot forward media signal: call is in '{current_status}' state"
@@ -402,7 +528,7 @@ class SecureSignalingManager:
                     return
 
                 # Forward signal securely to partner
-                await self.send_to_user(
+                delivered = await self.send_to_user(
                     other_party_id,
                     {
                         "version": "1.0",
@@ -414,14 +540,15 @@ class SecureSignalingManager:
                         "payload": payload,
                     }
                 )
+                self._log(f"media_signal {msg_type}: call_id={session.id}, sender={sender_id}, target={other_party_id}, delivered={delivered}")
                 return
 
             # Unhandled message type
+            self._log(f"Unknown signaling event type '{msg_type}' from sender={sender_id}")
             await websocket.send_json({
                 "type": "error",
                 "detail": f"Unknown signaling event type: '{msg_type}'"
             })
-
         finally:
             db.close()
 

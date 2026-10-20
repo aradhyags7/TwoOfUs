@@ -296,6 +296,132 @@ class WebSocketCallSignalingTests(unittest.TestCase):
         self.assertEqual(del_res.json()["status"], "unregistered")
         print("  [PASS] Device push token lifecycle and STUN/TURN credentials verified")
 
+    def test_08_call_ticket_auth_and_debug_endpoint(self):
+        """Tests single-use WS ticket generation, redemption, single-use enforcement, and GET /call/debug."""
+        u1, t1 = self.create_test_user("ticket_u1@test.com", "ticket_u1")
+
+        # 1. Obtain single-use WS ticket
+        ticket_res = client.post(f"/call/ticket?token={t1}")
+        self.assertEqual(ticket_res.status_code, 200)
+        ticket = ticket_res.json()["ticket"]
+        self.assertTrue(ticket.startswith("call_ticket_"))
+
+        # 2. Connect using ticket
+        ws_url = f"{self.base_ws_url}/ws/call?ticket={ticket}"
+        with ws_connect(ws_url) as ws:
+            # Query debug endpoint while connected
+            debug_res = client.get(f"/call/debug?token={t1}")
+            self.assertEqual(debug_res.status_code, 200)
+            data = debug_res.json()
+            self.assertEqual(data["user_id"], u1)
+            self.assertEqual(data["active_ws_connections_count"], 1)
+            self.assertTrue(data["is_user_online"])
+            self.assertIn("ice_servers", data)
+
+        # 3. Re-using the same ticket must be rejected (single-use)
+        with self.assertRaises(Exception):
+            with ws_connect(ws_url):
+                pass
+        print("  [PASS] Single-use WS ticket auth & GET /call/debug verified")
+
+    def test_09_stale_sessions_cleanup(self):
+        """Tests that 45s ringing timeout marks calls 'missed' and orphan ongoing sessions are marked 'ended'."""
+        from datetime import timedelta
+        from backend.app.services.signaling_manager import secure_call_manager
+
+        u1, t1 = self.create_test_user("stale_u1@test.com", "stale_u1")
+        u2, t2 = self.create_test_user("stale_u2@test.com", "stale_u2")
+        self.create_test_pair(u1, u2)
+
+        db = TestingSessionLocal()
+        now = datetime.now(timezone.utc)
+        old_time = now - timedelta(seconds=60)
+
+        # 1. Create a stale ringing session (>45s old)
+        stale_call = CallSession(
+            caller_id=u1,
+            receiver_id=u2,
+            call_type="voice",
+            status="ringing",
+            created_at=old_time,
+        )
+        db.add(stale_call)
+
+        # 2. Create an orphan ongoing session where neither user is online
+        orphan_call = CallSession(
+            caller_id=u1,
+            receiver_id=u2,
+            call_type="video",
+            status="ongoing",
+            created_at=old_time,
+            started_at=old_time,
+        )
+        db.add(orphan_call)
+        db.commit()
+
+        stale_id = stale_call.id
+        orphan_id = orphan_call.id
+
+        # 3. Run stale session cleanup
+        secure_call_manager.clean_stale_sessions(db)
+
+        # 4. Verify stale ringing call is now 'missed'
+        updated_stale = db.query(CallSession).filter(CallSession.id == stale_id).first()
+        self.assertEqual(updated_stale.status, "missed")
+        self.assertEqual(updated_stale.ended_reason, "ringing_timeout_45s")
+
+        # 5. Verify orphan ongoing call is now 'ended'
+        updated_orphan = db.query(CallSession).filter(CallSession.id == orphan_id).first()
+        self.assertEqual(updated_orphan.status, "ended")
+        self.assertEqual(updated_orphan.ended_reason, "both_sockets_disconnected")
+        db.close()
+        print("  [PASS] Stale ringing session (45s) and orphan ongoing session cleanup verified")
+
+    def test_10_callee_ready_handshake(self):
+        """Tests that callee_ready signal is successfully forwarded from callee to caller."""
+        u1, t1 = self.create_test_user("ready_u1@test.com", "ready_u1")
+        u2, t2 = self.create_test_user("ready_u2@test.com", "ready_u2")
+        self.create_test_pair(u1, u2)
+
+        with ws_connect(f"{self.base_ws_url}/ws/call?token={t1}") as ws1:
+            with ws_connect(f"{self.base_ws_url}/ws/call?token={t2}") as ws2:
+                # Consume initial authentication acks
+                ack1 = json.loads(ws1.recv(timeout=5))
+                self.assertEqual(ack1["type"], "authenticated")
+                ack2 = json.loads(ws2.recv(timeout=5))
+                self.assertEqual(ack2["type"], "authenticated")
+
+                # 1. u1 calls u2
+                ws1.send(json.dumps({
+                    "type": "call_invite",
+                    "target_id": u2,
+                    "call_type": "voice",
+                }))
+                initiated = json.loads(ws1.recv(timeout=5))
+                self.assertEqual(initiated["type"], "call_initiated")
+
+                incoming = json.loads(ws2.recv(timeout=5))
+                self.assertEqual(incoming["type"], "incoming_call")
+                call_id = incoming["call_id"]
+
+                # ws1 receives call_ringing
+                ringing = json.loads(ws1.recv(timeout=5))
+                self.assertEqual(ringing["type"], "call_ringing")
+
+                # 2. u2 accepts
+                ws2.send(json.dumps({"type": "call_accept", "call_id": call_id}))
+                accepted = json.loads(ws1.recv(timeout=5))  # call_accepted
+                self.assertEqual(accepted["type"], "call_accepted")
+
+                # 3. u2 sends callee_ready
+                ws2.send(json.dumps({"type": "callee_ready", "call_id": call_id}))
+                ready_msg = json.loads(ws1.recv(timeout=5))
+                self.assertEqual(ready_msg["type"], "callee_ready")
+                self.assertEqual(ready_msg["call_id"], call_id)
+                self.assertEqual(ready_msg["sender_id"], u2)
+        print("  [PASS] WebRTC callee_ready readiness handshake verified")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
