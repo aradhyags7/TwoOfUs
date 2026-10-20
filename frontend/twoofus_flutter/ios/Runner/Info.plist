@@ -66,5 +66,14 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>TwoOfUs requires camera access for secure end-to-end encrypted video calls.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TwoOfUs requires microphone access for voice and video calls.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>voip</string>
+	</array>
 </dict>
 </plist>
