@@ -47,6 +47,10 @@ class SecureSignalingManager:
         self._rate_limit_max_per_sec = 40
         # Single-use short-lived WS tickets: ticket_str -> (user_id, expires_at)
         self._tickets: Dict[str, Tuple[int, float]] = {}
+        # Pending ringing ack events for online callees: call_id -> asyncio.Event
+        self._pending_ringing_acks: Dict[int, asyncio.Event] = {}
+        # Timeout in seconds to wait for callee call_ringing ack before fallback to FCM push
+        self._ringing_ack_timeout: float = 3.0
         # Lock for connection registry modifications
         self._lock = asyncio.Lock()
         # Diagnostic debug logging flag
@@ -56,6 +60,50 @@ class SecureSignalingManager:
         """Diagnostic logger enabled via CALL_DEBUG environment variable."""
         if self._call_debug:
             print(f"[CALL_DEBUG] {msg}", flush=True)
+
+    async def _wait_for_ringing_ack_or_push(
+        self,
+        session_id: int,
+        target_id: int,
+        caller_name: str,
+        call_type: str,
+        ack_event: asyncio.Event,
+    ):
+        """
+        Waits up to _ringing_ack_timeout (default 3.0s) for callee to acknowledge ringing.
+        If no call_ringing ack arrives within 3 seconds, dispatches fallback high-priority FCM data push.
+        """
+        timeout_seconds = self._ringing_ack_timeout
+        try:
+            try:
+                await asyncio.wait_for(ack_event.wait(), timeout=timeout_seconds)
+                self._log(f"call_ringing ack confirmed within {timeout_seconds}s for call_id={session_id}")
+                return
+            except asyncio.TimeoutError:
+                self._log(f"No call_ringing ack within {timeout_seconds}s for call_id={session_id}, attempting fallback FCM push")
+
+            db = _get_db_session()
+            try:
+                session = db.query(CallSession).filter(CallSession.id == session_id).first()
+                if not session or str(getattr(session, "status", "")) != "ringing":
+                    self._log(f"Call {session_id} is no longer in ringing state, skipping fallback FCM push")
+                    return
+
+                from .fcm_service import send_call_push_notification
+                push_sent = send_call_push_notification(
+                    db,
+                    user_id=target_id,
+                    call_id=session_id,
+                    caller_name=caller_name,
+                    call_type=call_type,
+                )
+                self._log(f"Fallback FCM push dispatched to {push_sent} device(s) for call_id={session_id}")
+            finally:
+                db.close()
+        except Exception as e:
+            self._log(f"Exception in _wait_for_ringing_ack_or_push for call_id={session_id}: {e}")
+        finally:
+            self._pending_ringing_acks.pop(session_id, None)
 
     def create_ticket(self, user_id: int) -> str:
         """Generates a short-lived (60s) single-use WebSocket ticket."""
@@ -378,6 +426,33 @@ class SecureSignalingManager:
                         "target_id": target_id,
                     })
 
+                    # Online callee: track ringing ack; fallback to FCM push if no call_ringing arrives within 3s
+                    ack_event = asyncio.Event()
+                    self._pending_ringing_acks[new_session.id] = ack_event
+                    asyncio.create_task(
+                        self._wait_for_ringing_ack_or_push(
+                            session_id=new_session.id,
+                            target_id=target_id,
+                            caller_name=caller_name,
+                            call_type=call_type,
+                            ack_event=ack_event,
+                        )
+                    )
+                else:
+                    # Callee has no live WebSocket -> send high-priority FCM data push immediately
+                    try:
+                        from .fcm_service import send_call_push_notification
+                        push_sent = send_call_push_notification(
+                            db,
+                            user_id=target_id,
+                            call_id=new_session.id,
+                            caller_name=caller_name,
+                            call_type=call_type,
+                        )
+                        self._log(f"FCM push dispatched to {push_sent} device(s) for offline user {target_id}")
+                    except Exception as e:
+                        self._log(f"FCM push dispatch exception for user {target_id}: {e}")
+
                 return
 
             # ── 4. Call State Guard for Active Signals ────────────────────────
@@ -400,6 +475,29 @@ class SecureSignalingManager:
                 return
 
             other_party_id = receiver_id if sender_id == caller_id else caller_id
+
+            # ── 4.1 Callee Ringing Ack ───────────────────────────────────────
+            if msg_type in ("call_ringing", "ringing"):
+                ack_event = self._pending_ringing_acks.pop(session.id, None)
+                if ack_event:
+                    ack_event.set()
+                self._log(f"call_ringing ack received from sender={sender_id} for call_id={session.id}")
+                await self.send_to_user(
+                    other_party_id,
+                    {
+                        "type": "call_ringing",
+                        "call_id": session.id,
+                        "sender_id": sender_id,
+                        "target_id": other_party_id,
+                    }
+                )
+                return
+
+            # Clear pending ringing ack on termination/acceptance
+            if msg_type in ("call_accept", "call_accepted", "call_reject", "call_rejected", "call_cancel", "call_cancelled", "call_end", "call_ended"):
+                ack_event = self._pending_ringing_acks.pop(session.id, None)
+                if ack_event:
+                    ack_event.set()
 
             # ── 5. Callee Ready Notification (WebRTC readiness handshake) ────
             if msg_type in ("callee_ready", "receiver_ready"):

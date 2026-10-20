@@ -21,7 +21,7 @@ from sqlalchemy.orm import sessionmaker
 from websockets.sync.client import connect as ws_connect
 
 from backend.app.main import app, get_db
-from backend.app.core.database import Base
+from backend.app.core.database import Base, get_db as core_get_db
 from backend.app.core.security import hash_password, create_access_token
 from backend.app.models import User, Pair, CallSession, Message, DevicePushToken
 
@@ -37,6 +37,7 @@ def override_get_db():
         db.close()
 
 app.dependency_overrides[get_db] = override_get_db
+app.dependency_overrides[core_get_db] = override_get_db
 client = TestClient(app)
 
 
@@ -59,6 +60,7 @@ class WebSocketCallSignalingTests(unittest.TestCase):
 
     def setUp(self):
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[core_get_db] = override_get_db
 
     @classmethod
     def tearDownClass(cls):
@@ -421,7 +423,153 @@ class WebSocketCallSignalingTests(unittest.TestCase):
                 self.assertEqual(ready_msg["sender_id"], u2)
         print("  [PASS] WebRTC callee_ready readiness handshake verified")
 
+    def test_11_fcm_push_notification_dispatch(self):
+        """Tests FCM push notification: callee offline -> push attempted; callee online -> push skipped; invalid token removed."""
+        from backend.app.services.fcm_service import set_mock_fcm_sender
+
+        u1, t1 = self.create_test_user("fcm_u1@test.com", "fcm_u1")
+        u2, t2 = self.create_test_user("fcm_u2@test.com", "fcm_u2")
+        self.create_test_pair(u1, u2)
+
+        # 1. Register two device tokens for u2: one valid, one invalid
+        db = TestingSessionLocal()
+        db.add(DevicePushToken(user_id=u2, token="VALID_TOKEN_U2_DEVICE_A", platform="android"))
+        db.add(DevicePushToken(user_id=u2, token="INVALID_TOKEN_EXPIRED", platform="android"))
+        db.commit()
+        db.close()
+
+        sent_pushes = []
+
+        def fake_fcm_sender(db, target_id, tokens, call_id, caller_name, call_type):
+            tokens_to_delete = []
+            for t in tokens:
+                if t.token == "INVALID_TOKEN_EXPIRED":
+                    tokens_to_delete.append(t)
+                else:
+                    sent_pushes.append({
+                        "token": t.token,
+                        "call_id": call_id,
+                        "caller_name": caller_name,
+                        "call_type": call_type,
+                    })
+            for t in tokens_to_delete:
+                db.delete(t)
+            db.commit()
+            return len(sent_pushes)
+
+        set_mock_fcm_sender(fake_fcm_sender)
+
+        from backend.app.services.signaling_manager import secure_call_manager
+        old_timeout = secure_call_manager._ringing_ack_timeout
+        secure_call_manager._ringing_ack_timeout = 1.0  # Fast 1s timeout for deterministic testing
+
+        try:
+            # Case 1: Callee u2 is ONLINE + ACKS call_ringing -> push must NOT be attempted
+            with ws_connect(f"{self.base_ws_url}/ws/call?token={t1}") as ws1:
+                with ws_connect(f"{self.base_ws_url}/ws/call?token={t2}") as ws2:
+                    _ = json.loads(ws1.recv(timeout=5))  # authenticated
+                    _ = json.loads(ws2.recv(timeout=5))  # authenticated
+
+                    ws1.send(json.dumps({
+                        "type": "call_invite",
+                        "target_id": u2,
+                        "call_type": "voice",
+                    }))
+                    initiated_a = json.loads(ws1.recv(timeout=5))  # call_initiated
+                    _ = json.loads(ws2.recv(timeout=5))  # incoming_call
+                    _ = json.loads(ws1.recv(timeout=5))  # call_ringing from invite delivery
+
+                    # Callee acknowledges ringing
+                    ws2.send(json.dumps({
+                        "type": "call_ringing",
+                        "call_id": initiated_a["call_id"],
+                    }))
+
+                    # Wait beyond timeout to ensure no push was fired
+                    time.sleep(1.2)
+                    self.assertEqual(len(sent_pushes), 0)
+
+                    # Cancel call so session is completed
+                    ws1.send(json.dumps({
+                        "type": "call_cancel",
+                        "call_id": initiated_a["call_id"],
+                    }))
+                    _ = json.loads(ws2.recv(timeout=5))  # call_cancelled
+
+            # Case 2: Callee u2 is ONLINE + NO ACK -> timeout expires -> push IS attempted
+            sent_pushes.clear()
+            with ws_connect(f"{self.base_ws_url}/ws/call?token={t1}") as ws1:
+                with ws_connect(f"{self.base_ws_url}/ws/call?token={t2}") as ws2:
+                    _ = json.loads(ws1.recv(timeout=5))
+                    _ = json.loads(ws2.recv(timeout=5))
+
+                    ws1.send(json.dumps({
+                        "type": "call_invite",
+                        "target_id": u2,
+                        "call_type": "voice",
+                    }))
+                    initiated_b = json.loads(ws1.recv(timeout=5))  # call_initiated
+                    _ = json.loads(ws2.recv(timeout=5))  # incoming_call
+                    _ = json.loads(ws1.recv(timeout=5))  # call_ringing
+
+                    # Callee intentionally does NOT send call_ringing ack.
+                    # Poll for fallback FCM push after the 1s timeout
+                    for _ in range(30):
+                        if len(sent_pushes) >= 1:
+                            break
+                        time.sleep(0.1)
+
+                    self.assertEqual(len(sent_pushes), 1)
+                    self.assertEqual(sent_pushes[0]["call_id"], initiated_b["call_id"])
+
+                    # Cancel call
+                    ws1.send(json.dumps({
+                        "type": "call_cancel",
+                        "call_id": initiated_b["call_id"],
+                    }))
+                    _ = json.loads(ws2.recv(timeout=5))  # call_cancelled
+
+            # Case 3: Callee u2 is OFFLINE -> push attempted immediately, invalid token removed
+            sent_pushes.clear()
+            with ws_connect(f"{self.base_ws_url}/ws/call?token={t1}") as ws1:
+                _ = json.loads(ws1.recv(timeout=5))  # authenticated
+
+                ws1.send(json.dumps({
+                    "type": "call_invite",
+                    "target_id": u2,
+                    "call_type": "video",
+                }))
+                initiated_c = json.loads(ws1.recv(timeout=5))
+                self.assertEqual(initiated_c["type"], "call_initiated")
+
+                # Verify push was sent with proper data payload
+                for _ in range(30):
+                    if len(sent_pushes) >= 1:
+                        break
+                    time.sleep(0.1)
+
+                self.assertEqual(len(sent_pushes), 1)
+                push = sent_pushes[0]
+                self.assertEqual(push["token"], "VALID_TOKEN_U2_DEVICE_A")
+                self.assertEqual(push["call_id"], initiated_c["call_id"])
+                self.assertEqual(push["call_type"], "video")
+
+                # Verify database: INVALID_TOKEN_EXPIRED was deleted, VALID token remains
+                db = TestingSessionLocal()
+                remaining_tokens = [
+                    t.token for t in db.query(DevicePushToken).filter(DevicePushToken.user_id == u2).all()
+                ]
+                self.assertIn("VALID_TOKEN_U2_DEVICE_A", remaining_tokens)
+                self.assertNotIn("INVALID_TOKEN_EXPIRED", remaining_tokens)
+                db.close()
+
+            print("  [PASS] FCM push: online+acks (no push), online+no ack (push), offline (push) verified")
+        finally:
+            secure_call_manager._ringing_ack_timeout = old_timeout
+            set_mock_fcm_sender(None)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 

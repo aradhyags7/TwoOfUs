@@ -2306,7 +2306,7 @@ async def initiate_call(
     caller_user = db.query(User).filter(User.id == caller_id).first()
     caller_name = caller_user.username if caller_user else "Partner"
 
-    await call_manager.send_to_user(
+    delivered = await secure_call_manager.send_to_user(
         receiver_id,
         {
             "type": "incoming_call",
@@ -2317,6 +2317,18 @@ async def initiate_call(
             "created_at": session.created_at.isoformat() if session.created_at else None,
         }
     )
+    if not delivered:
+        try:
+            from .services.fcm_service import send_call_push_notification
+            send_call_push_notification(
+                db,
+                user_id=receiver_id,
+                call_id=session.id,
+                caller_name=caller_name,
+                call_type=session.call_type,
+            )
+        except Exception:
+            pass
 
     return session
 

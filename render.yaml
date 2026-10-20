@@ -63,3 +63,8 @@ services:
       # SMTP Password / Google App Password (secret: configure in Render dashboard)
       - key: SMTP_PASSWORD
         sync: false
+
+      # Firebase Cloud Messaging Service Account Credentials JSON (secret: configure in Render dashboard)
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+
