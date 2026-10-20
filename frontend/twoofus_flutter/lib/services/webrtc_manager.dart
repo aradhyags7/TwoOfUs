@@ -152,8 +152,25 @@ class WebRTCManager {
     _peerConnection = await createPeerConnection(configuration);
 
     // 3. Register PeerConnection Callbacks
+    _peerConnection!.onSignalingState = (RTCSignalingState state) {
+      if (kDebugMode) {
+        print("[WebRTCManager] Signaling State: $state");
+      }
+    };
+
+    _peerConnection!.onIceGatheringState = (RTCIceGatheringState state) {
+      if (kDebugMode) {
+        print("[WebRTCManager] ICE Gathering State: $state");
+      }
+    };
+
     _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
       if (candidate.candidate != null && candidate.candidate!.isNotEmpty) {
+        if (kDebugMode) {
+          final typMatch = RegExp(r'typ\s+([a-zA-Z0-9]+)').firstMatch(candidate.candidate ?? '');
+          final cType = typMatch != null ? typMatch.group(1) : 'unknown';
+          print("[WebRTCManager] Local ICE candidate generated (type: $cType): ${candidate.candidate}");
+        }
         onLocalIceCandidate?.call(candidate);
       }
     };
@@ -395,9 +412,14 @@ class WebRTCManager {
 
   /// Adds a received remote ICE Candidate
   Future<void> addRemoteIceCandidate(RTCIceCandidate candidate) async {
-    if (_peerConnection == null) return;
+    final typMatch = RegExp(r'typ\s+([a-zA-Z0-9]+)').firstMatch(candidate.candidate ?? '');
+    final cType = typMatch != null ? typMatch.group(1) : 'unknown';
 
-    if (_hasRemoteDescription) {
+    if (kDebugMode) {
+      print("[WebRTCManager] Remote ICE candidate received (type: $cType, hasRemoteDesc: $_hasRemoteDescription, hasPeerConn: ${_peerConnection != null})");
+    }
+
+    if (_peerConnection != null && _hasRemoteDescription) {
       try {
         await _peerConnection!.addCandidate(candidate);
       } catch (e) {
@@ -406,12 +428,13 @@ class WebRTCManager {
         }
       }
     } else {
-      // Queue candidate until remote description is set
+      // Safely queue candidate until both peer connection and remote description are set
       _pendingIceCandidates.add(candidate);
     }
   }
 
   void _flushPendingIceCandidates() {
+    if (_peerConnection == null || !_hasRemoteDescription) return;
     for (final candidate in _pendingIceCandidates) {
       try {
         _peerConnection?.addCandidate(candidate);

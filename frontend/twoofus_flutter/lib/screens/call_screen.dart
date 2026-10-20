@@ -50,6 +50,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   bool _isExiting = false;
   Offset _pipOffset = const Offset(20, 120);
   bool _isSwappedVideo = false;
+  bool _offerSent = false;
+  Timer? _offerFallbackTimer;
 
   AppTheme get _theme => ThemeController.currentTheme.value;
   Color get _bg => _theme.bg;
@@ -75,7 +77,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _setupSignalingListener();
 
     if (!_isIncoming) {
-      _statusMessage = "Calling...";
+      if (!CallSignalingClient.instance.isConnectedNotifier.value) {
+        _statusMessage = "Connecting to signaling server...";
+      } else {
+        _statusMessage = "Calling...";
+      }
       if (_currentSession.status == 'ongoing') {
         CallService.startDurationTimer();
       }
@@ -83,7 +89,19 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       _statusMessage = "Incoming ${widget.session.callType} call...";
     }
 
+    CallSignalingClient.instance.isConnectedNotifier.addListener(_onWsConnectionChanged);
     _startStatusChecker();
+  }
+
+  void _onWsConnectionChanged() {
+    if (!mounted) return;
+    if (CallSignalingClient.instance.isConnectedNotifier.value) {
+      if (!_isIncoming && _statusMessage == "Connecting to signaling server...") {
+        setState(() {
+          _statusMessage = "Calling...";
+        });
+      }
+    }
   }
 
   bool _renderersInitialized = false;
@@ -141,6 +159,37 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       );
     } catch (e) {
       if (kDebugMode) print("[Upgrade to video error]: $e");
+    }
+  }
+
+  Future<void> _sendOffer() async {
+    if (_offerSent) return;
+    _offerSent = true;
+    try {
+      final isVideo = _currentSession.callType == 'video';
+      if (_webrtcManager.localStream == null) {
+        await _webrtcManager.initialize(isVideo: isVideo);
+        await _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
+        if (isVideo && _webrtcManager.localStream != null) {
+          _localRenderer.srcObject = _webrtcManager.localStream;
+        }
+      }
+      final offer = await _webrtcManager.createOffer(isVideo: isVideo);
+      CallSignalingClient.instance.sendWebRtcOffer(
+        callId: _currentSession.id,
+        sdp: offer.sdp ?? '',
+        type: offer.type ?? 'offer',
+      );
+      if (mounted) {
+        setState(() {
+          _statusMessage = "Connecting (Securing E2EE)...";
+        });
+      }
+      if (kDebugMode) {
+        print("[WebRTC] Successfully generated and dispatched SDP offer for call ${_currentSession.id}");
+      }
+    } catch (e) {
+      if (kDebugMode) print("[WebRTC Error creating offer]: $e");
     }
   }
 
@@ -228,7 +277,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           // Partner accepted call
           if (!_isIncoming && mounted) {
             setState(() {
-              _statusMessage = "Connecting (Securing E2EE)...";
+              _statusMessage = "Connecting (Waiting for partner media)...";
               _currentSession = CallSessionModel(
                 id: _currentSession.id,
                 callerId: _currentSession.callerId,
@@ -240,22 +289,32 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             });
             CallService.startDurationTimer();
 
-            // Caller initializes WebRTC and sends SDP Offer
+            // Pre-initialize caller WebRTC and wait for callee_ready
             try {
               await _webrtcManager.initialize(isVideo: isVideo);
               await _webrtcManager.setSpeakerphone(CallService.isSpeakerNotifier.value);
               if (isVideo && _webrtcManager.localStream != null) {
                 _localRenderer.srcObject = _webrtcManager.localStream;
               }
-              final offer = await _webrtcManager.createOffer(isVideo: isVideo);
-              CallSignalingClient.instance.sendWebRtcOffer(
-                callId: _currentSession.id,
-                sdp: offer.sdp ?? '',
-                type: offer.type ?? 'offer',
-              );
+              // 2.5s fallback timer in case callee client does not emit callee_ready
+              _offerFallbackTimer?.cancel();
+              _offerFallbackTimer = Timer(const Duration(milliseconds: 2500), () async {
+                if (!_offerSent && mounted && !_isIncoming) {
+                  if (kDebugMode) print("[WebRTC] callee_ready timeout reached (2.5s), sending offer now");
+                  await _sendOffer();
+                }
+              });
             } catch (e) {
-              if (kDebugMode) print("[WebRTC Error creating offer]: $e");
+              if (kDebugMode) print("[WebRTC Error initializing on call_accepted]: $e");
             }
+          }
+          break;
+
+        case 'callee_ready':
+          if (!_isIncoming && mounted && !_offerSent) {
+            if (kDebugMode) print("[WebRTC] Received callee_ready; creating & sending SDP offer");
+            _offerFallbackTimer?.cancel();
+            await _sendOffer();
           }
           break;
 
@@ -384,6 +443,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   void dispose() {
     _statusCheckTimer?.cancel();
     _signalingSubscription?.cancel();
+    _offerFallbackTimer?.cancel();
+    CallSignalingClient.instance.isConnectedNotifier.removeListener(_onWsConnectionChanged);
     _pulseController.dispose();
     _waveController.dispose();
     _webrtcManager.dispose();
@@ -401,6 +462,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _isExiting = true;
     _statusCheckTimer?.cancel();
     _signalingSubscription?.cancel();
+    _offerFallbackTimer?.cancel();
+    CallSignalingClient.instance.isConnectedNotifier.removeListener(_onWsConnectionChanged);
     _webrtcManager.dispose();
     CallService.activeCallNotifier.value = null;
     CallNotificationService.instance.cancelAll();
@@ -483,6 +546,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     // 2. Send Accept over WebSocket signaling & REST
     CallNotificationService.instance.cancelIncoming();
     CallSignalingClient.instance.sendAccept(callId: _currentSession.id);
+    CallSignalingClient.instance.sendCalleeReady(callId: _currentSession.id);
     final res = await ApiService.respondToCall(_currentSession.id, 'accept');
 
     if (!mounted) return;

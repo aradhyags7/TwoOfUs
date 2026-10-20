@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/call_session.dart';
@@ -65,6 +66,9 @@ class CallService {
     _signalingSub?.cancel();
     _signalingSub = CallSignalingClient.instance.messageStream.listen((msg) async {
       final type = msg['type'];
+      if (kDebugMode && type != 'pong') {
+        debugPrint("[CallService] Received signaling event: type=$type, call_id=${msg['call_id']}");
+      }
       if (type == 'incoming_call') {
         final myId = await Session.getUserId();
         if (myId == null) return;
