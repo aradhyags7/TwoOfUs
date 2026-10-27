@@ -90,6 +90,7 @@ class CallNotificationService {
     if (callId <= 0) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
       final list = prefs.getStringList(_kHandledCallIdsKey) ?? [];
       return list.contains(callId.toString());
     } catch (e) {
@@ -103,6 +104,7 @@ class CallNotificationService {
     if (callId <= 0) return;
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
       final list = (prefs.getStringList(_kHandledCallIdsKey) ?? []).toList();
       if (!list.contains(callId.toString())) {
         list.add(callId.toString());

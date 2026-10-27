@@ -60,7 +60,7 @@
             android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
             android:exported="false"
             android:stopWithTask="true"
-            android:foregroundServiceType="microphone|camera|phoneCall" />
+            android:foregroundServiceType="microphone|camera" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

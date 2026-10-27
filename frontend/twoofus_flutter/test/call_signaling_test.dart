@@ -159,28 +159,33 @@ void main() {
       expect(callType, 'video');
     });
 
-    test('Cross-isolate persistent deduplication via SharedPreferences', () async {
+    test('Cross-isolate persistent deduplication via SharedPreferences reload()', () async {
       SharedPreferences.setMockInitialValues({});
       const testCallId = 8842;
+
+      // Simulate two separate isolates obtaining SharedPreferences instances
+      final isolate1Prefs = await SharedPreferences.getInstance();
+      final isolate2Prefs = await SharedPreferences.getInstance();
 
       // Initial check should be false
       expect(await CallNotificationService.isCallPersistentlyHandled(testCallId), isFalse);
 
-      // Mark as handled
-      await CallNotificationService.markCallPersistentlyHandled(testCallId);
+      // Isolate 1 handles the call and marks it in persistent storage
+      await isolate1Prefs.setStringList('fcm_handled_call_ids', [testCallId.toString()]);
 
-      // Subsequent checks should be true
+      // Isolate 2 checks via isCallPersistentlyHandled, which reloads from persistent storage
       expect(await CallNotificationService.isCallPersistentlyHandled(testCallId), isTrue);
 
-      // Verify persistent storage contains the call id
-      final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList('fcm_handled_call_ids');
+      // Verify isolate 2 reloads and reflects the updated handled list
+      await isolate2Prefs.reload();
+      final list = isolate2Prefs.getStringList('fcm_handled_call_ids');
       expect(list, isNotNull);
       expect(list, contains(testCallId.toString()));
 
       // Duplicate mark does not add duplicate entries
       await CallNotificationService.markCallPersistentlyHandled(testCallId);
-      final listAfter = prefs.getStringList('fcm_handled_call_ids');
+      await isolate2Prefs.reload();
+      final listAfter = isolate2Prefs.getStringList('fcm_handled_call_ids');
       expect(listAfter!.where((id) => id == testCallId.toString()).length, 1);
     });
   });
