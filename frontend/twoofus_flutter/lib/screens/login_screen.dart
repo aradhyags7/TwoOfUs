@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import '../services/api_service.dart';
 import '../services/call_service.dart';
+import '../services/google_auth_service.dart';
 import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
 import '../utils/session.dart';
@@ -25,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
 
   bool isLoading = false;
+  bool isGoogleLoading = false;
   bool _isPasswordVisible = false;
   String? _errorMessage;
 
@@ -93,7 +95,42 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleGoogleSignIn() async {
+    HapticFeedback.lightImpact();
+    setState(() {
+      isGoogleLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final result = await GoogleAuthService.signInWithGoogle();
+      if (!mounted) return;
+      if (result == null) {
+        // User cancelled
+        return;
+      }
+
+      if (result.containsKey("requires_2fa") && result["requires_2fa"] == true) {
+        _show2FALoginSheet(result["temp_token"]);
+      } else if (result.containsKey("access_token")) {
+        await _handleSuccessfulAuth(result);
+      } else if (result.containsKey("error")) {
+        setState(() => _errorMessage = result["error"].toString());
+        AppFeedback.showError(context, result["error"].toString());
+      } else {
+        AppFeedback.showError(context, "Google Sign-In failed — please try again.");
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showError(context, "Google Sign-In error: $e");
+      }
+    } finally {
+      if (mounted) setState(() => isGoogleLoading = false);
+    }
+  }
+
   void _show2FALoginSheet(String tempToken) {
+
     final codeCtrl = TextEditingController();
     bool isVerifying = false;
     bool isSendingEmail = false;
@@ -763,7 +800,61 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 const SizedBox(height: 18),
 
+                                // Continue with Google Button
+                                GestureDetector(
+                                  onTap: isGoogleLoading ? null : _handleGoogleSignIn,
+                                  child: Container(
+                                    height: 48,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFBF8F4),
+                                      borderRadius: BorderRadius.circular(24),
+                                      border: Border.all(
+                                        color: const Color(0xFFE5DDD2),
+                                        width: 1.2,
+                                      ),
+                                    ),
+                                    child: isGoogleLoading
+                                        ? const Center(
+                                            child: SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.0,
+                                                color: Color(0xFF423D37),
+                                              ),
+                                            ),
+                                          )
+                                        : Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              CustomPaint(
+                                                size: const Size(18, 18),
+                                                painter: GoogleLogoPainter(),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              const Flexible(
+                                                child: Text(
+                                                  "Continue with Google",
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    fontFamily: 'Inter',
+                                                    fontSize: 13.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF2B2723),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+
                                 // Sign in with Biometrics
+
                                 GestureDetector(
                                   onTap: _handleBiometricAuth,
                                   child: Container(

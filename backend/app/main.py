@@ -1,3 +1,6 @@
+import re
+import secrets
+import httpx
 from datetime import datetime, timezone, timedelta
 import json
 import os
@@ -26,7 +29,8 @@ from .core.security import (
 from .models import ConnectionPin, Message, Pair, User, Media, DiaryMemory, CallSession, DevicePushToken
 from .routes.call_signaling import router as call_signaling_router
 from .services.signaling_manager import secure_call_manager
-from .schemas.auth import ConnectByPin, UserCreate, UserLogin, PublicKeyUploadRequest
+from .schemas.auth import ConnectByPin, UserCreate, UserLogin, PublicKeyUploadRequest, GoogleAuthRequest
+
 from .schemas.call import (
     CallInitiateRequest,
     CallRespondRequest,
@@ -112,6 +116,8 @@ def run_auto_migrations(target_engine=None):
                 conn.execute(text("ALTER TABLE users ADD COLUMN email_2fa_otp TEXT;"))
             if "email_2fa_expires_at" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN email_2fa_expires_at TIMESTAMP;"))
+            if "google_id" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN google_id TEXT;"))
             if "last_seen" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN last_seen TIMESTAMP;"))
 
@@ -457,8 +463,143 @@ def login(
 
 
 # ==========================
+# Google OAuth2 Authentication
+# ==========================
+@app.post("/auth/google")
+async def google_auth(
+    payload: GoogleAuthRequest,
+    db: Session = Depends(get_db)
+):
+    id_token = payload.id_token.strip()
+    if not id_token:
+        raise HTTPException(status_code=400, detail="id_token is required")
+
+    # Verify ID token using Google's public tokeninfo endpoint
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": id_token}
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=401, detail="Invalid Google ID token")
+            token_info = resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to verify Google token: {str(e)}")
+
+    # Verify issuer
+    iss = token_info.get("iss")
+    if iss not in ["accounts.google.com", "https://accounts.google.com"]:
+        raise HTTPException(status_code=401, detail="Invalid token issuer")
+
+    # Verify email and verification status
+    email = token_info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Google token does not contain an email")
+
+    email_verified = token_info.get("email_verified")
+    if str(email_verified).lower() not in ["true", "1"]:
+        raise HTTPException(status_code=400, detail="Google email is not verified")
+
+    email = email.strip().lower()
+    google_id = token_info.get("sub")
+    name = token_info.get("name") or token_info.get("given_name") or email.split("@")[0]
+    picture = token_info.get("picture")
+
+    # Optional GOOGLE_CLIENT_ID verification if configured
+    expected_client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if expected_client_id:
+        aud = token_info.get("aud")
+        if aud != expected_client_id:
+            raise HTTPException(status_code=401, detail="Google token client ID mismatch")
+
+    # Check if user exists by google_id or email
+    user = (
+        db.query(User)
+        .filter((User.google_id == google_id) | (func.lower(User.email) == email))
+        .first()
+    )
+
+    if not user:
+        # Create new user with unique username
+        base_username = re.sub(r'[^a-zA-Z0-9_]', '', name.replace(' ', '_')).strip('_') or "user"
+        username = base_username
+        counter = 1
+        while db.query(User).filter(func.lower(User.username) == username.lower()).first():
+            username = f"{base_username}_{counter}"
+            counter += 1
+
+        random_pass = secrets.token_urlsafe(32)
+        user = User(
+            email=email,
+            username=username,
+            password_hash=hash_password(random_pass),
+            google_id=google_id,
+            avatar_url=picture,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        # Update google_id and avatar if missing
+        changed = False
+        if not user.google_id:
+            user.google_id = google_id
+            changed = True
+        if not user.avatar_url and picture:
+            user.avatar_url = picture
+            changed = True
+        if changed:
+            db.commit()
+            db.refresh(user)
+
+    # Check 2FA
+    if user.is_2fa_enabled:
+        temp_token = create_access_token(
+            data={
+                "sub": str(user.id),
+                "email": user.email,
+                "type": "2fa_pending"
+            }
+        )
+        method = user.two_factor_method or "totp"
+        otp = None
+        if method == "email":
+            otp = "".join(choices(string.digits, k=6))
+            user.email_2fa_otp = otp
+            user.email_2fa_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+            db.commit()
+            send_2fa_otp_email(to_email=str(user.email), username=str(user.username), code=otp)
+
+        return {
+            "requires_2fa": True,
+            "two_factor_method": method,
+            "temp_token": temp_token,
+            "user_id": user.id,
+        }
+
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "email": user.email
+        }
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "email": user.email,
+        "username": user.username
+    }
+
+
+# ==========================
 # Two-Factor Authentication (2FA)
 # ==========================
+
 @app.post("/2fa/setup", response_model=TwoFactorSetupResponse)
 def setup_2fa(
     current_user: dict = Depends(get_current_user),

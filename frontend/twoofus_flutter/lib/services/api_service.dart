@@ -469,8 +469,53 @@ class ApiService {
   }
 
   // =========================
+  // GOOGLE SIGN-IN
+  // =========================
+  static Future<Map<String, dynamic>?> googleSignIn(String idToken) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/auth/google'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'id_token': idToken,
+          }),
+        ).timeout(defaultTimeout);
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else {
+          try {
+            final err = jsonDecode(response.body);
+            return {"error": err["detail"] ?? "Google Sign-In failed (${response.statusCode})"};
+          } catch (_) {
+            return {"error": "Server error (${response.statusCode})"};
+          }
+        }
+      } catch (e) {
+        if (attempt == 0) {
+          if (baseUrl != productionServerUrl) {
+            _customBaseUrl = null;
+            _discoveredBaseUrl = productionServerUrl;
+            continue;
+          }
+          final discovered = await autoDiscoverServer();
+          if (discovered != null) {
+            continue;
+          }
+        }
+        return {"error": "Cannot connect to server. Please check backend connection."};
+      }
+    }
+    return {"error": "Cannot connect to server. Please check backend connection."};
+  }
+
+  // =========================
   // FORGOT & RESET PASSWORD
   // =========================
+
   static Future<Map<String, dynamic>?> requestPasswordReset(
     String emailOrUsername,
   ) async {

@@ -19,6 +19,7 @@ class User(Base):
     public_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     reset_otp: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     reset_otp_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    google_id: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
 
     # Two-Factor Authentication (2FA)
     is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

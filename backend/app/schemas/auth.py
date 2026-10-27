@@ -25,3 +25,7 @@ class ConnectByPinRequest(BaseModel):
 
 class PublicKeyUploadRequest(BaseModel):
     public_key: str
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str

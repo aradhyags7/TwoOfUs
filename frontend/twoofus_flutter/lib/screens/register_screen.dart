@@ -2,7 +2,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../services/call_service.dart';
+import '../services/google_auth_service.dart';
 import '../utils/app_feedback.dart';
+import '../utils/session.dart';
+import 'chat_screen.dart';
+import 'home_screen.dart';
 import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -18,6 +23,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final passwordController = TextEditingController();
 
   bool isLoading = false;
+  bool isGoogleLoading = false;
   bool _isPasswordVisible = false;
   String? _errorMessage;
 
@@ -98,7 +104,79 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (mounted) setState(() => isLoading = false);
   }
 
+  Future<void> _handleGoogleSignIn() async {
+    HapticFeedback.lightImpact();
+    setState(() {
+      isGoogleLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final result = await GoogleAuthService.signInWithGoogle();
+      if (!mounted) return;
+      if (result == null) {
+        // User cancelled picker
+        return;
+      }
+
+      if (result.containsKey("access_token")) {
+        await Session.saveLogin(
+          token: result["access_token"],
+          userId: result["user_id"],
+          username: result["username"],
+          email: result["email"],
+        );
+        CallService.startIncomingCallWatcher();
+
+        if (!mounted) return;
+        final pairStatus = await ApiService.getPairStatus(
+          result["user_id"],
+          token: result["access_token"],
+        );
+        if (!mounted) return;
+
+        if (pairStatus != null &&
+            pairStatus["connected"] == true &&
+            pairStatus["partner_id"] != null) {
+          final partnerId = pairStatus["partner_id"] as int;
+          final partnerName = (pairStatus["partner_name"] ?? "Partner").toString();
+          await Session.savePartner(partnerId, partnerName);
+
+          if (!mounted) return;
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                partnerId: partnerId,
+                partnerName: partnerName.isNotEmpty ? partnerName : "Partner",
+              ),
+            ),
+            (route) => false,
+          );
+        } else {
+          if (!mounted) return;
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
+          );
+        }
+      } else if (result.containsKey("error")) {
+        _showSnack(result["error"].toString(), isError: true);
+      } else {
+        _showSnack("Google Sign-In failed — please try again.", isError: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack("Google Sign-In error: $e", isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => isGoogleLoading = false);
+    }
+  }
+
   @override
+
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F2EB),
@@ -591,13 +669,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                                 // Continue with Google Button
                                 GestureDetector(
-                                  onTap: () {
-                                    HapticFeedback.lightImpact();
-                                    AppFeedback.showInfo(
-                                      context,
-                                      "Google Sign-In will be available in the upcoming release. Please register with your username and email.",
-                                    );
-                                  },
+                                  onTap: isGoogleLoading ? null : _handleGoogleSignIn,
                                   child: Container(
                                     height: 48,
                                     padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -609,30 +681,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         width: 1.2,
                                       ),
                                     ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        CustomPaint(
-                                          size: const Size(18, 18),
-                                          painter: GoogleLogoPainter(),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        const Flexible(
-                                          child: Text(
-                                            "Continue with Google",
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                            style: TextStyle(
-                                              fontFamily: 'Inter',
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF2B2723),
+                                    child: isGoogleLoading
+                                        ? const Center(
+                                            child: SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.0,
+                                                color: Color(0xFF423D37),
+                                              ),
                                             ),
+                                          )
+                                        : Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              CustomPaint(
+                                                size: const Size(18, 18),
+                                                painter: GoogleLogoPainter(),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              const Flexible(
+                                                child: Text(
+                                                  "Continue with Google",
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    fontFamily: 'Inter',
+                                                    fontSize: 13.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF2B2723),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                      ],
-                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 20),
