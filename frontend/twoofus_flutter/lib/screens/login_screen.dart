@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import '../services/api_service.dart';
 import '../services/call_service.dart';
-import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/app_feedback.dart';
 import '../utils/session.dart';
@@ -75,6 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final partnerName = (pairStatus["partner_name"] ?? "Partner").toString();
       await Session.savePartner(partnerId, partnerName);
 
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -85,6 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } else {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -317,6 +318,7 @@ class _LoginScreenState extends State<LoginScreen> {
             "email": await Session.getEmail() ?? "",
           });
         } else {
+          if (!mounted) return;
           AppFeedback.showInfo(context, "Please sign in with password first to enable biometric quick access.");
         }
       }
@@ -338,7 +340,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Image.asset(
               'assets/images/login_bg.png',
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const ColoredBox(
+              errorBuilder: (context, error, stackTrace) => const ColoredBox(
                 color: Color(0xFFF7F2EB),
               ),
             ),

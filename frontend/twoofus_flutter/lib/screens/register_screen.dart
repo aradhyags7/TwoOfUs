@@ -109,7 +109,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Image.asset(
               'assets/images/login_bg.png',
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const ColoredBox(
+              errorBuilder: (context, error, stackTrace) => const ColoredBox(
                 color: Color(0xFFF7F2EB),
               ),
             ),
