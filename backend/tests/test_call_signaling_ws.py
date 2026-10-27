@@ -568,6 +568,53 @@ class WebSocketCallSignalingTests(unittest.TestCase):
             secure_call_manager._ringing_ack_timeout = old_timeout
             set_mock_fcm_sender(None)
 
+    def test_12_firebase_admin_missing_import_safe_skip(self):
+        """
+        Verifies that when firebase_admin is missing (simulated ImportError),
+        startup, health check, and push notification dispatch degrade gracefully with zero crashes.
+        """
+        from unittest.mock import patch
+        from backend.app.services.fcm_service import send_call_push_notification, set_mock_fcm_sender
+        import backend.app.services.fcm_service as fcm_mod
+
+        # 1. Health check returns 200 even without Firebase/FCM
+        client = TestClient(app)
+        health_resp = client.get("/health")
+        self.assertEqual(health_resp.status_code, 200)
+
+        # 2. Push notification skips cleanly with zero crashes on missing firebase_admin
+        set_mock_fcm_sender(None)
+        u2, _ = self.create_test_user(f"user2_fcm_{int(time.time())}@test.com", "user2_fcm")
+        db = TestingSessionLocal()
+        try:
+            db.query(DevicePushToken).filter(DevicePushToken.user_id == u2).delete()
+            db.add(DevicePushToken(user_id=u2, token="TEST_TOKEN_DISCONNECTED", platform="android"))
+            db.commit()
+
+            old_apps = getattr(fcm_mod, "_firebase_initialized", False)
+            fcm_mod._firebase_initialized = False
+
+            real_import = __import__
+
+            def fake_import(name, *args, **kwargs):
+                if name.startswith("firebase_admin"):
+                    raise ImportError("No module named 'firebase_admin'")
+                return real_import(name, *args, **kwargs)
+
+            with patch("builtins.__import__", side_effect=fake_import):
+                dispatched = send_call_push_notification(
+                    db,
+                    user_id=u2,
+                    call_id=9999,
+                    caller_name="Alice",
+                    call_type="voice",
+                )
+                self.assertEqual(dispatched, 0)
+            print("  [PASS] Simulated missing firebase_admin degrades cleanly: 0 dispatched, 0 crashes")
+        finally:
+            fcm_mod._firebase_initialized = old_apps
+            db.close()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
