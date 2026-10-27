@@ -318,13 +318,17 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                               color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              "60-Digit Code",
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                            Flexible(
+                              child: Text(
+                                "60-Digit Code",
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  color: _activeTab == 0 ? theme.onAccent : theme.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
@@ -353,13 +357,17 @@ class _EncryptionVerificationModalState extends State<EncryptionVerificationModa
                               color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              "QR Scan Code",
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                            Flexible(
+                              child: Text(
+                                "QR Scan Code",
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  color: _activeTab == 1 ? theme.onAccent : theme.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],

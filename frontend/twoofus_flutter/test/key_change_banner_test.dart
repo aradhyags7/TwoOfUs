@@ -69,6 +69,54 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
     });
 
+    testWidgets('1b. Visible banner and verification modal at 320px width without overflow', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({
+        'username': 'Alice',
+        'token': 'test_token',
+      });
+
+      // Simulate a partner key change event
+      E2EEService.simulatePartnerKeyChangeForTesting(99);
+      expect(E2EEService.hasKeyChangedRecently(99), isTrue);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeController.buildThemeData(AppTheme.defaultTheme),
+          home: const ChatScreen(
+            partnerId: 99,
+            partnerName: 'Bob',
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      // Banner must be visible with exact copy: "Safety number changed. Verify."
+      expect(find.byKey(const Key('key_changed_banner')), findsOneWidget);
+      expect(find.text("Safety number changed. Verify."), findsOneWidget);
+      expect(find.byKey(const Key('key_changed_verify_button')), findsOneWidget);
+      expect(find.text("Verify"), findsOneWidget);
+
+      // Tap Verify action to open modal at 320px width
+      await tester.tap(find.byKey(const Key('key_changed_verify_button')));
+      await tester.pump();
+
+      expect(E2EEService.hasKeyChangedRecently(99), isFalse);
+
+      CallService.stopIncomingCallWatcher();
+      SecurityService.cancelInactivityTimer();
+      CallSignalingClient.instance.disconnect();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 200));
+    });
+
     testWidgets('2. Banner is hidden when no key change occurred', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.5;

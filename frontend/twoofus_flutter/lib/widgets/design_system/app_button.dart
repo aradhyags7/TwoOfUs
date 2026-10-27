@@ -136,14 +136,18 @@ class _AppButtonState extends State<AppButton> {
             ),
             const SizedBox(width: 8),
           ],
-          Text(
-            widget.text,
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontSize: _fontSize,
-              fontWeight: FontWeight.w600,
-              color: fg,
-              letterSpacing: -0.1,
+          Flexible(
+            child: Text(
+              widget.text,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: _fontSize,
+                fontWeight: FontWeight.w600,
+                color: fg,
+                letterSpacing: -0.1,
+              ),
             ),
           ),
         ],
