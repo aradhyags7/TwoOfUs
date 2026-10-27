@@ -317,7 +317,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 Container(
                                   height: 48,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF3EEE6).withOpacity(0.85),
+                                    color: const Color(0xFFF4EFE6),
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
                                       color: const Color(0xFFE2DBD0),
@@ -327,6 +327,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   child: TextField(
                                     controller: usernameController,
                                     keyboardType: TextInputType.text,
+                                    cursorColor: const Color(0xFFB88235),
                                     style: const TextStyle(
                                       fontFamily: 'Inter',
                                       fontSize: 14,
@@ -344,7 +345,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         size: 19,
                                         color: Color(0xFF8A8277),
                                       ),
+                                      filled: true,
+                                      fillColor: Colors.transparent,
                                       border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
                                       contentPadding: EdgeInsets.symmetric(vertical: 14),
                                     ),
                                   ),
@@ -367,7 +374,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 Container(
                                   height: 48,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF3EEE6).withOpacity(0.85),
+                                    color: const Color(0xFFF4EFE6),
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
                                       color: const Color(0xFFE2DBD0),
@@ -377,6 +384,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   child: TextField(
                                     controller: emailController,
                                     keyboardType: TextInputType.emailAddress,
+                                    cursorColor: const Color(0xFFB88235),
                                     style: const TextStyle(
                                       fontFamily: 'Inter',
                                       fontSize: 14,
@@ -394,7 +402,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         size: 19,
                                         color: Color(0xFF8A8277),
                                       ),
+                                      filled: true,
+                                      fillColor: Colors.transparent,
                                       border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
                                       contentPadding: EdgeInsets.symmetric(vertical: 14),
                                     ),
                                   ),
@@ -417,7 +431,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 Container(
                                   height: 48,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF3EEE6).withOpacity(0.85),
+                                    color: const Color(0xFFF4EFE6),
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
                                       color: const Color(0xFFE2DBD0),
@@ -427,6 +441,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   child: TextField(
                                     controller: passwordController,
                                     obscureText: !_isPasswordVisible,
+                                    cursorColor: const Color(0xFFB88235),
                                     onSubmitted: (_) => register(),
                                     style: const TextStyle(
                                       fontFamily: 'Inter',
@@ -457,7 +472,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           setState(() => _isPasswordVisible = !_isPasswordVisible);
                                         },
                                       ),
+                                      filled: true,
+                                      fillColor: Colors.transparent,
                                       border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
                                       contentPadding: const EdgeInsets.symmetric(vertical: 14),
                                     ),
                                   ),
