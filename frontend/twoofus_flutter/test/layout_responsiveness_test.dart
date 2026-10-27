@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:twoofus_flutter/theme/app_theme.dart';
 import 'package:twoofus_flutter/theme/theme_controller.dart';
 import 'package:twoofus_flutter/screens/login_screen.dart';
+import 'package:twoofus_flutter/screens/register_screen.dart';
 import 'package:twoofus_flutter/screens/partner_profile_screen.dart';
 import 'package:twoofus_flutter/screens/theme_selection_screen.dart';
 import 'package:twoofus_flutter/widgets/design_system/design_system.dart';
@@ -57,6 +58,25 @@ void main() {
 
           expect(tester.takeException(), isNull);
           expect(find.byType(LoginScreen), findsOneWidget);
+        });
+
+        testWidgets('RegisterScreen renders at width $width textScale $textScale with zero overflow',
+            (tester) async {
+          tester.view.physicalSize = Size(width, 844);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+
+          await tester.pumpWidget(
+            createTestApp(
+              child: const RegisterScreen(),
+              width: width,
+              textScale: textScale,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.byType(RegisterScreen), findsOneWidget);
         });
 
         testWidgets('ThemeSelectionScreen renders at width $width textScale $textScale with zero overflow',
