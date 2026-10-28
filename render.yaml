@@ -68,3 +68,8 @@ services:
       - key: FIREBASE_CREDENTIALS_JSON
         sync: false
 
+      # Google OAuth 2.0 Web Client ID for Google Sign-In token verification
+      - key: GOOGLE_CLIENT_ID
+        value: "830428415181-hs63625thf9f8pah9j90jopv67am7at9.apps.googleusercontent.com"
+
+

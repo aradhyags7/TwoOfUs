@@ -5,7 +5,9 @@ import 'api_service.dart';
 class GoogleAuthService {
   /// Optional OAuth 2.0 Web Client ID from Google Cloud / Firebase Console.
   /// If provided, Google Play Services generates an OpenID Connect idToken.
-  static const String? serverClientId = null;
+  static const String? serverClientId =
+      "830428415181-hs63625thf9f8pah9j90jopv67am7at9.apps.googleusercontent.com";
+
 
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
