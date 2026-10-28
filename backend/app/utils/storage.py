@@ -21,6 +21,10 @@ ALLOWED_VIDEO_TYPES = {
     "video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/avi", "video/mpeg"
 }
 
+ALLOWED_AUDIO_TYPES = {
+    "audio/m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/wav", "audio/ogg", "audio/webm", "audio/x-m4a"
+}
+
 ALLOWED_DOCUMENT_TYPES = {
     "application/pdf", "text/plain", "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -35,6 +39,7 @@ def ensure_media_dirs():
     dirs = [
         os.path.join(base, "images"),
         os.path.join(base, "videos"),
+        os.path.join(base, "audio"),
         os.path.join(base, "files"),
         os.path.join(base, "thumbnails"),
     ]
@@ -65,6 +70,9 @@ def validate_file(file: UploadFile, file_size: int) -> Tuple[str, str]:
     elif content_type in ALLOWED_VIDEO_TYPES or ext in {".mp4", ".webm", ".mov", ".mkv", ".avi"}:
         media_type = "video"
         max_size = settings.MAX_VIDEO_SIZE_BYTES
+    elif content_type in ALLOWED_AUDIO_TYPES or ext in {".m4a", ".aac", ".mp3", ".wav", ".ogg", ".opus"}:
+        media_type = "audio"
+        max_size = settings.MAX_FILE_SIZE_BYTES
     else:
         media_type = "file"
         max_size = settings.MAX_FILE_SIZE_BYTES
@@ -93,7 +101,7 @@ def save_upload_file(
 
     unique_id = uuid.uuid4().hex
     stored_filename = f"{unique_id}{ext}"
-    sub_folder = "images" if media_type == "image" else ("videos" if media_type == "video" else "files")
+    sub_folder = "images" if media_type == "image" else ("videos" if media_type == "video" else ("audio" if media_type == "audio" else "files"))
     storage_path = os.path.join(settings.MEDIA_DIR, sub_folder, stored_filename)
 
     with open(storage_path, "wb") as buffer:

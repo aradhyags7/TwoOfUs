@@ -90,7 +90,13 @@ class MediaItem {
 
   bool get isImage => mediaType == 'image';
   bool get isVideo => mediaType == 'video';
-  bool get isFile => mediaType == 'file';
+  bool get isAudio =>
+      mediaType == 'audio' ||
+      originalFilename.endsWith('.m4a') ||
+      originalFilename.endsWith('.aac') ||
+      originalFilename.endsWith('.mp3') ||
+      originalFilename.endsWith('.wav');
+  bool get isFile => !isImage && !isVideo && !isAudio;
 
   String get formattedFileSize {
     if (fileSize < 1024) return '$fileSize B';

@@ -354,6 +354,9 @@ def validate_file(file: UploadFile, file_size: int) -> Tuple[str, str]:
     elif content_type in ALLOWED_VIDEO_TYPES or ext in {".mp4", ".webm", ".mov", ".mkv", ".avi"}:
         media_type = "video"
         max_size = settings.MAX_VIDEO_SIZE_BYTES
+    elif content_type in ALLOWED_AUDIO_TYPES or ext in {".m4a", ".aac", ".mp3", ".wav", ".ogg", ".opus"}:
+        media_type = "audio"
+        max_size = settings.MAX_FILE_SIZE_BYTES
     else:
         media_type = "file"
         max_size = settings.MAX_FILE_SIZE_BYTES
@@ -383,7 +386,7 @@ def save_upload_file(
 
     unique_id = uuid.uuid4().hex
     stored_filename = f"{unique_id}{ext}"
-    sub_folder = "images" if media_type == "image" else ("videos" if media_type == "video" else "files")
+    sub_folder = "images" if media_type == "image" else ("videos" if media_type == "video" else ("audio" if media_type == "audio" else "files"))
     object_key = f"media/{sub_folder}/{stored_filename}"
 
     file.file.seek(0)
