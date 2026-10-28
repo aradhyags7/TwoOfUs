@@ -106,4 +106,5 @@ dependencies:
   sqflite: ^2.4.5
   path: ^1.9.1
   audioplayers: ^6.8.1
+  record: ^7.1.2
 

@@ -24,6 +24,10 @@ ALLOWED_VIDEO_TYPES = {
     "video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/avi", "video/mpeg"
 }
 
+ALLOWED_AUDIO_TYPES = {
+    "audio/m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/wav", "audio/ogg", "audio/webm", "audio/x-m4a"
+}
+
 ALLOWED_DOCUMENT_TYPES = {
     "application/pdf", "text/plain", "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -317,6 +321,7 @@ def ensure_media_dirs():
         dirs = [
             os.path.join(base, "images"),
             os.path.join(base, "videos"),
+            os.path.join(base, "audio"),
             os.path.join(base, "files"),
             os.path.join(base, "thumbnails"),
             os.path.join("uploads", "avatars"),
