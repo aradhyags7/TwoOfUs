@@ -470,34 +470,52 @@ async def google_auth(
     payload: GoogleAuthRequest,
     db: Session = Depends(get_db)
 ):
-    id_token = payload.id_token.strip()
-    if not id_token:
-        raise HTTPException(status_code=400, detail="id_token is required")
+    id_token = payload.id_token.strip() if payload.id_token else None
+    access_token = payload.access_token.strip() if payload.access_token else None
 
-    # Verify ID token using Google's public tokeninfo endpoint
+    if not id_token and not access_token:
+        raise HTTPException(status_code=400, detail="id_token or access_token is required")
+
+    token_info = None
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                "https://oauth2.googleapis.com/tokeninfo",
-                params={"id_token": id_token}
-            )
-            if resp.status_code != 200:
-                raise HTTPException(status_code=401, detail="Invalid Google ID token")
-            token_info = resp.json()
+            if id_token:
+                resp = await client.get(
+                    "https://oauth2.googleapis.com/tokeninfo",
+                    params={"id_token": id_token}
+                )
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=401, detail="Invalid Google ID token")
+                token_info = resp.json()
+
+                # Verify issuer
+                iss = token_info.get("iss")
+                if iss not in ["accounts.google.com", "https://accounts.google.com"]:
+                    raise HTTPException(status_code=401, detail="Invalid token issuer")
+
+                # Optional GOOGLE_CLIENT_ID verification if configured
+                expected_client_id = os.getenv("GOOGLE_CLIENT_ID")
+                if expected_client_id:
+                    aud = token_info.get("aud")
+                    if aud != expected_client_id:
+                        raise HTTPException(status_code=401, detail="Google token client ID mismatch")
+            else:
+                resp = await client.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"}
+                )
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=401, detail="Invalid Google access token")
+                token_info = resp.json()
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to verify Google token: {str(e)}")
 
-    # Verify issuer
-    iss = token_info.get("iss")
-    if iss not in ["accounts.google.com", "https://accounts.google.com"]:
-        raise HTTPException(status_code=401, detail="Invalid token issuer")
-
     # Verify email and verification status
     email = token_info.get("email")
     if not email:
-        raise HTTPException(status_code=400, detail="Google token does not contain an email")
+        raise HTTPException(status_code=400, detail="Google account does not provide an email")
 
     email_verified = token_info.get("email_verified")
     if str(email_verified).lower() not in ["true", "1"]:
@@ -507,13 +525,6 @@ async def google_auth(
     google_id = token_info.get("sub")
     name = token_info.get("name") or token_info.get("given_name") or email.split("@")[0]
     picture = token_info.get("picture")
-
-    # Optional GOOGLE_CLIENT_ID verification if configured
-    expected_client_id = os.getenv("GOOGLE_CLIENT_ID")
-    if expected_client_id:
-        aud = token_info.get("aud")
-        if aud != expected_client_id:
-            raise HTTPException(status_code=401, detail="Google token client ID mismatch")
 
     # Check if user exists by google_id or email
     user = (

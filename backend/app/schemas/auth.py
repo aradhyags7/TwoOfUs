@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -20,12 +21,15 @@ class ConnectByPin(BaseModel):
     user_id: int
     pin_code: str
 
+
 class ConnectByPinRequest(BaseModel):
     pin_code: str
+
 
 class PublicKeyUploadRequest(BaseModel):
     public_key: str
 
 
 class GoogleAuthRequest(BaseModel):
-    id_token: str
+    id_token: Optional[str] = None
+    access_token: Optional[str] = None

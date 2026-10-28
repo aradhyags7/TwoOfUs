@@ -26,7 +26,7 @@ class TestGoogleAuth:
     def test_01_google_auth_missing_token(self):
         res = client.post("/auth/google", json={"id_token": ""})
         assert res.status_code == 400
-        assert "id_token is required" in res.json()["detail"]
+        assert "is required" in res.json()["detail"]
 
     @patch("httpx.AsyncClient.get")
     def test_02_google_auth_invalid_token(self, mock_get):
@@ -168,4 +168,28 @@ class TestGoogleAuth:
         assert data.get("requires_2fa") is True
         assert "temp_token" in data
         assert "user_id" in data
+
+    @patch("httpx.AsyncClient.get")
+    def test_07_google_auth_with_access_token_success(self, mock_get):
+        test_email = f"google_access_{_test_suffix}@gmail.com"
+        test_sub = f"sub_access_{_test_suffix}"
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "sub": test_sub,
+            "email": test_email,
+            "email_verified": True,
+            "name": f"Access Token User {_test_suffix}",
+            "picture": "https://lh3.googleusercontent.com/a/access-user",
+        }
+        mock_get.return_value = mock_resp
+
+        res = client.post("/auth/google", json={"access_token": "mocked_oauth_access_token"})
+        assert res.status_code == 200
+        data = res.json()
+        assert "access_token" in data
+        assert data["email"] == test_email
+        assert "user_id" in data
+        assert "username" in data
+
 
