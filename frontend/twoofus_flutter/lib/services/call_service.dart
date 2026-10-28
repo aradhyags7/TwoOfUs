@@ -7,6 +7,7 @@ import '../utils/session.dart';
 import 'api_service.dart';
 import 'call_notification_service.dart';
 import 'call_signaling_client.dart';
+import 'call_sound_service.dart';
 import 'webrtc_manager.dart';
 import '../screens/call_screen.dart';
 import '../main.dart';
@@ -59,9 +60,11 @@ class CallService {
         CallSignalingClient.instance.sendReject(callId: callId, reason: 'declined');
         await ApiService.respondToCall(callId, 'rejected');
         CallNotificationService.instance.cancelIncoming();
+        CallSoundService.instance.playCallEnd();
         activeCallNotifier.value = null;
       } else if (action == 'accept') {
         CallNotificationService.instance.cancelIncoming();
+        CallSoundService.instance.playCallConnect();
         var session = activeCallNotifier.value;
         if (session == null && callId > 0) {
           final myId = await Session.getUserId();
@@ -136,7 +139,8 @@ class CallService {
           callType: session.callType,
         );
 
-        // Ringing feedback
+        // Ringing feedback with audio ringtone
+        CallSoundService.instance.playIncomingRingtone();
         HapticFeedback.heavyImpact();
         Future.delayed(const Duration(milliseconds: 250), () => HapticFeedback.heavyImpact());
 
@@ -158,6 +162,7 @@ class CallService {
           type == 'call_rejected' ||
           type == 'call_busy') {
         CallNotificationService.instance.cancelIncoming();
+        CallSoundService.instance.playCallEnd();
       }
     });
 
@@ -265,6 +270,7 @@ class CallService {
 
     final session = CallSessionModel.fromJson(res);
     activeCallNotifier.value = session;
+    CallSoundService.instance.playDialTone();
 
     if (context.mounted) {
       Navigator.push(
@@ -320,6 +326,7 @@ class CallService {
 
     // Cancel all notifications
     CallNotificationService.instance.cancelAll();
+    CallSoundService.instance.playCallEnd();
 
     // Reset audio and video hardware notifiers
     isMutedNotifier.value = false;

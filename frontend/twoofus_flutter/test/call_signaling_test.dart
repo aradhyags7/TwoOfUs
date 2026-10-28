@@ -5,6 +5,7 @@ import 'package:twoofus_flutter/services/call_notification_service.dart';
 import 'package:twoofus_flutter/services/call_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('CallSessionModel & Signaling Parsing Tests', () {
     test('Correctly parses incoming_call WebSocket signaling message', () {
       final signalingMsg = {

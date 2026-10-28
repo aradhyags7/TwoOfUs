@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/call_notification_service.dart';
 import '../services/call_service.dart';
 import '../services/call_signaling_client.dart';
+import '../services/call_sound_service.dart';
 import '../services/webrtc_manager.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
@@ -52,6 +53,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   bool _isSwappedVideo = false;
   bool _offerSent = false;
   Timer? _offerFallbackTimer;
+  String? _partnerAvatarUrl;
+  Timer? _callTimeoutTimer;
+  bool _showControls = true;
 
   AppTheme get _theme => ThemeController.currentTheme.value;
   Color get _bg => _theme.bg;
@@ -91,6 +95,39 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
     CallSignalingClient.instance.isConnectedNotifier.addListener(_onWsConnectionChanged);
     _startStatusChecker();
+
+    // Fetch real partner avatar
+    ApiService.getProfile(widget.partnerId).then((prof) {
+      if (prof != null && prof['avatar_url'] != null && mounted) {
+        setState(() {
+          _partnerAvatarUrl = prof['avatar_url'].toString();
+        });
+      }
+    });
+
+    // 45-second auto timeout if call is unanswered
+    if (_currentSession.status != 'ongoing') {
+      _callTimeoutTimer?.cancel();
+      _callTimeoutTimer = Timer(const Duration(seconds: 45), () {
+        if (mounted && _currentSession.status != 'ongoing') {
+          if (_isIncoming) {
+            _rejectCall();
+          } else {
+            _handleCallTimeout();
+          }
+        }
+      });
+    }
+  }
+
+  void _handleCallTimeout() async {
+    if (_isExiting) return;
+    setState(() {
+      _statusMessage = "No Answer";
+    });
+    CallSoundService.instance.playCallEnd();
+    await Future.delayed(const Duration(milliseconds: 1400));
+    _endCall();
   }
 
   void _onWsConnectionChanged() {
@@ -275,6 +312,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
         case 'call_accepted':
           // Partner accepted call
+          _callTimeoutTimer?.cancel();
+          CallSoundService.instance.playCallConnect();
           if (!_isIncoming && mounted) {
             setState(() {
               _statusMessage = "Connecting (Waiting for partner media)...";
@@ -432,6 +471,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         case 'call_cancelled':
         case 'call_ended':
         case 'call_busy':
+          _callTimeoutTimer?.cancel();
+          CallSoundService.instance.playCallEnd();
           HapticFeedback.mediumImpact();
           _safeExit();
           break;
@@ -441,6 +482,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _callTimeoutTimer?.cancel();
+    CallSoundService.instance.stopRingtone();
     _statusCheckTimer?.cancel();
     _signalingSubscription?.cancel();
     _offerFallbackTimer?.cancel();
@@ -460,6 +503,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   void _safeExit() {
     if (_isExiting) return;
     _isExiting = true;
+    _callTimeoutTimer?.cancel();
+    CallSoundService.instance.playCallEnd();
     _statusCheckTimer?.cancel();
     _signalingSubscription?.cancel();
     _offerFallbackTimer?.cancel();
@@ -515,6 +560,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _acceptCall() async {
+    _callTimeoutTimer?.cancel();
+    CallSoundService.instance.playCallConnect();
     HapticFeedback.mediumImpact();
     final isVideo = _currentSession.callType == 'video';
 
@@ -574,6 +621,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Future<void> _rejectCall() async {
     if (_isExiting) return;
     HapticFeedback.mediumImpact();
+    _callTimeoutTimer?.cancel();
+    CallSoundService.instance.playCallEnd();
     CallSignalingClient.instance.sendReject(callId: _currentSession.id);
     await ApiService.respondToCall(_currentSession.id, 'reject');
     _safeExit();
@@ -581,6 +630,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   Future<void> _endCall() async {
     if (_isExiting) return;
+    _callTimeoutTimer?.cancel();
+    CallSoundService.instance.playCallEnd();
     HapticFeedback.heavyImpact();
     if (_isIncoming) {
       await _rejectCall();
@@ -624,26 +675,46 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         body: (isVideo && isOngoing)
             ? Stack(
                 children: [
-                  // Fullscreen video surface with PiP
-                  Positioned.fill(child: _buildVideoSurface()),
-
-                  // Video Top Header (Overlay)
-                  Positioned(
-                    top: 20,
-                    left: 20,
-                    right: 20,
-                    child: SafeArea(
-                      child: _buildTopHeader(isOngoing: true),
+                  // Fullscreen video surface with PiP (Tap to toggle controls)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        setState(() => _showControls = !_showControls);
+                      },
+                      child: _buildVideoSurface(),
                     ),
                   ),
 
-                  // Bottom controls (Overlay)
-                  Positioned(
-                    bottom: 28,
+                  // Video Top Header (Overlay with animated slide/fade)
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    top: _showControls ? 20 : -100,
                     left: 20,
                     right: 20,
-                    child: SafeArea(
-                      child: _buildActiveControls(true),
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: _showControls ? 1.0 : 0.0,
+                      child: SafeArea(
+                        child: _buildTopHeader(isOngoing: true),
+                      ),
+                    ),
+                  ),
+
+                  // Bottom controls (Overlay with animated slide/fade)
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    bottom: _showControls ? 28 : -120,
+                    left: 20,
+                    right: 20,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: _showControls ? 1.0 : 0.0,
+                      child: SafeArea(
+                        child: _buildActiveControls(true),
+                      ),
                     ),
                   ),
                 ],
@@ -757,14 +828,59 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             } else {
               statusText = "Call ${_currentSession.status}";
             }
-            return Text(
-              statusText,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                color: isOngoing ? _accent : _theme.textSecondary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  statusText,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    color: isOngoing ? _accent : _theme.textSecondary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (isOngoing) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _theme.surfaceRaised,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _theme.borderSubtle),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: _statusMessage.contains("Reconnecting")
+                                ? _theme.warning
+                                : _theme.success,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _statusMessage.contains("Reconnecting")
+                              ? "Reconnecting Network..."
+                              : (widget.session.callType == 'video'
+                                  ? "HD Video • Encrypted P2P"
+                                  : "HD Audio • Encrypted P2P"),
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            color: _theme.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             );
           },
         ),
@@ -812,6 +928,38 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildPlaceholderInitial(bool isLocalSwapped) {
+    return Center(
+      child: Text(
+        isLocalSwapped
+            ? "You"
+            : (widget.partnerName.isNotEmpty
+                ? widget.partnerName[0].toUpperCase()
+                : "P"),
+        style: TextStyle(
+          fontFamily: 'Inter',
+          color: _theme.textPrimary,
+          fontSize: 40,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInitialAvatar() {
+    return Center(
+      child: Text(
+        widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : "P",
+        style: TextStyle(
+          fontFamily: 'Inter',
+          color: _theme.textPrimary,
+          fontSize: 48,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
@@ -866,16 +1014,16 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  child: Center(
-                    child: Text(
-                      widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : "P",
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        color: _theme.textPrimary,
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  child: ClipOval(
+                    child: _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty
+                        ? Image.network(
+                            _partnerAvatarUrl!,
+                            width: 130,
+                            height: 130,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => _buildInitialAvatar(),
+                          )
+                        : _buildInitialAvatar(),
                   ),
                 ),
               ],
@@ -990,20 +1138,16 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                               ),
                             ],
                           ),
-                          child: Center(
-                            child: Text(
-                              isLocalSwapped
-                                  ? "You"
-                                  : (widget.partnerName.isNotEmpty
-                                      ? widget.partnerName[0].toUpperCase()
-                                      : "P"),
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                color: _theme.textPrimary,
-                                fontSize: 40,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          child: ClipOval(
+                            child: (!isLocalSwapped && _partnerAvatarUrl != null && _partnerAvatarUrl!.isNotEmpty)
+                                ? Image.network(
+                                    _partnerAvatarUrl!,
+                                    width: 100,
+                                    height: 100,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => _buildPlaceholderInitial(isLocalSwapped),
+                                  )
+                                : _buildPlaceholderInitial(isLocalSwapped),
                           ),
                         ),
                         const SizedBox(height: 16),
