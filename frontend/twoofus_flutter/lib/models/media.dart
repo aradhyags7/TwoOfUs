@@ -65,6 +65,29 @@ class MediaItem {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'message_id': messageId,
+      'sender_id': senderId,
+      'receiver_id': receiverId,
+      'original_filename': originalFilename,
+      'stored_filename': storedFilename,
+      'media_type': mediaType,
+      'mime_type': mimeType,
+      'file_size': fileSize,
+      'storage_path': storagePath,
+      'thumbnail_path': thumbnailPath,
+      'created_at': createdAt?.toIso8601String(),
+      'is_encrypted': isEncrypted,
+      'is_view_once': isViewOnce,
+      'is_expired': isExpired,
+      'viewed_at': viewedAt?.toIso8601String(),
+      'encrypted_media_key': encryptedMediaKey,
+      'encryption_nonce': encryptionNonce,
+    };
+  }
+
   bool get isImage => mediaType == 'image';
   bool get isVideo => mediaType == 'video';
   bool get isFile => mediaType == 'file';

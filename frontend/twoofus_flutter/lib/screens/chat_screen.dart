@@ -30,6 +30,7 @@ import '../widgets/media_composer_modal.dart';
 import '../widgets/timeline_drawer.dart';
 import '../widgets/encryption_verification_modal.dart';
 import '../services/call_service.dart';
+import '../services/local_database_service.dart';
 import '../utils/date_time_utils.dart';
 import 'media_gallery_screen.dart';
 import '../utils/app_feedback.dart';
@@ -355,6 +356,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   Future<void> _loadMessages() async {
     if (_myId == null) return;
     try {
+      // 1. FAST PATH: Instant offline load from local SQLite database (0ms)
+      final localMsgs = await LocalDatabaseService.instance.getCachedMessages(
+        myId: _myId!,
+        partnerId: widget.partnerId,
+      );
+      final localCallLogsRaw = await LocalDatabaseService.instance.getCachedCallLogs(
+        myId: _myId!,
+        partnerId: widget.partnerId,
+      );
+      final localCallLogs = _synthesizeCallLogMessages(localCallLogsRaw);
+      final initialCombined = [...localMsgs, ...localCallLogs]
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      if (initialCombined.isNotEmpty && mounted && _messages.isEmpty) {
+        setState(() => _messages = initialCombined);
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final result = await ApiService.getMessages(_myId!, widget.partnerId);
       final rawMessages = result.map<Message>((e) => Message.fromJson(e)).toList();
@@ -438,6 +455,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       decryptedMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       _lastRawMsgCount = rawMessages.length;
       _lastCallLogCount = callHistoryRaw.length;
+
+      // 2. PERSISTENCE PATH: Save newly decrypted messages & call logs to SQLite
+      final realDecrypted = decryptedMessages.where((m) => m.id > 0).toList();
+      await LocalDatabaseService.instance.saveMessages(realDecrypted);
+      if (callHistoryRaw.isNotEmpty) {
+        await LocalDatabaseService.instance.saveCallLogs(callHistoryRaw);
+      }
 
       if (mounted) {
         setState(() => _messages = decryptedMessages);
@@ -545,6 +569,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
       decryptedMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       _lastRawMsgCount = rawMessages.length;
       _lastCallLogCount = callHistoryRaw.length;
+
+      // Persist live synced messages & call logs to SQLite
+      final realDecrypted = decryptedMessages.where((m) => m.id > 0).toList();
+      await LocalDatabaseService.instance.saveMessages(realDecrypted);
+      if (callHistoryRaw.isNotEmpty) {
+        await LocalDatabaseService.instance.saveCallLogs(callHistoryRaw);
+      }
 
       if (mounted) {
         final wasAtBottom = !_scrollCtrl.hasClients ||
@@ -1899,8 +1930,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                   _messages.removeWhere((m) => m.id == msg.id);
                 });
                 if (msg.id < 0) {
+                  await LocalDatabaseService.instance.deleteCallLog(-msg.id);
                   await ApiService.deleteCallSession(-msg.id, token: _userToken);
                 } else {
+                  await LocalDatabaseService.instance.deleteMessage(msg.id);
                   await ApiService.deleteMessage(msg.id, token: _userToken);
                 }
                 _toast("Call log deleted");
@@ -1919,8 +1952,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 });
                 bool success = false;
                 if (msg.id < 0) {
+                  await LocalDatabaseService.instance.deleteCallLog(-msg.id);
                   success = await ApiService.deleteCallSession(-msg.id, token: _userToken);
                 } else {
+                  await LocalDatabaseService.instance.deleteMessage(msg.id);
                   success = await ApiService.deleteMessage(msg.id, token: _userToken);
                 }
                 if (success) {
@@ -2319,6 +2354,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 _deletedIds.add(msg.id);
                 _messages.removeWhere((m) => m.id == msg.id);
               });
+              await LocalDatabaseService.instance.deleteMessage(msg.id);
               await ApiService.deleteMessage(msg.id, token: _userToken);
               _toast("Message deleted");
             },
@@ -2333,6 +2369,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
                 _deletedIds.add(msg.id);
                 _messages.removeWhere((m) => m.id == msg.id);
               });
+              await LocalDatabaseService.instance.deleteMessage(msg.id);
               final success = await ApiService.deleteMessage(msg.id, token: _userToken);
               if (success) {
                 await _loadMessages();

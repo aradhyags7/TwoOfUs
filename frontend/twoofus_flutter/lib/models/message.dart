@@ -54,4 +54,18 @@ class Message {
       mediaAttachments: mediaList,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      "id": id,
+      "sender_id": senderId,
+      "receiver_id": receiverId,
+      "content": content,
+      "nonce": nonce,
+      "is_encrypted": isEncrypted,
+      "is_edited": isEdited,
+      "created_at": createdAt.toIso8601String(),
+      "media": mediaAttachments.map((m) => m.toJson()).toList(),
+    };
+  }
 }
