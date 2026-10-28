@@ -24,6 +24,7 @@ import 'security_screen.dart';
 import 'home_screen.dart';
 import 'theme_selection_screen.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:record/record.dart';
 import '../models/diary_memory.dart';
 import '../widgets/chat_media_bubble.dart';
 import '../widgets/media_composer_modal.dart';
@@ -112,6 +113,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
   bool _loadingMemories = false;
   DateTime? _selDate = DateTime.now();
 
+  // ── Voice Recording State ─────────────────────────────────────────────────
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  bool _isRecording = false;
+  int _recordDuration = 0;
+  Timer? _recordTimer;
+  String? _recordFilePath;
+  bool _hasInputText = false;
+
   // ── Animation ─────────────────────────────────────────────────────────────
   late AnimationController _pulseCtrl;
 
@@ -146,6 +155,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
     WidgetsBinding.instance.removeObserver(this);
     _presenceTimer?.cancel();
     _messagePollingTimer?.cancel();
+    _recordTimer?.cancel();
+    _audioRecorder.dispose();
     _msgCtrl.removeListener(_onTypingChanged);
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
@@ -171,7 +182,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
 
   void _onTypingChanged() {
     final text = _msgCtrl.text.trim();
-    if (text.isNotEmpty) {
+    final hasText = text.isNotEmpty;
+    if (hasText != _hasInputText) {
+      setState(() => _hasInputText = hasText);
+    }
+    if (hasText) {
       final now = DateTime.now();
       if (_lastTypingSentTime == null || now.difference(_lastTypingSentTime!).inSeconds >= 2) {
         _lastTypingSentTime = now;
@@ -907,6 +922,191 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
         ],
       ),
     );
+  }
+
+  // ── Voice Recording & Audio Messaging ─────────────────────────────────────
+  String _formatVoiceDuration(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return "$m:${s.toString().padLeft(2, '0')}";
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      if (!await _audioRecorder.hasPermission()) {
+        if (mounted) {
+          AppFeedback.showError(context, 'Microphone permission is required to record voice notes.');
+        }
+        return;
+      }
+
+      final tempDir = Directory.systemTemp;
+      final path = "${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a";
+      _recordFilePath = path;
+      _recordDuration = 0;
+
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+
+      HapticFeedback.mediumImpact();
+      _recordTimer?.cancel();
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (mounted) {
+          setState(() {
+            _recordDuration++;
+          });
+        }
+      });
+
+      setState(() {
+        _isRecording = true;
+      });
+    } catch (e) {
+      if (kDebugMode) print('[VoiceNote] error starting recording: $e');
+      if (mounted) {
+        AppFeedback.showError(context, 'Could not start audio recording: $e');
+      }
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordTimer?.cancel();
+    try {
+      await _audioRecorder.stop();
+    } catch (_) {}
+
+    if (_recordFilePath != null) {
+      final f = File(_recordFilePath!);
+      if (f.existsSync()) {
+        try { f.deleteSync(); } catch (_) {}
+      }
+    }
+
+    HapticFeedback.lightImpact();
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordDuration = 0;
+        _recordFilePath = null;
+      });
+    }
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    _recordTimer?.cancel();
+    final durationSeconds = _recordDuration;
+    String? recordedPath;
+    try {
+      recordedPath = await _audioRecorder.stop();
+    } catch (e) {
+      if (kDebugMode) print('[VoiceNote] error stopping recording: $e');
+    }
+
+    final finalPath = recordedPath ?? _recordFilePath;
+
+    setState(() {
+      _isRecording = false;
+      _recordDuration = 0;
+      _recordFilePath = null;
+    });
+
+    if (durationSeconds < 1 || finalPath == null) {
+      if (finalPath != null) {
+        final f = File(finalPath);
+        if (f.existsSync()) {
+          try { f.deleteSync(); } catch (_) {}
+        }
+      }
+      return;
+    }
+
+    final audioFile = File(finalPath);
+    if (!audioFile.existsSync() || audioFile.lengthSync() == 0) {
+      return;
+    }
+
+    setState(() => _isSending = true);
+
+    try {
+      if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+        _partnerPubKey = await E2EEService.getPartnerPublicKey(widget.partnerId, token: _userToken);
+      }
+      if (_partnerPubKey == null || _partnerPubKey!.isEmpty) {
+        setState(() {
+          _isSending = false;
+          _sendErrorMessage = 'Cannot send voice note: Partner security key unavailable.';
+        });
+        return;
+      }
+
+      final encPayload = await E2EEService.encryptFile(audioFile, _partnerPubKey!);
+      if (encPayload == null) {
+        setState(() {
+          _isSending = false;
+          _sendErrorMessage = 'Cannot send voice note: Encryption failed.';
+        });
+        return;
+      }
+
+      final tempDir = Directory.systemTemp;
+      final encTempPath = "${tempDir.path}/enc_voice_${DateTime.now().millisecondsSinceEpoch}.m4a";
+      final encTempFile = File(encTempPath);
+      await encTempFile.writeAsBytes(encPayload.encryptedBytes);
+
+      final results = await ApiService.uploadMediaFiles(
+        widget.partnerId,
+        [encTempFile],
+        _userToken,
+        isEncrypted: true,
+        encryptedMediaKey: encPayload.encryptedMediaKey,
+        encryptionNonce: encPayload.nonce,
+      );
+
+      try { if (encTempFile.existsSync()) encTempFile.deleteSync(); } catch (_) {}
+      try { if (audioFile.existsSync()) audioFile.deleteSync(); } catch (_) {}
+
+      if (results != null && results.isNotEmpty) {
+        final mediaId = results.first['media_id'] as int;
+        final caption = 'Voice Note (${_formatVoiceDuration(Duration(seconds: durationSeconds))})';
+        final captionPayload = await E2EEService.encryptText(caption, _partnerPubKey!);
+
+        if (captionPayload != null) {
+          final ok = await ApiService.sendMessage(
+            _myId!,
+            widget.partnerId,
+            captionPayload.ciphertext,
+            nonce: captionPayload.nonce,
+            isEncrypted: true,
+            mediaIds: [mediaId],
+          );
+          if (ok) {
+            await _syncMessagesLive();
+            _scrollToBottom();
+          } else {
+            setState(() {
+              _sendErrorMessage = 'Failed to deliver voice note.';
+            });
+          }
+        }
+      } else {
+        setState(() {
+          _sendErrorMessage = 'Failed to upload voice note.';
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) print('[VoiceNote] send error: $e');
+      setState(() {
+        _sendErrorMessage = 'Voice note error: $e';
+      });
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
   }
 
   // ── Messaging ─────────────────────────────────────────────────────────────
@@ -2187,85 +2387,220 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin, 
           if (_sendErrorMessage != null) _buildInlineSendErrorBar(theme),
           if (_selectedImage != null || _selectedFileName != null)
             _buildMediaPreviewBar(),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              // Clean Paperclip Attachment Button
-              IconButton(
-                icon: Icon(Icons.attach_file_rounded, color: theme.textSecondary, size: 22),
-                onPressed: _showAttachmentSheet,
-                splashRadius: 22,
-              ),
-              Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(
-                    color: theme.surfaceRaised,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: theme.border, width: 1),
-                  ),
-                  child: TextField(
-                    controller: _msgCtrl,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      color: theme.textPrimary,
-                      fontSize: 15,
-                    ),
-                    maxLines: 4,
-                    minLines: 1,
-                    cursorColor: theme.focusRing,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      hintText: _editingMsg != null
-                          ? 'Edit message…'
-                          : (_selectedImage != null || _selectedFileName != null
-                              ? 'Add caption…'
-                              : 'Send a message…'),
-                      hintStyle: TextStyle(
-                        fontFamily: 'Inter',
-                        color: theme.textTertiary,
-                        fontSize: 14,
+          if (_isRecording)
+            Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  // Cancel / Delete Recording button
+                  GestureDetector(
+                    onTap: _cancelRecording,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: theme.danger.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: theme.danger.withValues(alpha: 0.3), width: 1),
                       ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Icon(Icons.delete_outline_rounded, color: theme.danger, size: 22),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: _isSending ? null : _sendMessage,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _isSending
-                        ? theme.surfaceRaised
-                        : theme.accentFill,
-                    border: _isSending ? Border.all(color: theme.border, width: 1) : null,
-                  ),
-                  child: _isSending
-                      ? Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              color: theme.accentFill,
-                              strokeWidth: 2,
+                  const SizedBox(width: 10),
+
+                  // Recording Indicator, Elapsed Duration, and Animated Waveform
+                  Expanded(
+                    child: Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: theme.surfaceRaised,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: theme.border, width: 1),
+                      ),
+                      child: Row(
+                        children: [
+                          AnimatedBuilder(
+                            animation: _pulseCtrl,
+                            builder: (context, child) {
+                              return Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: theme.danger.withValues(alpha: 0.3 + 0.7 * _pulseCtrl.value),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: theme.danger.withValues(alpha: 0.4 * _pulseCtrl.value),
+                                      blurRadius: 6,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            _formatVoiceDuration(Duration(seconds: _recordDuration)),
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              color: theme.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
-                        )
-                      : Icon(
-                          _editingMsg != null ? Icons.check_rounded : Icons.arrow_upward_rounded,
-                          color: theme.onAccent,
-                          size: 20,
-                        ),
-                ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: List.generate(14, (index) {
+                                final factor = ((index % 3 + 1) * 0.3 + (_recordDuration % 2 == 0 ? 0.3 : 0.1)).clamp(0.2, 1.0);
+                                final barHeight = 4.0 + (factor * 18.0);
+                                return Container(
+                                  width: 2.5,
+                                  height: barHeight,
+                                  decoration: BoxDecoration(
+                                    color: theme.accentFill.withValues(alpha: 0.35 + 0.65 * factor),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // Send Voice Note button
+                  GestureDetector(
+                    onTap: _stopAndSendRecording,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: theme.accentFill,
+                        boxShadow: [
+                          BoxShadow(
+                            color: theme.accentFill.withValues(alpha: 0.35),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(Icons.arrow_upward_rounded, color: theme.onAccent, size: 20),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            )
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Clean Paperclip Attachment Button
+                IconButton(
+                  icon: Icon(Icons.attach_file_rounded, color: theme.textSecondary, size: 22),
+                  onPressed: _showAttachmentSheet,
+                  splashRadius: 22,
+                ),
+                Expanded(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    decoration: BoxDecoration(
+                      color: theme.surfaceRaised,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: theme.border, width: 1),
+                    ),
+                    child: TextField(
+                      controller: _msgCtrl,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        color: theme.textPrimary,
+                        fontSize: 15,
+                      ),
+                      maxLines: 4,
+                      minLines: 1,
+                      cursorColor: theme.focusRing,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        hintText: _editingMsg != null
+                            ? 'Edit message…'
+                            : (_selectedImage != null || _selectedFileName != null
+                                ? 'Add caption…'
+                                : 'Send a message…'),
+                        hintStyle: TextStyle(
+                          fontFamily: 'Inter',
+                          color: theme.textTertiary,
+                          fontSize: 14,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (!_hasInputText && _selectedImage == null && _selectedFileName == null && _editingMsg == null)
+                  // Microphone Button: Tap or Hold to Record Voice Note
+                  GestureDetector(
+                    onTap: _isSending ? null : _startRecording,
+                    onLongPressStart: (_) => _startRecording(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: theme.surfaceRaised,
+                        border: Border.all(color: theme.border, width: 1),
+                      ),
+                      child: Icon(
+                        Icons.mic_rounded,
+                        color: theme.accentFill,
+                        size: 22,
+                      ),
+                    ),
+                  )
+                else
+                  // Send / Edit Button
+                  GestureDetector(
+                    onTap: _isSending ? null : _sendMessage,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _isSending
+                            ? theme.surfaceRaised
+                            : theme.accentFill,
+                        border: _isSending ? Border.all(color: theme.border, width: 1) : null,
+                      ),
+                      child: _isSending
+                          ? Center(
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  color: theme.accentFill,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : Icon(
+                              _editingMsg != null ? Icons.check_rounded : Icons.arrow_upward_rounded,
+                              color: theme.onAccent,
+                              size: 20,
+                            ),
+                    ),
+                  ),
+              ],
+            ),
         ],
       ),
     );

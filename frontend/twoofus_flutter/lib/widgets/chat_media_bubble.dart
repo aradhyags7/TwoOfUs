@@ -8,6 +8,7 @@ import '../services/e2ee_service.dart';
 import '../utils/session.dart';
 import 'full_screen_image_viewer.dart';
 import 'video_player_dialog.dart';
+import 'audio_waveform_player_bubble.dart';
 import 'view_once_badge.dart';
 import '../utils/app_feedback.dart';
 import '../theme/app_theme.dart';
@@ -338,8 +339,18 @@ class _ChatMediaBubbleState extends State<ChatMediaBubble> {
           ),
         ),
       );
+    } else if (widget.media.isAudio) {
+      // ── 4. Voice Note Audio Waveform Player ──────────────────────────────
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: AudioWaveformPlayerBubble(
+          media: widget.media,
+          token: widget.token,
+          isMe: widget.isMe,
+        ),
+      );
     } else {
-      // ── 4. Document Card ──────────────────────────────────────────────────
+      // ── 5. Document Card ──────────────────────────────────────────────────
       return Container(
         margin: const EdgeInsets.only(top: 4, bottom: 4),
         padding: const EdgeInsets.all(12),

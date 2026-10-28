@@ -155,3 +155,48 @@ class TestMediaRoundtrip:
             headers={"Authorization": f"Bearer {self.token_c}"}
         )
         assert res_thumb.status_code == 403
+
+    def test_06_upload_and_fetch_encrypted_audio_voice_note(self):
+        # User A uploads an encrypted audio voice note (.m4a)
+        audio_ciphertext = b"\x00\x00\x00\x1cftypM4A \x00\x00\x00\x00ENCRYPTED_VOICE_NOTE_M4A_PAYLOAD"
+        file_tuple = ("files", ("voice_test.m4a", io.BytesIO(audio_ciphertext), "audio/m4a"))
+
+        form_data = {
+            "receiver_id": str(self.user_b_id),
+            "is_encrypted": "true",
+            "is_view_once": "false",
+            "encrypted_media_key": '{"k":"mockAudioKeyBundle","n":"mockAudioNonce"}',
+            "encryption_nonce": "mockAudioFileNonce",
+        }
+
+        res = client.post(
+            "/media/upload",
+            data=form_data,
+            files=[file_tuple],
+            headers={"Authorization": f"Bearer {self.token_a}"}
+        )
+        assert res.status_code == 200, f"Audio upload failed: {res.text}"
+        data = res.json()
+        assert len(data) == 1
+        audio_id = data[0]["media_id"]
+        assert audio_id > 0
+
+        # Receiver User B retrieves file bytes
+        res_file = client.get(
+            f"/media/{audio_id}/file",
+            headers={"Authorization": f"Bearer {self.token_b}"}
+        )
+        assert res_file.status_code == 200
+        assert res_file.content == audio_ciphertext
+
+        # Gallery metadata lists media_type as audio
+        res_gallery = client.get(
+            f"/media/pair/{self.user_a_id}",
+            headers={"Authorization": f"Bearer {self.token_b}"}
+        )
+        assert res_gallery.status_code == 200
+        items = res_gallery.json()
+        matched = next((m for m in items if m["id"] == audio_id), None)
+        assert matched is not None
+        assert matched["media_type"] == "audio"
+        assert matched["is_encrypted"] is True
