@@ -14,9 +14,10 @@ class ThemeController {
   static final ValueNotifier<AppAccent> currentAccent =
       ValueNotifier<AppAccent>(AppAccent.indigo);
 
-  /// Current theme mode (system, light, dark)
+  /// Current theme mode (system, light, dark) - Default is Light only
   static final ValueNotifier<ThemeMode> currentThemeMode =
-      ValueNotifier<ThemeMode>(ThemeMode.dark);
+      ValueNotifier<ThemeMode>(ThemeMode.light);
+
 
   /// Reactive current theme state listened to by MaterialApp and UI components
   static final ValueNotifier<AppTheme> currentTheme =
@@ -71,16 +72,16 @@ class ThemeController {
         }
       }
 
-      // Restore mode
-      ThemeMode resolvedMode = ThemeMode.dark;
-      if (savedModeStr == 'light') {
-        resolvedMode = ThemeMode.light;
+      // Restore mode: Default is Light mode
+      ThemeMode resolvedMode = ThemeMode.light;
+      if (savedModeStr == 'dark') {
+        resolvedMode = ThemeMode.dark;
       } else if (savedModeStr == 'system') {
         resolvedMode = ThemeMode.system;
-      } else if (savedModeStr == 'dark') {
-        resolvedMode = ThemeMode.dark;
-      } else if (savedLegacyId != null && savedLegacyId.startsWith('light_')) {
+      } else if (savedModeStr == 'light') {
         resolvedMode = ThemeMode.light;
+      } else if (savedLegacyId != null && savedLegacyId.startsWith('dark_')) {
+        resolvedMode = ThemeMode.dark;
       }
 
       currentAccent.value = resolvedAccent;
@@ -94,7 +95,7 @@ class ThemeController {
       updateSystemUiOverlay();
     } catch (_) {
       currentAccent.value = AppAccent.indigo;
-      currentThemeMode.value = ThemeMode.dark;
+      currentThemeMode.value = ThemeMode.light;
       currentTheme.value = AppTheme.defaultTheme;
       updateSystemUiOverlay();
     }

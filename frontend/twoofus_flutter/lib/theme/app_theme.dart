@@ -298,8 +298,8 @@ class AppTheme {
 
   // ── Preset Themes ──────────────────────────────────────────────────────────
 
-  /// Default theme: Dark + Indigo accent
-  static final AppTheme defaultTheme = AppTheme.dark(AppAccent.indigo);
+  /// Default theme: Light + Indigo accent
+  static final AppTheme defaultTheme = AppTheme.light(AppAccent.indigo);
 
   static final AppTheme darkIndigo = AppTheme.dark(AppAccent.indigo);
   static final AppTheme darkTeal = AppTheme.dark(AppAccent.teal);
