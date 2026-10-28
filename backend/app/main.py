@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
@@ -245,6 +245,58 @@ def health_check():
         "storage": storage_status,
         "time": datetime.now(timezone.utc).isoformat()
     }
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_policy():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Privacy Policy - TwoOfUs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #2D3748; background: #FAF9F6; }
+    h1 { color: #1A202C; }
+    h2 { color: #2D3748; margin-top: 30px; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy for TwoOfUs</h1>
+  <p>Last updated: October 2026</p>
+  <p>TwoOfUs ("we", "our", or "app") is a private space designed for two people. Your privacy and end-to-end encryption are our highest priorities.</p>
+  <h2>1. Information We Collect</h2>
+  <p>When you create an account or sign in with Google, we collect your email address, username, and profile picture (if provided) to identify your account and authenticate sessions.</p>
+  <h2>2. End-to-End Encryption</h2>
+  <p>Messages, photos, videos, and calls exchanged between paired users are protected with end-to-end encryption. Only you and your paired partner possess the cryptographic keys needed to decrypt and read your content.</p>
+  <h2>3. How We Use Information</h2>
+  <p>We use your information solely to facilitate peer-to-peer communication, account recovery, and security notifications.</p>
+  <h2>4. Contact Us</h2>
+  <p>If you have any questions regarding this Privacy Policy, please contact us at support@twoofus.app.</p>
+</body>
+</html>"""
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms_of_service():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Terms of Service - TwoOfUs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #2D3748; background: #FAF9F6; }
+    h1 { color: #1A202C; }
+  </style>
+</head>
+<body>
+  <h1>Terms of Service for TwoOfUs</h1>
+  <p>Last updated: October 2026</p>
+  <p>By using TwoOfUs, you agree to these Terms. TwoOfUs provides private communication and shared memories for pairs.</p>
+</body>
+</html>"""
+
 
 
 security = HTTPBearer()
