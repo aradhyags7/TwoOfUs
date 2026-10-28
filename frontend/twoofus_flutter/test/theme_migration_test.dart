@@ -74,6 +74,39 @@ void main() {
       expect(ThemeController.currentTheme.value.brightness, equals(Brightness.light));
       expect(ThemeController.currentTheme.value.accent, equals(AppAccent.teal));
     });
+
+    test('Fresh install (empty storage) defaults to Light mode and indigo accent', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      await ThemeController.init();
+
+      expect(ThemeController.currentAccent.value, equals(AppAccent.indigo));
+      expect(ThemeController.currentThemeMode.value, equals(ThemeMode.light));
+      expect(ThemeController.currentTheme.value.brightness, equals(Brightness.light));
+      expect(ThemeController.currentTheme.value.accent, equals(AppAccent.indigo));
+      expect(ThemeController.currentTheme.value.id, equals('light_indigo'));
+    });
+
+    test('Theme selection persists across user logout and re-init', () async {
+      SharedPreferences.setMockInitialValues({});
+      await ThemeController.init();
+      expect(ThemeController.currentThemeMode.value, equals(ThemeMode.light));
+
+      // User selects dark mode + rose accent
+      await ThemeController.setThemeConfig(
+        mode: ThemeMode.dark,
+        accent: AppAccent.rose,
+      );
+      expect(ThemeController.currentThemeMode.value, equals(ThemeMode.dark));
+      expect(ThemeController.currentAccent.value, equals(AppAccent.rose));
+
+      // Simulate app restart / re-init after logout (session clear does not touch theme)
+      await ThemeController.init();
+      expect(ThemeController.currentThemeMode.value, equals(ThemeMode.dark));
+      expect(ThemeController.currentAccent.value, equals(AppAccent.rose));
+      expect(ThemeController.currentTheme.value.brightness, equals(Brightness.dark));
+      expect(ThemeController.currentTheme.value.accent, equals(AppAccent.rose));
+    });
   });
 
   group('WCAG Contrast Ratio Automated Verification', () {
