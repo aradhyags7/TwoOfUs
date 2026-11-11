@@ -416,14 +416,8 @@ def verify_media_access(db: Session, media: Media, current_user_id: int):
 
 
 # ==========================
-# Database Dependency
+# Database Dependency (imported from .core.database)
 # ==========================
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ==========================
@@ -2464,13 +2458,30 @@ def create_memory_entry(
 
     is_enc_bool = is_encrypted if isinstance(is_encrypted, bool) else (str(is_encrypted).lower() in ("true", "1", "t"))
 
+    # Fail closed (server policy): Diary memories must be end-to-end encrypted
+    if not is_enc_bool:
+        raise HTTPException(
+            status_code=400,
+            detail="Unencrypted diary memories are rejected. End-to-end encryption is required.",
+        )
+
+    if not content_nonce or not str(content_nonce).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Encrypted diary memories must include a content encryption nonce.",
+        )
+
+    if photo and photo.filename and (not photo_nonce or not str(photo_nonce).strip()):
+        raise HTTPException(
+            status_code=400,
+            detail="Encrypted photo attachments must include a photo encryption nonce.",
+        )
+
     image_url = None
     if photo and photo.filename:
         filename = photo.filename
         ext = os.path.splitext(filename)[1].lower()
-        if not is_enc_bool and ext not in {".jpg", ".jpeg", ".png", ".webp"}:
-            raise HTTPException(status_code=415, detail="Only JPG, PNG, and WebP images are supported for diary memories")
-        elif is_enc_bool and ext not in {".jpg", ".jpeg", ".png", ".webp", ".bin", ".enc"}:
+        if ext not in {".jpg", ".jpeg", ".png", ".webp", ".bin", ".enc"}:
             ext = ".enc"
 
         photo.file.seek(0, os.SEEK_END)
@@ -2479,11 +2490,11 @@ def create_memory_entry(
         if photo_size > settings.MAX_IMAGE_SIZE_BYTES:
             raise HTTPException(status_code=413, detail=f"Image size exceeds maximum allowed limit of {settings.MAX_IMAGE_SIZE_BYTES // (1024*1024)}MB")
 
-        prefix = "enc_" if is_enc_bool else ""
+        prefix = "enc_"
         import uuid
         unique_name = f"{prefix}{uuid.uuid4().hex}{ext}"
         memory_key = f"memories/{unique_name}"
-        storage_backend.put(memory_key, photo.file, content_type=photo.content_type)
+        storage_backend.put(memory_key, photo.file, content_type="application/octet-stream")
         image_url = f"uploads/{memory_key}"
 
     entry = DiaryMemory(
