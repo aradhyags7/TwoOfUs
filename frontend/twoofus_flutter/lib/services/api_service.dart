@@ -1610,7 +1610,8 @@ class ApiService {
       final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
       if (effectiveToken.isEmpty) return null;
       final response = await http.get(
-        Uri.parse('$baseUrl/call/turn-credentials?token=$effectiveToken'),
+        Uri.parse('$baseUrl/call/turn-credentials'),
+        headers: {'Authorization': 'Bearer $effectiveToken'},
       ).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -1627,7 +1628,8 @@ class ApiService {
       final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
       if (effectiveToken.isEmpty) return null;
       final response = await http.post(
-        Uri.parse('$baseUrl/call/ticket?token=$effectiveToken'),
+        Uri.parse('$baseUrl/call/ticket'),
+        headers: {'Authorization': 'Bearer $effectiveToken'},
       ).timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -1645,7 +1647,8 @@ class ApiService {
       final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
       if (effectiveToken.isEmpty) return null;
       final response = await http.get(
-        Uri.parse('$baseUrl/call/debug?token=$effectiveToken'),
+        Uri.parse('$baseUrl/call/debug'),
+        headers: {'Authorization': 'Bearer $effectiveToken'},
       ).timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -1661,8 +1664,11 @@ class ApiService {
       final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
       if (effectiveToken.isEmpty) return false;
       final response = await http.post(
-        Uri.parse('$baseUrl/call/device-token?token=$effectiveToken'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/call/device-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $effectiveToken',
+        },
         body: jsonEncode({'token': pushToken, 'platform': platform}),
       ).timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
@@ -1676,7 +1682,8 @@ class ApiService {
       final effectiveToken = (token != null && token.isNotEmpty) ? token : (await Session.getToken() ?? '');
       if (effectiveToken.isEmpty) return false;
       final response = await http.delete(
-        Uri.parse('$baseUrl/call/device-token?token=$pushToken&auth_token=$effectiveToken'),
+        Uri.parse('$baseUrl/call/device-token?token=$pushToken'),
+        headers: {'Authorization': 'Bearer $effectiveToken'},
       ).timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
     } catch (_) {

@@ -6,6 +6,7 @@ import time
 import traceback
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
@@ -18,16 +19,42 @@ from ..schemas.call import (
 from ..services.signaling_manager import secure_call_manager
 
 router = APIRouter(tags=["Call Signaling"])
+bearer_security = HTTPBearer(auto_error=False)
 
 def get_current_user_id_from_token(token: str) -> int:
     """Helper to validate JWT token and extract user_id."""
     payload = decode_access_token(token)
     if not payload or "sub" not in payload:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
+    if payload.get("type") == "2fa_pending":
+        raise HTTPException(status_code=401, detail="Two-factor authentication required")
     try:
         return int(payload["sub"])
     except (ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Malformed user subject in token")
+
+
+def get_current_user_from_req(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_security),
+    token: Optional[str] = Query(None, description="Access token fallback"),
+    auth_token: Optional[str] = Query(None, description="Auth token fallback"),
+) -> int:
+    """
+    Extracts authenticated user_id preferring Authorization: Bearer header
+    over URL query parameters to avoid leaking tokens in logs.
+    """
+    raw_token = None
+    if credentials and credentials.credentials:
+        raw_token = credentials.credentials
+    elif token:
+        raw_token = token
+    elif auth_token:
+        raw_token = auth_token
+
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="Authentication token required")
+
+    return get_current_user_id_from_token(raw_token)
 
 
 # ── 1. Authenticated WebSocket Signaling Endpoint ─────────────────────────────
@@ -122,10 +149,9 @@ async def legacy_call_websocket(
 # ── 2.1 Single-Use WS Ticket Issuer (Phase 3 Hardened Auth) ───────────────────
 @router.post("/call/ticket")
 def create_call_ticket(
-    token: str = Query(..., description="Access token"),
+    user_id: int = Depends(get_current_user_from_req),
 ):
     """Issues a short-lived (60s) single-use WebSocket authentication ticket."""
-    user_id = get_current_user_id_from_token(token)
     ticket = secure_call_manager.create_ticket(user_id)
     return {"ticket": ticket, "expires_in": 60}
 
@@ -133,11 +159,10 @@ def create_call_ticket(
 # ── 2.2 Diagnostic Call Debug Endpoint ────────────────────────────────────────
 @router.get("/call/debug")
 def get_call_debug(
-    token: str = Query(..., description="Access token"),
+    user_id: int = Depends(get_current_user_from_req),
 ):
     """Diagnostic endpoint returning ICE configuration and WebSocket connection status."""
-    user_id = get_current_user_id_from_token(token)
-    turn_creds = get_turn_credentials(token)
+    turn_creds = get_turn_credentials(user_id=user_id)
     return {
         "user_id": user_id,
         "call_debug_enabled": os.getenv("CALL_DEBUG", "true").lower() == "true",
@@ -154,14 +179,12 @@ def get_call_debug(
 def register_device_push_token(
     request: DevicePushTokenRequest,
     db: Session = Depends(get_db),
-    token: str = Query(..., description="Access token"),
+    user_id: int = Depends(get_current_user_from_req),
 ):
     """
     Registers an FCM / APNs device push token for the authenticated user
     to support incoming call alerts when app is backgrounded or screen is locked.
     """
-    user_id = get_current_user_id_from_token(token)
-
     existing = db.query(DevicePushToken).filter(DevicePushToken.token == request.token).first()
     if existing:
         existing.user_id = user_id
@@ -182,10 +205,9 @@ def register_device_push_token(
 def unregister_device_push_token(
     token_str: str = Query(..., alias="token"),
     db: Session = Depends(get_db),
-    auth_token: str = Query(..., alias="auth_token"),
+    user_id: int = Depends(get_current_user_from_req),
 ):
     """Removes a push token when user logs out."""
-    user_id = get_current_user_id_from_token(auth_token)
     deleted_count = (
         db.query(DevicePushToken)
         .filter(
@@ -201,13 +223,12 @@ def unregister_device_push_token(
 # ── 4. STUN & Ephemeral TURN Credentials Endpoint ─────────────────────────────
 @router.get("/call/turn-credentials", response_model=TurnCredentialsResponse)
 def get_turn_credentials(
-    token: str = Query(..., description="Access token"),
+    user_id: int = Depends(get_current_user_from_req),
 ):
     """
     Generates time-limited ephemeral TURN credentials using HMAC-SHA1
     (coturn REST API standard) and provides STUN servers for ICE discovery.
     """
-    user_id = get_current_user_id_from_token(token)
 
     turn_secret = os.getenv("TURN_SECRET")
     turn_host = os.getenv("TURN_HOST")

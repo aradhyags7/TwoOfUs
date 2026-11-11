@@ -10,7 +10,7 @@ from random import choices
 
 from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -54,9 +54,16 @@ from .services.totp import (
     generate_totp_secret,
     get_totp_uri,
     verify_totp_code,
+    verify_totp_time_step,
     generate_backup_codes,
     verify_and_consume_backup_code,
     hash_backup_code,
+)
+from .core.rate_limiter import (
+    rate_limit_login,
+    rate_limit_otp,
+    rate_limit_pin,
+    rate_limit_reset,
 )
 from .services.storage import (
     storage_backend,
@@ -116,6 +123,8 @@ def run_auto_migrations(target_engine=None):
                 conn.execute(text("ALTER TABLE users ADD COLUMN email_2fa_otp TEXT;"))
             if "email_2fa_expires_at" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN email_2fa_expires_at TIMESTAMP;"))
+            if "last_totp_time_step" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_totp_time_step INTEGER;"))
             if "google_id" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN google_id TEXT;"))
             if "last_seen" not in user_cols:
@@ -195,11 +204,34 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for cross-origin app requests
+# Defensive HTTP security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
+
+# Enable CORS with strict origins in production
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+elif os.getenv("ENV", "").lower() == "production":
+    allowed_origins = [
+        "https://twoofus.app",
+        "https://api.twoofus.app",
+    ]
+else:
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=True if allowed_origins != ["*"] else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -493,7 +525,7 @@ def register_user(
 # ==========================
 # Login User
 # ==========================
-@app.post("/login")
+@app.post("/login", dependencies=[Depends(rate_limit_login)])
 def login(
     user: UserLogin,
     db: Session = Depends(get_db)
@@ -571,7 +603,7 @@ def login(
 # ==========================
 # Google OAuth2 Authentication
 # ==========================
-@app.post("/auth/google")
+@app.post("/auth/google", dependencies=[Depends(rate_limit_login)])
 async def google_auth(
     payload: GoogleAuthRequest,
     db: Session = Depends(get_db)
@@ -791,6 +823,7 @@ def enable_2fa(
                 detail="Invalid 6-digit authenticator code. Check your Google Authenticator app and try again."
             )
         user.totp_secret = req.secret
+        user.last_totp_time_step = None
         user.two_factor_method = "totp"
     elif req.method == "email":
         now = datetime.now(timezone.utc)
@@ -842,12 +875,19 @@ def disable_2fa(
     elif req.code and user.totp_secret and verify_totp_code(str(user.totp_secret), req.code):
         is_verified = True
     elif req.code and user.email_2fa_otp and user.email_2fa_otp == req.code.strip():
-        is_verified = True
+        now = datetime.now(timezone.utc)
+        if user.email_2fa_expires_at:
+            exp = user.email_2fa_expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if now <= exp:
+                is_verified = True
     elif req.code and user.backup_codes:
         hashed_list = json.loads(str(user.backup_codes or "[]"))
-        is_backup, _ = verify_and_consume_backup_code(req.code, hashed_list)
+        is_backup, updated_codes = verify_and_consume_backup_code(req.code, hashed_list)
         if is_backup:
             is_verified = True
+            user.backup_codes = json.dumps(updated_codes)
 
     if not is_verified:
         raise HTTPException(
@@ -859,6 +899,7 @@ def disable_2fa(
     user.totp_secret = None
     user.email_2fa_otp = None
     user.email_2fa_expires_at = None
+    user.last_totp_time_step = None
     user.backup_codes = None
     db.commit()
 
@@ -867,7 +908,7 @@ def disable_2fa(
     }
 
 
-@app.post("/2fa/verify-login")
+@app.post("/2fa/verify-login", dependencies=[Depends(rate_limit_otp)])
 def verify_2fa_login(
     req: TwoFactorVerifyLoginRequest,
     db: Session = Depends(get_db)
@@ -891,9 +932,15 @@ def verify_2fa_login(
     code_clean = req.code.strip()
     is_valid = False
 
-    # Check 6-digit TOTP
+    # Check 6-digit TOTP with replay rejection
     if user.totp_secret and len(code_clean) == 6 and code_clean.isdigit():
-        is_valid = verify_totp_code(str(user.totp_secret), code_clean)
+        is_totp_valid, consumed_step = verify_totp_time_step(
+            str(user.totp_secret), code_clean, last_time_step=user.last_totp_time_step
+        )
+        if is_totp_valid:
+            is_valid = True
+            user.last_totp_time_step = consumed_step
+            db.commit()
 
     # Check Email OTP
     if not is_valid and user.email_2fa_otp and user.email_2fa_otp == code_clean:
@@ -957,7 +1004,7 @@ def get_2fa_status(
 # ==========================
 # Forgot Password Request
 # ==========================
-@app.post("/forgot-password")
+@app.post("/forgot-password", dependencies=[Depends(rate_limit_reset)])
 def forgot_password(
     data: ForgotPasswordRequest,
     db: Session = Depends(get_db)
@@ -997,7 +1044,7 @@ def forgot_password(
 # ==========================
 # Reset Password with Code
 # ==========================
-@app.post("/reset-password")
+@app.post("/reset-password", dependencies=[Depends(rate_limit_reset)])
 def reset_password(
     data: ResetPasswordRequest,
     db: Session = Depends(get_db)
@@ -1056,7 +1103,7 @@ def reset_password(
 # ==========================
 # Generate Connection PIN
 # ==========================
-@app.get("/generate-pin/{user_id}")
+@app.get("/generate-pin/{user_id}", dependencies=[Depends(rate_limit_pin)])
 def generate_connection_pin(
     user_id: int,
     db: Session = Depends(get_db),
@@ -1120,7 +1167,7 @@ def generate_connection_pin(
 # ==========================
 # Connect By PIN
 # ==========================
-@app.post("/connect-by-pin")
+@app.post("/connect-by-pin", dependencies=[Depends(rate_limit_pin)])
 def connect_by_pin(
     data: ConnectByPin,
     db: Session = Depends(get_db),

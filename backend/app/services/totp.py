@@ -34,17 +34,36 @@ def generate_totp_code(secret: str, time_step: int = 30, digits: int = 6, for_ti
     return str(code).zfill(digits)
 
 
-def verify_totp_code(secret: str, code: str, window: int = 1) -> bool:
-    """Validate 6-digit code with time drift window (prevents clock skew issues)."""
+def verify_totp_time_step(
+    secret: str,
+    code: str,
+    last_time_step: int | None = None,
+    window: int = 1
+) -> Tuple[bool, int | None]:
+    """
+    Validate 6-digit code with time drift window (RFC 6238 §5.2).
+    Enforces replay rejection by verifying that the matched time-step
+    is strictly greater than last_time_step.
+    """
     code_str = code.strip()
     if len(code_str) != 6 or not code_str.isdigit():
-        return False
+        return False, None
     now = time.time()
     for offset in range(-window, window + 1):
-        expected = generate_totp_code(secret, for_time=now + (offset * 30))
+        target_time = now + (offset * 30)
+        time_step = int(target_time // 30)
+        if last_time_step is not None and time_step <= last_time_step:
+            continue
+        expected = generate_totp_code(secret, for_time=target_time)
         if hmac.compare_digest(expected, code_str):
-            return True
-    return False
+            return True, time_step
+    return False, None
+
+
+def verify_totp_code(secret: str, code: str, window: int = 1) -> bool:
+    """Validate 6-digit code with time drift window."""
+    valid, _ = verify_totp_time_step(secret, code, last_time_step=None, window=window)
+    return valid
 
 
 def generate_backup_codes(count: int = 8) -> Tuple[List[str], List[str]]:
