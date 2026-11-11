@@ -4,12 +4,11 @@ import os
 # Load variables from .env
 load_dotenv()
 
+_FALLBACK_SECRET = "twoofus_super_secret_key_2026"
+
 
 class Settings:
-    SECRET_KEY = os.getenv(
-        "SECRET_KEY",
-        "twoofus_super_secret_key_2026"
-    )
+    SECRET_KEY = os.getenv("SECRET_KEY", _FALLBACK_SECRET)
 
     ALGORITHM = os.getenv(
         "ALGORITHM",
@@ -51,3 +50,14 @@ class Settings:
 
 
 settings = Settings()
+
+# ── Production secret guard ───────────────────────────────────────────────────
+# Fail fast if the app is started in production with the well-known fallback
+# JWT secret. Without this check a misconfigured deployment would silently
+# allow any attacker who knows the public source code to forge valid JWTs.
+_env = os.getenv("ENV", "").lower()
+if _env == "production" and settings.SECRET_KEY == _FALLBACK_SECRET:
+    raise RuntimeError(
+        "[SECURITY] SECRET_KEY is set to the insecure fallback value. "
+        "Set a strong, random SECRET_KEY in your production environment before starting the server."
+    )
