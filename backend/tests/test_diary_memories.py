@@ -72,6 +72,19 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
         db.add(pair)
         db.commit()
 
+        # Add a legacy unencrypted entry directly to test backward compatibility in query endpoints
+        legacy_entry = DiaryMemory(
+            sender_id=cls.user_a.id,
+            receiver_id=cls.user_b.id,
+            entry_date="2026-07-01",
+            content="Historical unencrypted memory",
+            mood_emoji="📜",
+            is_encrypted=False,
+            content_nonce=None
+        )
+        db.add(legacy_entry)
+        db.commit()
+
         cls.token_a = create_access_token({"sub": str(cls.user_a.id), "email": cls.user_a.email})
         cls.token_b = create_access_token({"sub": str(cls.user_b.id), "email": cls.user_b.email})
         cls.token_c = create_access_token({"sub": str(cls.user_c.id), "email": cls.user_c.email})
@@ -90,27 +103,30 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
                 pass
 
     def test_01_create_text_diary_entry(self):
-        # Alice posts a diary entry on 2026-08-20
+        # Alice posts an end-to-end encrypted diary entry on 2026-08-20
         res = client.post(
             "/memories/create",
             headers={"Authorization": f"Bearer {self.token_a}"},
             data={
                 "partner_id": str(self.user_b.id),
                 "entry_date": "2026-08-20",
-                "content": "Sunset at the beach with you ❤️",
+                "content": "ZW5jcnlwdGVkX3N1bnNldF90ZXh0",
+                "is_encrypted": "true",
+                "content_nonce": "bm9uY2Vfc3Vuc2V0XzA=",
                 "mood_emoji": "❤️"
             }
         )
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["entry_date"], "2026-08-20")
-        self.assertEqual(data["content"], "Sunset at the beach with you ❤️")
+        self.assertEqual(data["content"], "ZW5jcnlwdGVkX3N1bnNldF90ZXh0")
+        self.assertEqual(data["content_nonce"], "bm9uY2Vfc3Vuc2V0XzA=")
         self.assertEqual(data["mood_emoji"], "❤️")
         self.assertEqual(data["sender_id"], self.user_a.id)
         self.assertEqual(data["receiver_id"], self.user_b.id)
 
     def test_02_create_photo_memory(self):
-        # Bob attaches a photo memory for 2026-08-14
+        # Bob attaches an encrypted photo memory for 2026-08-14
         dummy_image = io.BytesIO(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00")
         res = client.post(
             "/memories/create",
@@ -118,7 +134,10 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
             data={
                 "partner_id": str(self.user_a.id),
                 "entry_date": "2026-08-14",
-                "content": "Anniversary dinner celebration! 🥂",
+                "content": "ZW5jcnlwdGVkX2Fubml2ZXJzYXJ5X3RleHQ=",
+                "is_encrypted": "true",
+                "content_nonce": "bm9uY2VfYW5uaXY=",
+                "photo_nonce": "cGhvdG9fbm9uY2VfYW5uaXY=",
                 "mood_emoji": "🥂"
             },
             files={"photo": ("anniversary.jpg", dummy_image, "image/jpeg")}
@@ -130,16 +149,16 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
         self.assertEqual(data["entry_date"], "2026-08-14")
 
     def test_03_partner_fetches_all_shared_memories(self):
-        # Alice fetches memories shared with Bob
+        # Alice fetches memories shared with Bob (including legacy setup entry + 2 new entries)
         res = client.get(
             f"/memories/pair/{self.user_b.id}",
             headers={"Authorization": f"Bearer {self.token_a}"}
         )
         self.assertEqual(res.status_code, 200)
         entries = res.json()
-        self.assertEqual(len(entries), 2)
+        self.assertGreaterEqual(len(entries), 3)
         # Verify both text and photo entries are present
-        self.assertTrue(any(e["content"] == "Sunset at the beach with you ❤️" for e in entries))
+        self.assertTrue(any(e["content"] == "ZW5jcnlwdGVkX3N1bnNldF90ZXh0" for e in entries))
         self.assertTrue(any(e["mood_emoji"] == "🥂" and e["image_url"] is not None for e in entries))
 
     def test_04_unpaired_user_access_blocked(self):
@@ -151,14 +170,16 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
         self.assertEqual(res.status_code, 403)
 
     def test_05_delete_memory_entry(self):
-        # Create a temp entry
+        # Create an encrypted temp entry
         res = client.post(
             "/memories/create",
             headers={"Authorization": f"Bearer {self.token_a}"},
             data={
                 "partner_id": str(self.user_b.id),
                 "entry_date": "2026-08-01",
-                "content": "A note to be removed",
+                "content": "ZW5jcnlwdGVkX3RlbXBfbm90ZQ==",
+                "is_encrypted": "true",
+                "content_nonce": "dGVtcF9ub25jZQ==",
             }
         )
         self.assertEqual(res.status_code, 200)
@@ -243,6 +264,94 @@ class DiaryMemoriesUnitTests(unittest.TestCase):
         encrypted_entries = [e for e in entries if e["is_encrypted"]]
         self.assertGreaterEqual(len(encrypted_entries), 2)
         self.assertIsNotNone(encrypted_entries[0]["content_nonce"])
+
+    def test_09_unencrypted_memory_creation_rejected(self):
+        # 1. Reject is_encrypted=False
+        res_plain = client.post(
+            "/memories/create",
+            headers={"Authorization": f"Bearer {self.token_a}"},
+            data={
+                "partner_id": str(self.user_b.id),
+                "entry_date": "2026-10-12",
+                "content": "Plaintext secret",
+                "is_encrypted": "false"
+            }
+        )
+        self.assertEqual(res_plain.status_code, 400)
+        self.assertIn("encryption", res_plain.json()["detail"].lower())
+
+        # 2. Reject missing content_nonce
+        res_no_nonce = client.post(
+            "/memories/create",
+            headers={"Authorization": f"Bearer {self.token_a}"},
+            data={
+                "partner_id": str(self.user_b.id),
+                "entry_date": "2026-10-12",
+                "content": "Ciphertext without nonce",
+                "is_encrypted": "true"
+            }
+        )
+        self.assertEqual(res_no_nonce.status_code, 400)
+
+        # 3. Reject photo memory with missing photo_nonce
+        dummy_image = io.BytesIO(b"fake_image_bytes")
+        res_no_photo_nonce = client.post(
+            "/memories/create",
+            headers={"Authorization": f"Bearer {self.token_a}"},
+            data={
+                "partner_id": str(self.user_b.id),
+                "entry_date": "2026-10-12",
+                "content": "Ciphertext",
+                "is_encrypted": "true",
+                "content_nonce": "some_nonce"
+            },
+            files={"photo": ("enc.bin", dummy_image, "application/octet-stream")}
+        )
+        self.assertEqual(res_no_photo_nonce.status_code, 400)
+        self.assertIn("nonce", res_no_photo_nonce.json()["detail"].lower())
+
+    def test_10_serve_uploaded_file_security(self):
+        # 1. Directory traversal attempt
+        res_traversal = client.get("/uploads/..%2F..%2Fsecret.txt")
+        self.assertEqual(res_traversal.status_code, 400)
+
+        # 2. Create an encrypted photo memory by Bob with Alice
+        dummy_image = io.BytesIO(b"super_secret_photo_bytes")
+        res_create = client.post(
+            "/memories/create",
+            headers={"Authorization": f"Bearer {self.token_b}"},
+            data={
+                "partner_id": str(self.user_a.id),
+                "entry_date": "2026-10-13",
+                "content": "Ciphertext",
+                "is_encrypted": "true",
+                "content_nonce": "content_nonce_val",
+                "photo_nonce": "photo_nonce_val",
+            },
+            files={"photo": ("secret.bin", dummy_image, "application/octet-stream")}
+        )
+        self.assertEqual(res_create.status_code, 200)
+        image_url = res_create.json()["image_url"]  # e.g., "uploads/memories/enc_...bin"
+        file_subpath = image_url.replace("uploads/", "")
+
+        # 3. Request without auth -> 401
+        res_unauth = client.get(f"/uploads/{file_subpath}")
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # 4. Request with Charlie (unpaired third party) -> 403
+        res_forbidden = client.get(
+            f"/uploads/{file_subpath}",
+            headers={"Authorization": f"Bearer {self.token_c}"}
+        )
+        self.assertEqual(res_forbidden.status_code, 403)
+
+        # 5. Request with Alice (partner/receiver) -> 200
+        res_alice = client.get(
+            f"/uploads/{file_subpath}",
+            headers={"Authorization": f"Bearer {self.token_a}"}
+        )
+        self.assertEqual(res_alice.status_code, 200)
+        self.assertEqual(res_alice.content, b"super_secret_photo_bytes")
 
 
     @classmethod
