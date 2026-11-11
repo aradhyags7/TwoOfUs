@@ -149,6 +149,16 @@ def run_auto_migrations(target_engine=None):
             if "photo_nonce" not in dm_cols:
                 conn.execute(text("ALTER TABLE diary_memories ADD COLUMN photo_nonce TEXT;"))
 
+        # Connection Pin columns
+        if inspector.has_table("connection_pins"):
+            pin_cols = [c["name"] for c in inspector.get_columns("connection_pins")]
+            if "created_at" not in pin_cols:
+                conn.execute(text("ALTER TABLE connection_pins ADD COLUMN created_at TIMESTAMP;"))
+            if "expires_at" not in pin_cols:
+                conn.execute(text("ALTER TABLE connection_pins ADD COLUMN expires_at TIMESTAMP;"))
+            if "is_consumed" not in pin_cols:
+                conn.execute(text(f"ALTER TABLE connection_pins ADD COLUMN is_consumed BOOLEAN DEFAULT {bool_default};"))
+
         # Call session columns
         if inspector.has_table("call_sessions"):
             call_cols = [c["name"] for c in inspector.get_columns("call_sessions")]
