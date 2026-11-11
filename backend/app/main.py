@@ -19,7 +19,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from .core.config import settings
-from .core.database import Base, SessionLocal, engine, migration_engine, check_db_health
+from .core.database import Base, SessionLocal, engine, migration_engine, check_db_health, get_db
 from .core.security import (
     create_access_token,
     decode_access_token,
@@ -225,9 +225,52 @@ os.makedirs("uploads/memories", exist_ok=True)
 ensure_media_dirs()
 
 @app.get("/uploads/{file_path:path}")
-def serve_uploaded_file(file_path: str):
-    """Streams uploaded files from StorageBackend (local disk or S3/R2)."""
-    stream_res = storage_backend.get_stream(file_path)
+def serve_uploaded_file(
+    file_path: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+):
+    """Streams uploaded files from StorageBackend with strict authorization."""
+    clean_path = os.path.normpath(file_path).replace("\\", "/")
+    if clean_path.startswith("..") or "/../" in clean_path:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    if clean_path.startswith("memories/"):
+        # Diary attachments require valid authenticated partner access
+        if not credentials or not credentials.credentials:
+            raise HTTPException(status_code=401, detail="Authentication required to access diary attachments")
+
+        payload = decode_access_token(credentials.credentials)
+        if not payload or not payload.get("sub"):
+            raise HTTPException(status_code=401, detail="Invalid token")
+        if payload.get("type") == "2fa_pending":
+            raise HTTPException(status_code=401, detail="Two-factor authentication required")
+
+        user_id = int(payload["sub"])
+
+        # Verify user belongs to the pair owning this memory
+        memory = (
+            db.query(DiaryMemory)
+            .filter(
+                (DiaryMemory.image_url == f"uploads/{clean_path}") |
+                (DiaryMemory.image_url == clean_path) |
+                (DiaryMemory.image_url.like(f"%{clean_path}"))
+            )
+            .first()
+        )
+        if memory:
+            if user_id not in (memory.sender_id, memory.receiver_id):
+                raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to view this memory attachment")
+        else:
+            raise HTTPException(status_code=404, detail="Memory attachment not found")
+
+    elif clean_path.startswith("avatars/"):
+        # Public avatars allowed without directory traversal
+        pass
+    else:
+        raise HTTPException(status_code=403, detail="Direct access to this resource is prohibited")
+
+    stream_res = storage_backend.get_stream(clean_path)
     if stream_res is None:
         raise HTTPException(status_code=404, detail="File no longer available")
     stream, content_type, content_len = stream_res
@@ -323,6 +366,12 @@ def get_current_user(
         raise HTTPException(
             status_code=401,
             detail="Invalid token"
+        )
+
+    if payload.get("type") == "2fa_pending":
+        raise HTTPException(
+            status_code=401,
+            detail="Two-factor authentication required"
         )
 
     return payload
