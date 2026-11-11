@@ -381,8 +381,9 @@ def get_db():
 # PIN Generator
 # ==========================
 def generate_pin():
-    chars = string.ascii_uppercase + string.digits
-    return "".join(choices(chars, k=8))
+    # Cryptographically secure 8-character PIN with unambiguous alphanumeric characters
+    chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(chars) for _ in range(8))
 
 
 # ==========================
@@ -1034,11 +1035,32 @@ def generate_connection_pin(
             detail="User not found"
         )
 
+    # 1. Enforce single-pair exclusivity: Cannot generate PIN if already paired
+    active_pair = (
+        db.query(Pair)
+        .filter((Pair.user1_id == user_id) | (Pair.user2_id == user_id))
+        .first()
+    )
+    if active_pair:
+        raise HTTPException(
+            status_code=400,
+            detail="You are already connected to a partner. Unpair first before generating a new connection PIN."
+        )
+
+    # 2. Invalidate any previous unconsumed PINs for this user
+    db.query(ConnectionPin).filter(ConnectionPin.user_id == user_id).delete()
+
+    # 3. Generate secure PIN with 15-minute expiration
     pin = generate_pin()
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=15)
 
     new_pin = ConnectionPin(
         user_id=user_id,
-        pin_code=pin
+        pin_code=pin,
+        created_at=now,
+        expires_at=expires_at,
+        is_consumed=False,
     )
 
     db.add(new_pin)
@@ -1047,7 +1069,8 @@ def generate_connection_pin(
 
     return {
         "user_id": user_id,
-        "pin": pin
+        "pin": pin,
+        "expires_in_seconds": 900
     }
 
 
@@ -1076,17 +1099,44 @@ def connect_by_pin(
             detail="User not found"
         )
 
+    # 1. Enforce single-pair exclusivity for joining user
+    joining_user_pair = (
+        db.query(Pair)
+        .filter((Pair.user1_id == data.user_id) | (Pair.user2_id == data.user_id))
+        .first()
+    )
+    if joining_user_pair:
+        raise HTTPException(
+            status_code=400,
+            detail="You are already connected to a partner. Unpair first to connect to someone new."
+        )
+
+    pin_code_clean = (data.pin_code or "").strip().upper()
     pin_record = (
         db.query(ConnectionPin)
-        .filter(ConnectionPin.pin_code == data.pin_code)
+        .filter(ConnectionPin.pin_code == pin_code_clean)
         .first()
     )
 
-    if not pin_record:
+    if not pin_record or getattr(pin_record, "is_consumed", False):
         raise HTTPException(
             status_code=404,
-            detail="Invalid PIN"
+            detail="Invalid or expired PIN"
         )
+
+    # 2. Check PIN expiration (15 minutes)
+    now = datetime.now(timezone.utc)
+    if getattr(pin_record, "expires_at", None):
+        exp = pin_record.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if now > exp:
+            db.delete(pin_record)
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="Connection PIN has expired. Please ask your partner to generate a new PIN."
+            )
 
     if pin_record.user_id == data.user_id:
         raise HTTPException(
@@ -1094,30 +1144,38 @@ def connect_by_pin(
             detail="You cannot connect to yourself"
         )
 
-    existing_pair = (
+    # 3. Enforce single-pair exclusivity for PIN owner
+    pin_owner_pair = (
         db.query(Pair)
-        .filter(
-            ((Pair.user1_id == pin_record.user_id) & (Pair.user2_id == data.user_id)) |
-            ((Pair.user1_id == data.user_id) & (Pair.user2_id == pin_record.user_id))
-        )
+        .filter((Pair.user1_id == pin_record.user_id) | (Pair.user2_id == pin_record.user_id))
         .first()
     )
-
-    if existing_pair:
+    if pin_owner_pair:
+        db.delete(pin_record)
+        db.commit()
         raise HTTPException(
             status_code=400,
-            detail="Users already connected"
+            detail="The partner who generated this PIN is already paired with someone else."
         )
 
+    # 4. Create single pair and atomically consume PIN
     new_pair = Pair(
         user1_id=pin_record.user_id,
         user2_id=data.user_id,
-        connection_pin=data.pin_code
+        connection_pin=pin_code_clean
     )
 
     db.add(new_pair)
+    db.delete(pin_record)
     db.commit()
     db.refresh(new_pair)
+
+    return {
+        "message": "Connected successfully",
+        "pair_id": new_pair.id,
+        "user1_id": new_pair.user1_id,
+        "user2_id": new_pair.user2_id
+    }
 
     return {
         "message": "Connected successfully",
