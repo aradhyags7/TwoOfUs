@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import '../utils/session.dart';
 
@@ -61,7 +60,6 @@ class E2EEService {
       }
       _activeUserId = currentUserId;
 
-      final prefs = await SharedPreferences.getInstance();
       final privStorageKey = currentUserId != null ? '${_privKeyStorageKey}_$currentUserId' : _privKeyStorageKey;
       final pubStorageKey = currentUserId != null ? '${_pubKeyStorageKey}_$currentUserId' : _pubKeyStorageKey;
 
@@ -72,24 +70,34 @@ class E2EEService {
         storedPrivBytesStr = await _storage.read(key: privStorageKey);
         storedPubBytesStr = await _storage.read(key: pubStorageKey);
       } catch (_) {
-        // Fallback if secure storage platform channel is unavailable
+        // Secure storage platform channel unavailable (e.g. unit test host)
       }
 
-      // Fallback: Check SharedPreferences with user-scoped key
-      if (storedPrivBytesStr == null || storedPubBytesStr == null) {
-        storedPrivBytesStr ??= prefs.getString(privStorageKey);
-        storedPubBytesStr ??= prefs.getString(pubStorageKey);
-      }
-
-      // Migration: Check legacy non-namespaced keys if user-scoped key is not yet set
+      // Migration: Check legacy non-namespaced secure storage keys and purge
+      // any SharedPreferences leaks that may exist from older app versions.
       if (storedPrivBytesStr == null || storedPubBytesStr == null) {
         try {
           storedPrivBytesStr ??= await _storage.read(key: _privKeyStorageKey);
           storedPubBytesStr ??= await _storage.read(key: _pubKeyStorageKey);
         } catch (_) {}
-        storedPrivBytesStr ??= prefs.getString(_privKeyStorageKey);
-        storedPubBytesStr ??= prefs.getString(_pubKeyStorageKey);
       }
+
+      // Purge any E2EE private key material that was accidentally persisted
+      // to SharedPreferences in earlier versions of the app.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        for (final legacyKey in [
+          privStorageKey,
+          pubStorageKey,
+          _privKeyStorageKey,
+          _pubKeyStorageKey,
+        ]) {
+          if (prefs.containsKey(legacyKey)) {
+            await prefs.remove(legacyKey);
+            debugPrint('[E2EE] Purged legacy key from SharedPreferences: $legacyKey');
+          }
+        }
+      } catch (_) {}
 
       if (storedPrivBytesStr != null && storedPubBytesStr != null) {
         final privBytes = base64Decode(storedPrivBytesStr);
@@ -102,13 +110,11 @@ class E2EEService {
         );
         _myPublicKeyHex = base64Encode(pubBytes);
 
-        // Ensure both storage engines are in sync under namespaced key
+        // Ensure the namespaced key is populated in secure storage
         try {
           await _storage.write(key: privStorageKey, value: storedPrivBytesStr);
           await _storage.write(key: pubStorageKey, value: storedPubBytesStr);
         } catch (_) {}
-        await prefs.setString(privStorageKey, storedPrivBytesStr);
-        await prefs.setString(pubStorageKey, storedPubBytesStr);
       } else {
         final newKeyPair = await _keyExchangeAlgorithm.newKeyPair();
         final pubKey = await newKeyPair.extractPublicKey();
@@ -118,12 +124,11 @@ class E2EEService {
         final privB64 = base64Encode(privBytes);
         final pubB64 = base64Encode(pubBytes);
 
+        // Write ONLY to FlutterSecureStorage — never to SharedPreferences.
         try {
           await _storage.write(key: privStorageKey, value: privB64);
           await _storage.write(key: pubStorageKey, value: pubB64);
         } catch (_) {}
-        await prefs.setString(privStorageKey, privB64);
-        await prefs.setString(pubStorageKey, pubB64);
 
         _myKeyPair = newKeyPair;
         _myPublicKeyHex = pubB64;
